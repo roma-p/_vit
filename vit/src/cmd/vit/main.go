@@ -1,8 +1,11 @@
-
 package main
 
-import "os"
+import (
+	"os"
+	"vit/internal/cli"
+)
 
 func main() {
-	os.Exit(0)
+	exitCode := cli.Main()
+	os.Exit(exitCode)
 }
