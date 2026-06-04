@@ -5,11 +5,10 @@ import (
 	"vit/internal/types"
 )
 
-// WHUT?
-// func init() {
-// 	// Set rootCmd after initialization to avoid circular dependency
-// 	rootCmd = &cmdDefinition
-// }
+func init() {
+	// Set rootCmd after initialization to avoid circular dependency with genpy command!
+	rootCmd = &cmdDefinition
+}
 
 var cmdDefinition = clicore.CmdTree{
 	Name:        "vit",
@@ -21,6 +20,19 @@ var cmdDefinition = clicore.CmdTree{
 			Run:         runInit,
 			ArgParser:   clicore.NewArgParser("init", []string{"path"}, []string{}),
 			ResultType:  types.StringResult{},
+		},
+		"dev": {
+			Name:        "Dev",
+			Description: "Developer and internal commands",
+			SubCommands: map[string]*clicore.CmdTree{
+				"genpy": {
+					Name:        "GenPy",
+					Description: "Generate Python API client",
+					Run:         runGenPy,
+					ArgParser:   clicore.NewArgParser("genpy", []string{"output"}, []string{}),
+					NoPyAPI:     true, // Don't include this command in generated API
+				},
+			},
 		},
 	},
 }

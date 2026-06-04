@@ -73,18 +73,20 @@ func buildPortable() {
 }
 
 func generatePythonAPI(binaryPath string) {
-	// TODO(pyhonBindings): call the command to generate the python bindings here
-	// 
-	// fmt.Println(" o Generated: vit.py")
-	// if err := TO STUFF HERE; err != nil {
-	// 	fatal("Failed to generate Python API: %v", err)
-	// }
-	//
-	return
+	fmt.Println(" o Generated: vit.py")
+	outputPath := filepath.Join(filepath.Dir(binaryPath), "vit.py")
+
+	cmd := exec.Command(binaryPath, "dev", "genpy", outputPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fatal("Failed to generate Python API: %v", err)
+	}
 }
 
 func goBuild(outputPath string) {
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		fatal("Build failed: %v", err)
 	}
 	cmd := exec.Command("go", "build", "-C", "src", "-o", "../"+outputPath, "./cmd/vit")
@@ -92,5 +94,5 @@ func goBuild(outputPath string) {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		fatal("Build failed: %v", err)
-	} 
+	}
 }

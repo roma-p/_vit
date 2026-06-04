@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""
+VIT Python API
+Generated automatically from VIT CLI command tree.
+"""
+
+import json
+import logging
+import subprocess
+import threading
+from typing import Optional, Dict, Any, List, Union, Iterator, TypedDict
+
+class VitError(Exception):
+    """Base class for VIT errors"""
+    def __init__(self, command: str, message: str):
+        self.command = command
+        self.message = message
+        super().__init__(f"Error on command: vit.{command}\n{message}")
+
+class VitStandardError(VitError):
+    """Standard VIT error with structured information"""
+    def __init__(self, command: str, name: str, message: List[str], extra: Dict[str, Any]):
+        self.name = name
+        self.extra = extra
+        super().__init__(command, "\n".join(message))
+
+class VitInternalError(VitError):
+    """Internal VIT error"""
+    pass
+
+# Result type definitions (generated from Go structs)
+{{range .UniqueResultTypes}}{{if ne .TypeName "EmptyResult"}}class {{.TypeName}}(TypedDict):
+    """Result type for commands."""
+{{range .Fields}}    {{.JSONName}}: {{.PythonType}}
+{{end}}
+{{end}}{{end}}
+class EmptyResult(TypedDict):
+    """Empty result for commands that don't return data."""
+    pass
+
+
+# Generic result type for commands without specific structure
+GenericResult = Dict[str, Any]
+
+class VitClient:
+    """VIT Python API Client"""
+
+    def __init__(self, vit_binary_path: str, logger: Optional[logging.Logger] = None):
+        """
+        Initialize VIT client.
+
+        Args:
+            vit_binary_path: Path to the vit binary executable
+            logger: Optional logger for VIT log messages. If not provided, logs are discarded.
+        """
+        self.vit_binary_path = vit_binary_path
+        self.logger = logger
+
+    # Generated methods
+{{range .Methods}}
+    def {{.PythonName}}(self{{range .Params}}, {{.Name}}: {{.Type}}{{if .Optional}} = {{.Default}}{{end}}{{end}}) -> Iterator[{{if .ResultType}}{{.ResultType.TypeName}}{{else}}GenericResult{{end}}]:
+        """{{.Description}}{{if .Params}}
+
+        Args:
+{{range .Params}}            {{.Name}} ({{.Type}}): {{.ParamDoc}}
+{{end}}{{end}}
+        Yields:
+            Dict[str, Any]: Progress updates (if any)
+
+        Returns:
+            {{if .ResultType}}{{.ResultType.TypeName}}: Dictionary with:
+{{range .ResultType.Fields}}                - {{.JSONName}} ({{.PythonType}}): Field from result
+{{end}}{{else}}GenericResult: Dictionary with command-specific result data{{end}}
+
+        Raises:
+            VitStandardError: Standard VIT error with structured information
+            VitInternalError: Internal VIT error
+            VitError: Base error for unexpected cases
+
+        Example:
+            # Consume all progress and get final result
+            gen = client.{{.PythonName}}(...)
+            for progress in gen:
+                print(f"Progress: {progress}")
+            try:
+                result = gen.send(None)
+            except StopIteration as e:
+                result = e.value
+
+            # Or simply consume and get final result
+            results = list(client.{{.PythonName}}(...))
+            result = results[-1] if results else {}
+        """
+        args = [{{range .CmdParts}}"{{.}}", {{end}}]
+        {{range .Params}}{{if .IsPositional}}{{if .Optional}}if {{.Name}}:
+            {{end}}args.append({{.Name}})
+        {{end}}{{end}}
+        {{range .Params}}{{if .IsFlag}}if {{.Name}}:
+            args.append("-{{.FlagName}}")
+        {{end}}{{end}}
+
+        return (yield from self._run(args))
+{{end}}
+    def _run(self, args: List[str]) -> Iterator[Dict[str, Any]]:
+        """
+        Run a VIT command as a generator.
+
+        Yields NDJSON progress updates and returns the final result.
+
+        Args:
+            args: Command arguments
+
+        Yields:
+            Dictionary with progress updates (if NDJSON output)
+
+        Returns:
+            Dictionary with final command result
+
+        Raises:
+            VitError: If the command fails
+        """
+        # Always add --json and -v flags
+        cmd = [self.vit_binary_path, "--json", "-v"] + args
+
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1  # Line buffered
+            )
+
+            # Handle stderr in a separate thread for logging
+            def process_stderr():
+                if process.stderr:
+                    for line in process.stderr:
+                        line = line.strip()
+                        if not line or not self.logger:
+                            continue
+                        try:
+                            log_msg = json.loads(line)
+                            # Standard slog JSON format has "level" and "msg" fields
+                            if "level" in log_msg and "msg" in log_msg:
+                                level = log_msg.get("level", "INFO").upper()
+                                msg = log_msg.get("msg", "")
+
+                                # Extract attributes (everything except time, level, msg)
+                                attrs = {k: v for k, v in log_msg.items()
+                                       if k not in ("time", "level", "msg")}
+
+                                # Map VIT log level to Python logging level
+                                py_level = getattr(logging, level, logging.INFO)
+
+                                # Log with extra attributes
+                                if attrs:
+                                    self.logger.log(py_level, msg, extra=attrs)
+                                else:
+                                    self.logger.log(py_level, msg)
+                        except (json.JSONDecodeError, AttributeError):
+                            # Skip non-JSON lines or malformed log messages
+                            pass
+
+            # Start stderr processing thread
+            stderr_thread = threading.Thread(target=process_stderr, daemon=True)
+            stderr_thread.start()
+
+            # Read stdout line by line (NDJSON format)
+            result_lines = []
+            error_line = None
+
+            for line in process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Parse NDJSON line
+                try:
+                    data = json.loads(line)
+                    msg_type = data.get("type")
+
+                    if msg_type == "progress":
+                        # Progress update - yield it
+                        yield data
+                    elif msg_type == "output":
+                        # Result line - collect it
+                        result = data.get("result", {})
+                        # Handle StringResult with "string" field
+                        if isinstance(result, dict) and "string" in result:
+                            result_lines.append(result["string"])
+                        # Handle StringListResult with "string_list" field
+                        elif isinstance(result, dict) and "string_list" in result:
+                            result_lines.extend(result["string_list"])
+                        # Handle complex result types (e.g., AssetInfoResult)
+                        else:
+                            # Return the full result object
+                            return result
+                    elif msg_type == "error":
+                        # Error line - save for later
+                        error_line = data
+                except json.JSONDecodeError:
+                    # Not valid JSON, skip
+                    pass
+
+            # Wait for process to complete
+            returncode = process.wait()
+
+            # Wait for stderr thread to finish
+            stderr_thread.join(timeout=1.0)
+
+            if returncode == 0:
+                # Success - return collected result lines as string_list
+                return {"string_list": result_lines}
+            else:
+                # Error - raise exception from error line
+                if error_line and "error" in error_line:
+                    err = error_line["error"]
+                    error_type = err.get("type", "unknown")
+
+                    if error_type == "standard":
+                        raise VitStandardError(
+                            command=" ".join(args),
+                            name=err.get("name", "UnknownError"),
+                            message=err.get("message", []),
+                            extra=err.get("extra", {})
+                        )
+                    elif error_type == "internal":
+                        raise VitInternalError(
+                            command=" ".join(args),
+                            message="\n".join(err.get("message", ["Internal error"]))
+                        )
+                    else:
+                        raise VitError(
+                            command=" ".join(args),
+                            message=err.get("raw_err", "Unknown error")
+                        )
+                else:
+                    raise VitError(" ".join(args), "Command failed with no error message")
+
+        except FileNotFoundError:
+            raise VitError("system", f"VIT binary not found: {self.vit_binary_path}")
+            return  # Make this a generator even in error case
+            yield  # Unreachable but makes this a generator function
