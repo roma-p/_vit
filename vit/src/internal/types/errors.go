@@ -2,10 +2,6 @@ package types
 
 import "fmt"
 
-const (
-	ErrLockAcquireTimeout = "LockAcquireTimeout"
-)
-
 // TopLevelError wraps command-level errors with context about which command failed.
 type TopLevelError struct {
 	CommandName string
@@ -114,4 +110,3 @@ func NewCancelledError(nestedErr error) *CancelledError {
 func (e *CancelledError) Error() string {
 	return "Operation cancelled: " + e.NestedErr.Error()
 }
-
