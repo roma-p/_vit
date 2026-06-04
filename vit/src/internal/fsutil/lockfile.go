@@ -12,6 +12,7 @@ import (
 
 const (
 	LockAcquireTimeout = 60 * time.Second
+	keepaliveInterval  = 2 * time.Second
 	initialBackoff     = 50 * time.Millisecond
 	maxBackoff         = 1 * time.Second
 )
@@ -57,13 +58,57 @@ func AcquireExclusiveLock(ctx context.Context, lockPath string) (string, error) 
 	}
 }
 
+// AcquireExclusiveLockWithKeepalive is like AcquireExclusiveLock but spawns a
+// goroutine that periodically touches the lock directory to prevent orphan cleanup.
+// Use this for long-running operations (file copies, transactions).
+// The returned stop function stops the keepalive and releases the lock.
+func AcquireExclusiveLockWithKeepalive(ctx context.Context, lockPath string) (stop func(), err error) {
+	lockDir, err := AcquireExclusiveLock(ctx, lockPath)
+	if err != nil {
+		return nil, err
+	}
+
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(keepaliveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			case <-ticker.C:
+				now := time.Now()
+				_ = os.Chtimes(lockDir, now, now)
+			}
+		}
+	}()
+
+	return func() {
+		close(done)
+		ReleaseExclusiveLock(lockDir)
+	}, nil
+}
+
 // ReleaseExclusiveLock releases a lock acquired by AcquireExclusiveLock.
 func ReleaseExclusiveLock(lockDir string) {
 	_ = os.Remove(lockDir)
 }
 
-// WithExclusiveLock is a wrapper on AcquireExclusiveLock / ReleaseExclusiveLock
-// Acquire the lock, and if sucesss return a a function that would release the lock upon call.
+// WithExclusiveLockKeepalive is like WithExclusiveLock but keeps the lock alive
+// for the duration of the operation. Use for long-running operations.
+func WithExclusiveLockKeepalive(ctx context.Context, lockPath string, operation func() error) error {
+	stop, err := AcquireExclusiveLockWithKeepalive(ctx, lockPath)
+	if err != nil {
+		return err
+	}
+	defer stop()
+	return operation()
+}
+
+// WithExclusiveLock is a wrapper on AcquireExclusiveLock / ReleaseExclusiveLock.
+// Acquires the lock, runs the operation, and releases the lock.
 func WithExclusiveLock(ctx context.Context, lockPath string, operation func() error) error {
 	lockDir, err := AcquireExclusiveLock(ctx, lockPath)
 	if err != nil {

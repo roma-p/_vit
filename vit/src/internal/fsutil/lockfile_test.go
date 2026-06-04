@@ -282,3 +282,82 @@ func TestAcquireRelease_OrphanedCleanup(t *testing.T) {
 		t.Errorf("should have cleaned orphaned lock quickly, took %v", elapsed)
 	}
 }
+
+// --- AcquireExclusiveLockWithKeepalive tests ---
+
+func TestKeepalive_Basic(t *testing.T) {
+	tmpDir, cleanup := testutils.TempDir(t, "lockfile-test-*")
+	defer cleanup()
+	testPath := filepath.Join(tmpDir, "resource")
+
+	ctx := context.Background()
+
+	stop, err := AcquireExclusiveLockWithKeepalive(ctx, testPath)
+	testutils.AssertNoError(t, err)
+
+	lockDir := filepath.Join(tmpDir, ".resource.lock")
+	testutils.AssertExists(t, lockDir)
+
+	stop()
+
+	testutils.AssertNotExists(t, lockDir)
+}
+
+func TestKeepalive_PreventsOrphanCleanup(t *testing.T) {
+	tmpDir, cleanup := testutils.TempDir(t, "lockfile-test-*")
+	defer cleanup()
+	testPath := filepath.Join(tmpDir, "resource")
+
+	ctx := context.Background()
+
+	stop, err := AcquireExclusiveLockWithKeepalive(ctx, testPath)
+	testutils.AssertNoError(t, err)
+	defer stop()
+
+	lockDir := filepath.Join(tmpDir, ".resource.lock")
+
+	// Backdate the lock dir to look orphaned
+	oldTime := time.Now().Add(-61 * time.Second)
+	os.Chtimes(lockDir, oldTime, oldTime)
+
+	// Wait for keepalive to touch it
+	time.Sleep(3 * time.Second)
+
+	// Mtime should have been refreshed by keepalive
+	info, err := os.Stat(lockDir)
+	testutils.AssertNoError(t, err)
+
+	if time.Since(info.ModTime()) > 5*time.Second {
+		t.Errorf("keepalive should have refreshed mtime, but it's %v old", time.Since(info.ModTime()))
+	}
+
+	// Another process trying to acquire should NOT be able to steal it
+	ctx2, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	_, err = AcquireExclusiveLock(ctx2, testPath)
+	testutils.AssertError(t, err)
+}
+
+func TestKeepalive_StopsOnContextCancel(t *testing.T) {
+	tmpDir, cleanup := testutils.TempDir(t, "lockfile-test-*")
+	defer cleanup()
+	testPath := filepath.Join(tmpDir, "resource")
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	stop, err := AcquireExclusiveLockWithKeepalive(ctx, testPath)
+	testutils.AssertNoError(t, err)
+
+	// Cancel context — keepalive goroutine should exit
+	cancel()
+	time.Sleep(100 * time.Millisecond)
+
+	// Lock dir still exists (stop() not called yet), but keepalive is dead
+	lockDir := filepath.Join(tmpDir, ".resource.lock")
+	testutils.AssertExists(t, lockDir)
+
+	// Clean up
+	stop()
+	testutils.AssertNotExists(t, lockDir)
+}
