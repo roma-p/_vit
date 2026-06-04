@@ -11,6 +11,8 @@ help:
 	@echo "  Vendored Binaries (optional, requires internet):"
 	@echo "    make fetch-vendor      - Download fzf binaries for all platforms"
 	@echo ""
+	@echo "  Misc:"
+	@echo "    make cloc              - Count lines of code (requires cloc)"
 
 build:
 	@cd scripts/build && go build -o /tmp/vit-build . && cd ../.. && /tmp/vit-build build both
@@ -20,3 +22,6 @@ test:
 
 fetch-vendor:
 	@cd scripts/build && go build -o /tmp/vit-build . && cd ../.. && /tmp/vit-build fetch-vendor
+
+cloc:
+	cloc src --match-f='.*\.go$$' --not-match-f='.*_test\.go$$'
