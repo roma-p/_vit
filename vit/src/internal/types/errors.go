@@ -2,6 +2,10 @@ package types
 
 import "fmt"
 
+const (
+	ErrLockAcquireTimeout = "LockAcquireTimeout"
+)
+
 // TopLevelError wraps command-level errors with context about which command failed.
 type TopLevelError struct {
 	CommandName string
