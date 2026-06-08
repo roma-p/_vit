@@ -145,6 +145,14 @@ func (p *JSONHandlerPool) ReleaseAll() {
 	p.data = make(map[string]*poolEntry)
 }
 
+func (p *JSONHandlerPool) ListJSONPath() []string {
+	ret := []string{}
+	for p := range p.data {
+		ret = append(ret, p)
+	}
+	return ret
+}
+
 type poolEntry struct {
 	jsonhandler AnyJSONHandler
 	forWrite    bool

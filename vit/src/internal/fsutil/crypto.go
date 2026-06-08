@@ -1,6 +1,7 @@
 package fsutil
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -10,6 +11,16 @@ import (
 
 	"golang.org/x/mod/sumdb/dirhash"
 )
+
+// GenerateUID generates a random UID of the specified byte length.
+// Panics on failure.
+func GenerateUID(byteLength int) string {
+	bytes := make([]byte, byteLength)
+	if _, err := rand.Read(bytes); err != nil {
+		panic(fmt.Sprintf("FATAL: system entropy unavailable: %v - cannot generate secure UUIDs", err))
+	}
+	return hex.EncodeToString(bytes)
+}
 
 // HashFile returns the SHA256 hash and size of a file.
 func HashFile(path string) (hash string, size int64, err error) {
