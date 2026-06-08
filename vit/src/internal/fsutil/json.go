@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 )
 
 // JSONHandler is a wrapper around JSON operation
@@ -67,10 +68,33 @@ func (j *JSONHandler[T]) Read() error {
 	return nil
 }
 
+const jsonReadMaxRetries = 3
+const jsonReadRetryDelay = 100 * time.Millisecond
+
 func jsonRead[T any](filename string) (*T, error) {
+	var lastErr error
+	for attempt := range jsonReadMaxRetries {
+		data, err := jsonReadOnce[T](filename)
+		if err == nil {
+			return data, nil
+		}
+		// Only retry on decode errors (likely a concurrent write mid-rename).
+		// File-not-found or permission errors won't resolve with a retry.
+		if !isDecodeError(err) {
+			return nil, err
+		}
+		lastErr = err
+		if attempt < jsonReadMaxRetries-1 {
+			time.Sleep(jsonReadRetryDelay)
+		}
+	}
+	return nil, fmt.Errorf("failed to read JSON after %d attempts: %w", jsonReadMaxRetries, lastErr)
+}
+
+func jsonReadOnce[T any](filename string) (*T, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
+		return nil, err
 	}
 	defer file.Close()
 
@@ -79,9 +103,27 @@ func jsonRead[T any](filename string) (*T, error) {
 
 	var data T
 	if err := decoder.Decode(&data); err != nil {
-		return nil, fmt.Errorf("failed to decode JSON: %w", err)
+		return nil, &jsonDecodeError{filename: filename, err: err}
 	}
 	return &data, nil
+}
+
+type jsonDecodeError struct {
+	filename string
+	err      error
+}
+
+func (e *jsonDecodeError) Error() string {
+	return fmt.Sprintf("failed to decode JSON %s: %s", e.filename, e.err)
+}
+
+func (e *jsonDecodeError) Unwrap() error {
+	return e.err
+}
+
+func isDecodeError(err error) bool {
+	_, ok := err.(*jsonDecodeError)
+	return ok
 }
 
 func jsonWrite[T any](filename string, data *T) error {
