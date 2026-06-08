@@ -32,28 +32,24 @@ func GetTreeIndex(
 	opctx *opcontext.OperationContext,
 	repoPath string,
 ) (*TreeIndex, error) {
-	stalePath := pathTreeStale(repoPath)
-	indexPath := pathTreeIndex(repoPath)
-
-	_, staleErr := os.Stat(stalePath)
-	_, indexErr := os.Stat(indexPath)
-
-	needsRebuild := staleErr == nil || os.IsNotExist(indexErr)
-
-	if needsRebuild {
+	doRebuild, err := isTreeCacheToRebuild(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+	if doRebuild {
 		treeIndex, _, err := buildTreeIndexAndCache(ctx, opctx, repoPath)
 		if err != nil {
 			return nil, err
+		} else {
+			return treeIndex, nil
 		}
-		os.Remove(stalePath)
-		return treeIndex, nil
+	} else {
+		handler, err := fsutil.NewJSONHandlerFromFile[TreeIndex](pathTreeIndex(repoPath))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tree index: %w", err)
+		}
+		return handler.Data, nil
 	}
-
-	handler, err := fsutil.NewJSONHandlerFromFile[TreeIndex](indexPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read tree index: %w", err)
-	}
-	return handler.Data, nil
 }
 
 // MarkTreeStale marks the tree cache as stale.
@@ -61,6 +57,36 @@ func GetTreeIndex(
 func MarkTreeStale(repoPath string) error {
 	path := pathTreeStale(repoPath)
 	return os.WriteFile(path, []byte{}, 0o644)
+}
+
+func isTreeCacheToRebuild(
+	ctx context.Context,
+	repoPath string,
+) (bool, error) {
+	// 1. check no rebuild in progress: if so, wait for rebuild to finish
+	if err := fsutil.WaitForLockRelease(ctx, pathTreeRebuild(repoPath)); err != nil {
+		return false, err
+	}
+
+	// 2. otherwise: check for cache staleness OR missing tree index / cache
+
+	stalePath := pathTreeStale(repoPath)
+	indexPath := pathTreeIndex(repoPath)
+	assetListPath := pathAssetList(repoPath)
+
+	_, staleErr := os.Stat(stalePath)
+	_, indexErr := os.Stat(indexPath)
+	_, assetListErr := os.Stat(assetListPath)
+
+	if staleErr == nil {
+		return true, nil
+	}
+
+	if os.IsNotExist(indexErr) || os.IsNotExist(assetListErr) {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // buildTreeIndexAndCache rebuild TreeIndex and TreeCache and write them on disk
@@ -71,6 +97,12 @@ func buildTreeIndexAndCache(
 	opctx *opcontext.OperationContext,
 	repoPath string,
 ) (*TreeIndex, *TreeCache, error) {
+	stopFunc, err := fsutil.AcquireExclusiveLockWithKeepalive(ctx, pathTreeRebuild(repoPath))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer stopFunc()
+
 	treeIndex := NewTreeIndex()
 	treeCache := &TreeCache{}
 
@@ -133,6 +165,7 @@ func buildTreeIndexAndCache(
 		return nil, nil, fmt.Errorf("failed to write tree cache: %w", err)
 	}
 
+	os.Remove(pathTreeStale(repoPath))
 	return treeIndex, treeCache, nil
 }
 
@@ -207,4 +240,8 @@ func pathAssetList(repoPath string) string {
 
 func pathTreeStale(repoPath string) string {
 	return filepath.Join(repoPath, ".vit", "cache", ".tree_stale")
+}
+
+func pathTreeRebuild(repoPath string) string {
+	return filepath.Join(repoPath, ".vit", "cache", ".tree_rebuild")
 }

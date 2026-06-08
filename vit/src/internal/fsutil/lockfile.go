@@ -118,6 +118,40 @@ func WithExclusiveLock(ctx context.Context, lockPath string, operation func() er
 	return operation()
 }
 
+// WaitForLockRelease blocks until no active lock is held at lockPath.
+// Returns immediately if the lock doesn't exist.
+// Cleans orphaned locks (stale mtime) and returns immediately after cleanup.
+func WaitForLockRelease(ctx context.Context, lockPath string) error {
+	lockDir := lockDirPath(lockPath)
+
+	ctx, cancel := context.WithTimeout(ctx, LockAcquireTimeout)
+	defer cancel()
+
+	backoff := initialBackoff
+	for {
+		info, err := os.Stat(lockDir)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed to stat lock: %w", err)
+		}
+
+		// Orphaned lock — clean it and we're done.
+		if time.Since(info.ModTime()) > LockAcquireTimeout {
+			_ = os.Remove(lockDir)
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return newErrLockAcquireTimeout(ctx, lockPath, 0)
+		case <-time.After(backoff):
+			backoff = min(backoff*2, maxBackoff)
+		}
+	}
+}
+
 func cleanOrphanedLock(lockDir string) {
 	info, err := os.Stat(lockDir)
 	if err != nil {
