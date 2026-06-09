@@ -61,6 +61,7 @@ const (
 	RefTypeBranch RefType = "branch"
 	RefTypeCommit RefType = "commit"
 	RefTypeTag    RefType = "tag"
+	RefTypeEmpty  RefType = "empty"
 )
 
 func NewRefBranch(repoPath, assetPath, branchName string) *Ref {
@@ -142,6 +143,14 @@ func NewRefFromPath(repoPath, refPath string) (*Ref, error) {
 		}
 	}
 	return &ret, nil
+}
+
+func NewRefEmpty(repoPath, assetPath string) *Ref {
+	return &Ref{
+		RepoPath:  repoPath,
+		AssetPath: assetPath,
+		RefType:   RefTypeEmpty,
+	}
 }
 
 func (r *Ref) ObjectPath() string {

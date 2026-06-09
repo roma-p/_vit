@@ -15,4 +15,6 @@ const (
 
 	ErrAssetObjectNotFound      = "AssetObjectNotFound"
 	ErrAssetObjectAlreadyExists = "AssetObjectAlreadyExists"
+
+	ErrTransactionConflict = "TransactionConflict"
 )
