@@ -49,7 +49,6 @@ func (c *Client) AddAssetToTree(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	repoPath, treePath string,
-	branchName string,
 	blobFirstCommit, blobBranch, blobHash string,
 	blobSize int,
 ) (*JSONAsset, error) {
@@ -67,7 +66,6 @@ func (c *Client) AddAssetToTree(
 	if err := initAsset(
 		ctx, opctx,
 		asset.Data,
-		branchName,
 		blobFirstCommit, blobBranch,
 		blobHash, blobSize); err != nil {
 		return nil, err

@@ -10,7 +10,6 @@ import (
 	"slices"
 	"time"
 
-	"vit"
 	"vit/internal/types"
 )
 
@@ -141,7 +140,7 @@ func (o *Output) processResult(cliResult types.Result) int {
 	} else {
 		o.HumanReadableToStd(cliResult.ToStringSlice(), false)
 	}
-	return vit.ExitSuccess
+	return ExitSuccess
 }
 
 func (o *Output) processError(err error) int {
@@ -151,7 +150,7 @@ func (o *Output) processError(err error) int {
 	} else {
 		o.processErrorHumanReadable(err)
 	}
-	return vit.ExitGeneralError
+	return ExitGeneralError
 }
 
 func (o *Output) logError(err error) {

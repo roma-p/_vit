@@ -57,7 +57,6 @@ func initAsset(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	asset *types.Asset,
-	branchName string,
 	blobFirstCommit, blobBranch, blobHash string,
 	blobSize int,
 ) error {
@@ -76,7 +75,7 @@ func initAsset(
 		return err
 	}
 
-	err = AddBranch(asset, commitID, branchName, opctx.User, blobBranch)
+	err = AddBranch(asset, commitID, types.DefaultBranchName, opctx.User, blobBranch)
 	if err != nil {
 		return err
 	}

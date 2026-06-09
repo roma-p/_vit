@@ -30,7 +30,7 @@ func (c *Client) Add(ctx context.Context, assetPath, src string, isDir bool) (*t
 		}
 		if !srcInfo.IsDir() {
 			assetPath = addExtToAssetPath(assetPath, src)
-			ref := types.NewRefBranch(opctx.RepoPath, assetPath, DefaultBranchName)
+			ref := types.NewRefBranch(opctx.RepoPath, assetPath, types.DefaultBranchName)
 			_ = ref
 		}
 

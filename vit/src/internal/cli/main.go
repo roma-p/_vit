@@ -65,25 +65,25 @@ func Main() int {
 func handleCmdFoundButNoArgs(findRet *clicore.FindCmdResult) int {
 	output := buildMinimalOutput()
 	output.HumanReadableToStd(findRet.CmdParser.Usage, true)
-	return vit.ExitUsageError
+	return clicore.ExitUsageError
 }
 
 func handleCmdFoundAndHelpAsked(findRet *clicore.FindCmdResult) int {
 	output := buildMinimalOutput()
 	output.HumanReadableToStd(findRet.CmdParser.Usage, false)
-	return vit.ExitSuccess
+	return clicore.ExitSuccess
 }
 
 func handleOnBranchButNoArgs(findRet *clicore.FindCmdResult) int {
 	output := buildMinimalOutput()
 	output.HumanReadableToStd(findRet.Usage, true)
-	return vit.ExitUsageError
+	return clicore.ExitUsageError
 }
 
 func handleOnBranchAndHelpAsked(findRet *clicore.FindCmdResult) int {
 	output := buildMinimalOutput()
 	output.HumanReadableToStd(findRet.Usage, false)
-	return vit.ExitSuccess
+	return clicore.ExitSuccess
 }
 
 func handleCmdNotFound(findRet *clicore.FindCmdResult) int {
@@ -92,7 +92,7 @@ func handleCmdNotFound(findRet *clicore.FindCmdResult) int {
 	stderr = append(stderr, findRet.Usage...)
 	output.HumanReadableToStd(stderr, true)
 	output.Logger.Error("invalid command", "command", findRet.CmdName)
-	return vit.ExitUsageError
+	return clicore.ExitUsageError
 }
 
 func handleCmdError(output *clicore.Output, err *clicore.UsageError) int {
@@ -102,7 +102,7 @@ func handleCmdError(output *clicore.Output, err *clicore.UsageError) int {
 		"command", err.Command,
 		"errorType", err.ErrorType,
 	)
-	return vit.ExitUsageError
+	return clicore.ExitUsageError
 }
 
 func buildMinimalOutput() *clicore.Output {
