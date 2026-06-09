@@ -10,7 +10,9 @@ type Asset struct {
 	Branches map[string]*AssetCommit         `json:"branches"`
 	Tags     map[string]map[string]*AssetTag `json:"tags,omitempty"`
 
-	AssetPath string `json:"-"` // set at load time, not persisted
+	// set at load time, not persisted, buffered data for ease of conveniance
+	RepoPath  string `json:"-"`
+	AssetPath string `json:"-"`
 }
 
 type AssetCommit struct {
@@ -20,7 +22,6 @@ type AssetCommit struct {
 	Author       string                      `json:"author"`
 	Timestamp    time.Time                   `json:"timestamp"`
 	Message      string                      `json:"message,omitempty"`
-	Version      int                         `json:"version"`
 	Parent       string                      `json:"parent,omitempty"`
 	Dependencies map[string]*AssetDependency `json:"dependencies,omitempty"`
 }

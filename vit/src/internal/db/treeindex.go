@@ -11,14 +11,24 @@ import (
 )
 
 type TreeIndex struct {
-	IDToPath map[string]string `json:"id_to_path"`
-	PathToID map[string]string `json:"path_to_id"`
+	IDToPath map[string]TreeIndexEntry `json:"id_to_path"`
+	PathToID map[string]TreeIndexEntry `json:"path_to_id"`
+}
+
+func (t *TreeIndex) AddPath(path, uid string, treeNodeType TreeNodeType) {
+	t.IDToPath[uid] = TreeIndexEntry{Data: path, Type: treeNodeType}
+	t.PathToID[path] = TreeIndexEntry{Data: uid, Type: treeNodeType}
+}
+
+type TreeIndexEntry struct {
+	Data string       `json:"data"`
+	Type TreeNodeType `json:"type"`
 }
 
 func NewTreeIndex() *TreeIndex {
 	return &TreeIndex{
-		IDToPath: make(map[string]string),
-		PathToID: make(map[string]string),
+		IDToPath: make(map[string]TreeIndexEntry),
+		PathToID: make(map[string]TreeIndexEntry),
 	}
 }
 
@@ -26,13 +36,16 @@ type TreeCache struct {
 	AssetPaths []string `json:"asset_paths"` // does not include subdir
 }
 
-// GetTreeIndex rebuilding if stale or missing.
-func GetTreeIndex(
+func (t *TreeCache) AddPath(path string) {
+	t.AssetPaths = append(t.AssetPaths, path)
+}
+
+func getTreeIndex(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	repoPath string,
 ) (*TreeIndex, error) {
-	doRebuild, err := isTreeCacheToRebuild(ctx, repoPath)
+	doRebuild, err := istreeCacheToRebuild(ctx, repoPath)
 	if err != nil {
 		return nil, err
 	}
@@ -52,14 +65,40 @@ func GetTreeIndex(
 	}
 }
 
+func getTreeCache(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	repoPath string,
+) (*TreeCache, error) {
+	doRebuild, err := istreeCacheToRebuild(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+	if doRebuild {
+		_, treeCache, err := buildTreeIndexAndCache(ctx, opctx, repoPath)
+		if err != nil {
+			return nil, err
+		} else {
+			return treeCache, nil
+		}
+	} else {
+		handler, err := fsutil.NewJSONHandlerFromFile[TreeCache](pathAssetList(repoPath))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tree index: %w", err)
+		}
+		return handler.Data, nil
+	}
+}
+
 // MarkTreeStale marks the tree cache as stale.
 // Call this after any write operation that modifies .vit/tree/.
+// TODO(clean): probably not exported.
 func MarkTreeStale(repoPath string) error {
 	path := pathTreeStale(repoPath)
 	return os.WriteFile(path, []byte{}, 0o644)
 }
 
-func isTreeCacheToRebuild(
+func istreeCacheToRebuild(
 	ctx context.Context,
 	repoPath string,
 ) (bool, error) {
@@ -69,10 +108,10 @@ func isTreeCacheToRebuild(
 	}
 
 	// 2. otherwise: check for cache staleness OR missing tree index / cache
-	return isTreeCacheStale(repoPath)
+	return istreeCacheStale(repoPath)
 }
 
-func isTreeCacheStale(repoPath string) (bool, error) {
+func istreeCacheStale(repoPath string) (bool, error) {
 	stalePath := pathTreeStale(repoPath)
 	indexPath := pathTreeIndex(repoPath)
 	assetListPath := pathAssetList(repoPath)
@@ -92,7 +131,7 @@ func isTreeCacheStale(repoPath string) (bool, error) {
 	return false, nil
 }
 
-// buildTreeIndexAndCache rebuild TreeIndex and TreeCache and write them on disk
+// buildTreeIndexAndCache rebuild TreeIndex and treeCache and write them on disk
 // as well as returning an in-memory version of them.
 // For now the rebuild mechanism is very naive: it scan the entire database.
 // TODO(cache): incremental rebuild of cache?
@@ -108,7 +147,7 @@ func buildTreeIndexAndCache(
 	defer stopFunc()
 
 	// Double-check after acquiring lock: another process may have rebuilt while we waited.
-	doRebuild, err := isTreeCacheStale(repoPath)
+	doRebuild, err := istreeCacheStale(repoPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -162,15 +201,16 @@ func buildTreeIndexAndCache(
 			// TODO(error): return err or log?
 			continue
 		}
-		treeIndex.IDToPath[id] = path
-		treeIndex.PathToID[path] = id
+
+		treeIndex.IDToPath[id] = TreeIndexEntry{Data: path, Type: treenode.Type}
+		treeIndex.PathToID[path] = TreeIndexEntry{Data: id, Type: treenode.Type}
 	}
 
-	// 4. Building TreeCache (asset list) from resolved paths
+	// 4. Building treeCache (asset list) from resolved paths
 	for id, treenode := range idToTreeNode {
 		if treenode.Type == TreeNodeTypeAsset {
-			if path, ok := treeIndex.IDToPath[id]; ok {
-				treeCache.AssetPaths = append(treeCache.AssetPaths, path)
+			if entry, ok := treeIndex.IDToPath[id]; ok {
+				treeCache.AssetPaths = append(treeCache.AssetPaths, entry.Data)
 			}
 		}
 	}
@@ -200,11 +240,10 @@ func reccBuildIDToPath(
 		return path, nil
 	}
 
-	// checking if by any chance, the parent node has not beeing already handled
-	// to avoid too much repetitive recc.
-	parentPath, ok := treeIndex.IDToPath[uid]
-	if ok {
-		return filepath.Join(parentPath, path), nil
+	// checking if by any chance, the parent node has already been handled
+	// to avoid too much repetitive recursion.
+	if entry, ok := treeIndex.IDToPath[uid]; ok {
+		return filepath.Join(entry.Data, path), nil
 	}
 
 	treeNode, ok := (*idToTreeNode)[uid]
@@ -216,8 +255,9 @@ func reccBuildIDToPath(
 	if err != nil {
 		return "", err
 	}
-	treeIndex.IDToPath[uid] = parentPath
-	treeIndex.PathToID[parentPath] = uid
+
+	treeIndex.IDToPath[uid] = TreeIndexEntry{Data: parentPath, Type: treeNode.Type}
+	treeIndex.PathToID[parentPath] = TreeIndexEntry{Data: uid, Type: treeNode.Type}
 	return filepath.Join(parentPath, path), nil
 }
 

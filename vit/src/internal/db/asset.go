@@ -13,10 +13,10 @@ import (
 
 type JSONAsset = fsutil.JSONHandler[types.Asset]
 
-func CreateNewJSONAsset(
+func createNewJSONAsset(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	assetPath string,
+	repoPath, assetPath string,
 ) (*JSONAsset, error) {
 	uid := fsutil.GenerateUID(16)
 	return fsutil.ResolveHandler(
@@ -25,13 +25,15 @@ func CreateNewJSONAsset(
 		pathJSONAsset(opctx.RepoPath, uid),
 		true,
 		&types.Asset{
-			AssetUID:  uid,
-			AssetPath: assetPath, // comodity, not exported written in the json, and not source of truth
+			AssetUID: uid,
+			// comodity, not exported written in the json, and not source of truth
+			AssetPath: assetPath,
+			RepoPath:  repoPath,
 		},
 	)
 }
 
-func ResolveJSONAsset(
+func resolveJSONAsset(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	repoPath, assetPath, uid string, // asset path just used for formatting
@@ -39,26 +41,116 @@ func ResolveJSONAsset(
 ) (*JSONAsset, bool, error) {
 	jsonPath := pathJSONAsset(repoPath, uid)
 	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
-		return nil, false, newAssetObjectIndexNotFound(repoPath, assetPath, uid)
+		return nil, false, newErrObjectIndexNotFound(repoPath, assetPath, uid)
 	}
 	ret, err := fsutil.ResolveHandler[types.Asset](ctx, opctx.JSONPool, jsonPath, forWrite, nil)
 	if err != nil {
 		return nil, false, err
 	}
-	ret.Data.AssetPath = assetPath // commodity, not persisted in json, not source of truth
+	// commodity, not persisted in json, not source of truth
+	ret.Data.AssetPath = assetPath
+	ret.Data.RepoPath = repoPath
 	return ret, true, nil
+}
+
+// func initAsset(
+// 	asset *types.Asset,
+//
+// ) {
+// }
+
+// AddCommit adds a commit to the asset and returns the generated commit ID.
+func AddCommit(a *types.Asset, commit *types.AssetCommit) (string, error) {
+	commitID := fsutil.GenerateUID(8)
+	if a.Commits == nil {
+		a.Commits = make(map[string]*types.AssetCommit)
+	}
+	a.Commits[commitID] = commit
+	return commitID, nil
+}
+
+// GetCommit retrieves a commit by ID.
+func GetCommit(a *types.Asset, commitID string) (*types.AssetCommit, error) {
+	if a.Commits == nil {
+		return nil, newErrObjectNotFound(types.NewRefCommit(a.RepoPath, a.AssetPath, commitID))
+	}
+
+	commitObj, ok := a.Commits[commitID]
+	if !ok {
+		return nil, newErrObjectNotFound(types.NewRefCommit(a.RepoPath, a.AssetPath, commitID))
+	}
+
+	return commitObj, nil
+}
+
+// AddBranch creates a new branch pointing to the given commit.
+func AddBranch(a *types.Asset, commitID, branchName, author, payloadfile string) error {
+	if a.Branches == nil {
+		a.Branches = make(map[string]*types.AssetCommit)
+	}
+
+	if _, ok := a.Branches[branchName]; ok {
+		return newErrObjectAlreadyExists(types.NewRefBranch(a.RepoPath, a.AssetPath, branchName))
+	}
+
+	commitFrom, err := GetCommit(a, commitID)
+	if err != nil {
+		return err
+	}
+
+	var dependencies map[string]*types.AssetDependency
+	if len(commitFrom.Dependencies) > 0 {
+		dependencies = make(map[string]*types.AssetDependency, len(commitFrom.Dependencies))
+		for k, v := range commitFrom.Dependencies {
+			cp := *v
+			if v.Ref != nil {
+				refCp := *v.Ref
+				cp.Ref = &refCp
+			}
+			dependencies[k] = &cp
+		}
+	}
+
+	commitBranch := types.AssetCommit{
+		PayloadSize:  commitFrom.PayloadSize,
+		PayloadFile:  payloadfile,
+		PayloadHash:  commitFrom.PayloadHash,
+		Author:       author,
+		Message:      "",
+		Parent:       commitID,
+		Dependencies: dependencies,
+	}
+
+	a.Branches[branchName] = &commitBranch
+	return nil
 }
 
 func pathJSONAsset(repoPath, assetUID string) string {
 	return filepath.Join(repoPath, ".vit", "assets", assetUID[:2], assetUID[2:]+".json")
 }
 
-func newAssetObjectIndexNotFound(repoPath, assetPath, uid string) error {
+func newErrObjectIndexNotFound(repoPath, assetPath, uid string) error {
 	fullPath := filepath.Join(repoPath, assetPath)
 	return types.NewInternalVitError(
 		types.ErrDBInternal,
 		nil,
 		[]string{fmt.Sprintf("asset object index not found for %s at: %s", fullPath, uid)},
 		[]any{"repoPath", repoPath, "assetPath", assetPath, "assetUID", uid},
+	)
+}
+
+func newErrObjectNotFound(ref *types.Ref) error {
+	return types.NewVitError(
+		types.ErrAssetObjectNotFound,
+		[]string{fmt.Sprintf("object not found on asset %s", ref.AbsolutePath())},
+		[]any{"ref", ref},
+	)
+}
+
+func newErrObjectAlreadyExists(ref *types.Ref) error {
+	return types.NewVitError(
+		types.ErrAssetObjectAlreadyExists,
+		[]string{fmt.Sprintf("object already exists on asset %s", ref.AbsolutePath())},
+		[]any{"ref", ref},
 	)
 }
