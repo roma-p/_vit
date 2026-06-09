@@ -61,10 +61,11 @@ func CreateNewJSONTreeNode(
 	)
 }
 
+// TODO(clean): why do we need a "found" bool?
 func (c *Client) ResolveJSONTreeNode(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	repoPath, treePath string,
+	repoPath, treeNodePath string,
 	forWrite bool,
 ) (*JSONTreeNode, bool, error) {
 	treeIndex, err := c.GetTreeIndex(ctx, opctx, repoPath)
@@ -72,7 +73,7 @@ func (c *Client) ResolveJSONTreeNode(
 		return nil, false, err
 	}
 
-	id, ok := treeIndex.PathToID[treePath]
+	id, ok := treeIndex.PathToID[treeNodePath]
 	if !ok {
 		return nil, false, nil
 	}
@@ -80,7 +81,7 @@ func (c *Client) ResolveJSONTreeNode(
 	path := TreeNodeJSONPath(repoPath, id)
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return nil, false, newTreeNodeNotFoundError(repoPath, treePath, path)
+		return nil, false, newTreeNodeNotFoundError(repoPath, treeNodePath, path)
 	}
 	ret, err := fsutil.ResolveHandler[TreeNode](ctx, opctx.JSONPool, path, forWrite, nil)
 	return ret, true, err
@@ -99,7 +100,7 @@ func TreeNodeJSONPath(repoPath, uid string) string {
 func newTreeNodeNotFoundError(repoPath, treePath, expectedPath string) error {
 	fullPath := filepath.Join(repoPath, treePath)
 	return types.NewVitError(
-		types.ErrDBTreeNodeNotFound,
+		types.ErrDBTreeNode,
 		[]string{fmt.Sprintf("tree node not found for: %s at %s", fullPath, expectedPath)},
 		[]any{"repoPath", repoPath, "treeNode", treePath, "treeNodePath", expectedPath},
 	)

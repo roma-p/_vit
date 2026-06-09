@@ -33,7 +33,8 @@ func Main() int {
 	case clicore.CmdNotFound:
 		return handleCmdNotFound(&findRet)
 	case clicore.CmdFound:
-		{}
+		{
+		} // normal scenario handled below.
 	default:
 		panic("unreachable")
 	}
@@ -55,7 +56,6 @@ func Main() int {
 	if err != nil {
 		return output.Process(nil, err)
 	}
-
 
 	cliResult, err := findRet.CmdFunc(ctx, client, subcmdparser)
 	client.Dispose()

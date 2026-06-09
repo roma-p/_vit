@@ -25,7 +25,8 @@ func CreateNewJSONAsset(
 		pathJSONAsset(opctx.RepoPath, uid),
 		true,
 		&types.Asset{
-			AssetUID: uid,
+			AssetUID:  uid,
+			AssetPath: assetPath, // comodity, not exported written in the json, and not source of truth
 		},
 	)
 }
@@ -41,23 +42,21 @@ func ResolveJSONAsset(
 		return nil, false, newAssetObjectIndexNotFound(repoPath, assetPath, uid)
 	}
 	ret, err := fsutil.ResolveHandler[types.Asset](ctx, opctx.JSONPool, jsonPath, forWrite, nil)
-	return ret, true, err
+	if err != nil {
+		return nil, false, err
+	}
+	ret.Data.AssetPath = assetPath // commodity, not persisted in json, not source of truth
+	return ret, true, nil
 }
 
 func pathJSONAsset(repoPath, assetUID string) string {
-	return filepath.Join(
-		repoPath,
-		".vit",
-		"assets",
-		assetUID[:2],
-		assetUID[2:]+".json",
-	)
+	return filepath.Join(repoPath, ".vit", "assets", assetUID[:2], assetUID[2:]+".json")
 }
 
 func newAssetObjectIndexNotFound(repoPath, assetPath, uid string) error {
 	fullPath := filepath.Join(repoPath, assetPath)
 	return types.NewInternalVitError(
-		types.ErrDBAssetObjectIndexNotFound,
+		types.ErrDBInternal,
 		nil,
 		[]string{fmt.Sprintf("asset object index not found for %s at: %s", fullPath, uid)},
 		[]any{"repoPath", repoPath, "assetPath", assetPath, "assetUID", uid},
