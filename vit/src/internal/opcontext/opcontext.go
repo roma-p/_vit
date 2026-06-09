@@ -33,16 +33,12 @@ func NewOperationContext(ctx context.Context, fullAssetPath string) (*OperationC
 		return nil, "", err
 	}
 
-	if err == nil {
-		return &OperationContext{
-			RepoPath:  repoPath,
-			User:      usr.Username,
-			TimeStamp: time.Now(),
-			JSONPool:  fsutil.NewJSONHandlerPool(),
-		}, assetPath, nil
-	} else {
-		return nil, "", err
-	}
+	return &OperationContext{
+		RepoPath:  repoPath,
+		User:      usr.Username,
+		TimeStamp: time.Now(),
+		JSONPool:  fsutil.NewJSONHandlerPool(),
+	}, assetPath, nil
 }
 
 // Close releases all cached JSON handlers and any locks they hold.

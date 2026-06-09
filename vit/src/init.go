@@ -52,8 +52,6 @@ func (c *Client) InitRepo(ctx context.Context, path string) (*types.StringResult
 	}
 
 	dirs := []string{
-		path,
-		filepath.Join(path, ".vit"),
 		filepath.Join(path, ".vit", "tree"),
 		filepath.Join(path, ".vit", "cache"),
 		filepath.Join(path, ".vit", "assets"),
@@ -64,7 +62,9 @@ func (c *Client) InitRepo(ctx context.Context, path string) (*types.StringResult
 	}
 
 	for _, dir := range dirs {
-		if err := os.Mkdir(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			// Clean up partially created repo
+			os.RemoveAll(path)
 			return nil, newRepoInitFailed(
 				path,
 				[]string{fmt.Sprintf("failed to create directory: %s", dir)},

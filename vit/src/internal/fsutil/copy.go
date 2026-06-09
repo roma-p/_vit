@@ -14,6 +14,10 @@ import (
 // with exclusive locking and progress reporting.
 // Read the file twice: Pass 1: hash + size. Pass 2: copy with progress via temp file + rename.
 func CopyFile(ctx context.Context, src, dst string, progress *CopyProgress) (hash string, size int64, err error) {
+	if progress == nil {
+		panic("BUG: CopyFile received an empty progress!")
+	}
+
 	stop, err := AcquireExclusiveLockWithKeepalive(ctx, dst)
 	if err != nil {
 		return "", 0, err
@@ -39,6 +43,10 @@ func CopyFile(ctx context.Context, src, dst string, progress *CopyProgress) (has
 
 // CopyDir does the same as CopyFile but with a directory.
 func CopyDir(ctx context.Context, src, dst string, progress *CopyProgress) (hash string, size int64, err error) {
+	if progress == nil {
+		panic("BUG: CopyFile received an empty progress!")
+	}
+
 	stop, err := AcquireExclusiveLockWithKeepalive(ctx, dst)
 	if err != nil {
 		return "", 0, err

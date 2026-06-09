@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -54,7 +55,7 @@ func (a *CmdParser) GetArg(name string) string {
 func NewArgParser(name string, posArgs []string, optArgs []string) *CmdParser {
 	ret := CmdParser{
 		Name:            name,
-		FlagSet:         flag.NewFlagSet(name, flag.ExitOnError),
+		FlagSet:         flag.NewFlagSet(name, flag.ContinueOnError),
 		PosArgs:         posArgs,
 		OptionalPosArgs: optArgs,
 		FlagArgs:        make(map[string]any),
@@ -73,7 +74,7 @@ func NewArgParser(name string, posArgs []string, optArgs []string) *CmdParser {
 }
 
 func (a *CmdParser) resetFlagSet() {
-	a.FlagSet = flag.NewFlagSet(a.Name, flag.ExitOnError)
+	a.FlagSet = flag.NewFlagSet(a.Name, flag.ContinueOnError)
 	for name, def := range a.flagDefs {
 		switch def.flagType {
 		case "bool":
@@ -106,7 +107,7 @@ func (a *CmdParser) Parse(args []string) *UsageError {
 
 	// Map positional args (required + optional)
 	a.ArgsMap = make(map[string]string)
-	allPosArgNames := append(a.PosArgs, a.OptionalPosArgs...)
+	allPosArgNames := slices.Concat(a.PosArgs, a.OptionalPosArgs)
 	for i, argName := range allPosArgNames {
 		if i < len(posArgs) {
 			a.ArgsMap[argName] = posArgs[i]

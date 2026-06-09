@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"time"
 
 	"vit"
@@ -35,7 +36,7 @@ import (
 // In HR mode, the redirection works as expected: stdout only has results,
 // everything else on stderr to not pollute stdout.
 // In JSON mode, the redirection is different:
-// logger is on stderr, everything else is on stdout. 
+// logger is on stderr, everything else is on stdout.
 //
 // To sum it up:
 //
@@ -46,21 +47,19 @@ import (
 //	| logs     | stderr | stderr |
 //	| progress | stderr | stdout |
 type Output struct {
-	Stdout      io.Writer
-	Stderr      io.Writer
-	Logger      *slog.Logger
-	Option      OutputOpt
-	progress    *ProgressBar
-	jsonEncoder json.Encoder // used for ndljson
+	Stdout   io.Writer
+	Stderr   io.Writer
+	Logger   *slog.Logger
+	Option   OutputOpt
+	progress *ProgressBar
 }
 
 func NewOutput(opt OutputOpt) *Output {
 	return &Output{
-		Logger:      newCliLogger(opt),
-		Stdout:      os.Stdout,
-		Stderr:      os.Stderr,
-		Option:      opt,
-		jsonEncoder: *json.NewEncoder(os.Stdout),
+		Logger: newCliLogger(opt),
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		Option: opt,
 	}
 }
 
@@ -213,7 +212,7 @@ func (o *Output) processErrorHumanReadable(err error) {
 	if errors.As(err, &topErr) {
 		var vitErr *types.VitError
 		if errors.As(topErr.NestedErr, &vitErr) {
-			messages := append(vitErr.Message, fmt.Sprintf("[%s]", vitErr.Name))
+			messages := slices.Concat(vitErr.Message, []string{fmt.Sprintf("[%s]", vitErr.Name)})
 			o.HumanReadableToStd(messages, true)
 		} else {
 			o.HumanReadableToStd([]string{topErr.NestedErr.Error()}, true)
@@ -227,15 +226,14 @@ func (o *Output) HumanReadableToStd(lines []string, stderr bool) {
 	// if json and debug, standard human readable destined to normal user are disabled.
 	// -> no pollution if we are streaming json.
 	// -> nor if we want clean debug (structured) logs.
+	if o.Option.Debug || o.Option.JSON {
+		return
+	}
 	var std io.Writer
 	if stderr {
 		std = o.Stderr
 	} else {
 		std = o.Stdout
-	}
-
-	if o.Option.Debug || o.Option.JSON {
-		return
 	}
 
 	for _, line := range lines {

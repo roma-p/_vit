@@ -147,8 +147,8 @@ func (p *JSONHandlerPool) ReleaseAll() {
 
 func (p *JSONHandlerPool) ListJSONPath() []string {
 	ret := []string{}
-	for p := range p.data {
-		ret = append(ret, p)
+	for i := range p.data {
+		ret = append(ret, i)
 	}
 	return ret
 }
