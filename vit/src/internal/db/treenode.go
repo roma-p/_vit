@@ -38,14 +38,14 @@ const (
 	TreeNodeTypeAsset TreeNodeType = "asset"
 )
 
-type TreeNodeJSON = fsutil.JSONHandler[TreeNode]
+type JSONTreeNode = fsutil.JSONHandler[TreeNode]
 
 func CreateNewJSONTreeNode(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	name, parentID string,
 	treeNodeType TreeNodeType,
-) (*TreeNodeJSON, error) {
+) (*JSONTreeNode, error) {
 	uid := fsutil.GenerateUID(16)
 	return fsutil.ResolveHandler(
 		ctx,
@@ -66,7 +66,7 @@ func (c *Client) ResolveJSONTreeNode(
 	opctx *opcontext.OperationContext,
 	repoPath, treePath string,
 	forWrite bool,
-) (*TreeNodeJSON, bool, error) {
+) (*JSONTreeNode, bool, error) {
 	treeIndex, err := c.GetTreeIndex(ctx, opctx, repoPath)
 	if err != nil {
 		return nil, false, err

@@ -26,14 +26,16 @@ import (
 //
 // a ref string is structured like this
 //
-//		<vit repository absolute path>/<asset path><ref id>
-//	eg:                     /path/repo /assets/mod @branch=fix
-//	                        /path/repo /assets/mod @tag=release
+//		 <vit repository absolute path>/<asset path><object path>
+//	eg:                      /path/repo/assets/mod  @branch=fix
+//	                         /path/repo/assets/mod  @tag=release
+//	                         /path/repo/assets/mod  @tag=release@name=12
+//	                         /path/repo/assets/mod  @commit=ad12b8
 //
 // a ref can be stringified using either:
-//   - Absolute path: <repo path>/<asset path>@<ref id>
-//   - Relative path:             <asset path>@<ref id>
-//   - Sub path:                              @<ref id>
+//   - Absolute path: <repo path>/<asset path>@<object path>
+//   - Relative path:             <asset path>@<object path>
+//   - Object path:                           @<object path>
 //
 // Ref is a value type — all fields are comparable, so two Refs with
 // identical fields are equal via ==.
@@ -142,7 +144,7 @@ func NewRefFromPath(repoPath, refPath string) (*Ref, error) {
 	return &ret, nil
 }
 
-func (r *Ref) SubPath() string {
+func (r *Ref) ObjectPath() string {
 	var refPath string
 
 	switch r.RefType {
@@ -163,7 +165,7 @@ func (r *Ref) SubPath() string {
 }
 
 func (r *Ref) RelativePath() string {
-	return fmt.Sprintf("%s%s", r.AssetPath, r.SubPath())
+	return fmt.Sprintf("%s%s", r.AssetPath, r.ObjectPath())
 }
 
 func (r *Ref) AbsolutePath() string {
