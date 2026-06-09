@@ -75,7 +75,7 @@ func CopyDir(ctx context.Context, src, dst string, progress *CopyProgress) (hash
 		return "", 0, err
 	}
 
-	if err = SyncDir(tmpDir); err != nil {
+	if err = syncDir(tmpDir); err != nil {
 		cleanup()
 		return "", 0, err
 	}
@@ -96,7 +96,7 @@ func CopyDir(ctx context.Context, src, dst string, progress *CopyProgress) (hash
 		return "", 0, err
 	}
 
-	_ = SyncDir(dstParent)
+	_ = syncDir(dstParent)
 	return hash, size, nil
 }
 

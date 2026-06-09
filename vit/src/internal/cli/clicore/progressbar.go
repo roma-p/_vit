@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// ProgressBar tracks progress for human-readable output
-type ProgressBar struct {
+// progressBar tracks progress for human-readable output
+type progressBar struct {
 	mu              sync.RWMutex
 	operation       string // Overall operation name
 	totalItems      int
@@ -21,8 +21,8 @@ type ProgressBar struct {
 	stderr          io.Writer
 }
 
-func NewProgressBar(operation string, totalItems int, stderr io.Writer) *ProgressBar {
-	return &ProgressBar{
+func newProgressBar(operation string, totalItems int, stderr io.Writer) *progressBar {
+	return &progressBar{
 		operation:  operation,
 		totalItems: totalItems,
 		stderr:     stderr,
@@ -30,7 +30,7 @@ func NewProgressBar(operation string, totalItems int, stderr io.Writer) *Progres
 	}
 }
 
-func (p *ProgressBar) StartDisplay() {
+func (p *progressBar) StartDisplay() {
 	go func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
@@ -82,7 +82,7 @@ func (p *ProgressBar) StartDisplay() {
 	}()
 }
 
-func (p *ProgressBar) UpdateItem(name string, size int, done int) {
+func (p *progressBar) UpdateItem(name string, size int, done int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.currentItem = name
@@ -96,6 +96,6 @@ func (p *ProgressBar) UpdateItem(name string, size int, done int) {
 	}
 }
 
-func (p *ProgressBar) Done() {
+func (p *progressBar) Done() {
 	close(p.done)
 }

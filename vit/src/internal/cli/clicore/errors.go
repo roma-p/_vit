@@ -8,10 +8,10 @@ import (
 type UsageErrorType string
 
 const (
-	ErrUnknownSubCommand       UsageErrorType = "UnknownSubcommand"
-	ErrNotEnoughPositionalArgs UsageErrorType = "PosArgsNotEnough"
-	ErrTooMuchPositionalArgs   UsageErrorType = "PosArgsTooMuch"
-	ErrInvalidFlags            UsageErrorType = "InvalidFlags"
+	errUnknownSubCommand       UsageErrorType = "UnknownSubcommand"
+	errNotEnoughPositionalArgs UsageErrorType = "PosArgsNotEnough"
+	errTooMuchPositionalArgs   UsageErrorType = "PosArgsTooMuch"
+	errInvalidFlags            UsageErrorType = "InvalidFlags"
 )
 
 type UsageError struct {
@@ -31,13 +31,13 @@ func NewUsageError(name string, args []string, errType UsageErrorType, nestedErr
 	}
 	messageRoot := "invalid command: "
 	switch errType {
-	case ErrTooMuchPositionalArgs:
+	case errTooMuchPositionalArgs:
 		ret.Message = messageRoot + "too much positional arguments"
-	case ErrNotEnoughPositionalArgs:
+	case errNotEnoughPositionalArgs:
 		ret.Message = messageRoot + "not enough positional arguments"
-	case ErrUnknownSubCommand:
+	case errUnknownSubCommand:
 		ret.Message = messageRoot + "unknown subcommands"
-	case ErrInvalidFlags:
+	case errInvalidFlags:
 		ret.Message = fmt.Sprintf("%s %s", messageRoot, ret.NestedErr.Error())
 	}
 	return &ret

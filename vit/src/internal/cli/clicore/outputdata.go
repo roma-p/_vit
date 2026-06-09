@@ -12,49 +12,49 @@ type OutputOpt struct {
 
 // JSON related data  --------------------------------------------------------
 
-type JSONStdoutType string
+type jsonStdoutType string
 
 const (
-	JSONStdoutTypeOutput  JSONStdoutType = "output"
-	JSONStdoutTypeError   JSONStdoutType = "error"
-	JSONStdoutTypeProgess JSONStdoutType = "progress"
+	jsonStdoutTypeOutput  jsonStdoutType = "output"
+	jsonStdoutTypeError   jsonStdoutType = "error"
+	jsonStdoutTypeProgess jsonStdoutType = "progress"
 )
 
-type JSONStdErrType string
+type jsonStdErrType string
 
 const (
-	JSONStdErrStandard   JSONStdErrType = "standard"
-	JSONStdErrInternal   JSONStdErrType = "internal"
-	JSONStdErrUnexpected JSONStdErrType = "unexpected"
+	jsonStdErrStandard   jsonStdErrType = "standard"
+	jsonStdErrInternal   jsonStdErrType = "internal"
+	jsonStdErrUnexpected jsonStdErrType = "unexpected"
 )
 
-type JSONStdErr struct {
-	Type    JSONStdErrType `json:"type"`
+type jsonStdErr struct {
+	Type    jsonStdErrType `json:"type"`
 	Name    string         `json:"name"`
 	Message []string       `json:"message"`
 	Extra   []any          `json:"extra"`
 	RawErr  string         `json:"raw_err"`
 }
 
-type JSONStdout struct {
-	Type     JSONStdoutType `json:"type"`
+type jsonStdout struct {
+	Type     jsonStdoutType `json:"type"`
 	Result   types.Result      `json:"result,omitempty"`
-	Error    *JSONStdErr    `json:"error,omitempty"`
-	Progress *Progress      `json:"progress,omitempty"`
+	Error    *jsonStdErr    `json:"error,omitempty"`
+	Progress *progressPayload `json:"progress,omitempty"`
 }
 
 // Progress related data  ----------------------------------------------------
 
-type ProgressType string
+type progressType string
 
 const (
-	ProgressTypeManifest ProgressType = "manifest"
-	ProgressTypeUpdate   ProgressType = "update"
-	ProgressTypeFinish   ProgressType = "finish"
+	progressTypeManifest progressType = "manifest"
+	progressTypeUpdate   progressType = "update"
+	progressTypeFinish   progressType = "finish"
 )
 
-type Progress struct {
-	Type     ProgressType           `json:"type"`
+type progressPayload struct {
+	Type     progressType           `json:"type"`
 	Manifest types.ProgressManifest `json:"manifest"`
 	Item     types.ProgressItem     `json:"item"`
 	Finish   types.ProgressFinish   `json:"finish"`

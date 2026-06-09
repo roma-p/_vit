@@ -9,6 +9,7 @@ import (
 
 type Client struct {
 	TreeIndexPool map[string]*TreeIndex
+	TreeCachePool map[string]*TreeCache
 	Logger        *slog.Logger
 }
 
@@ -17,7 +18,11 @@ func NewClient(
 	opctx *opcontext.OperationContext,
 	logger *slog.Logger,
 ) (*Client, error) {
-	ret := Client{TreeIndexPool: make(map[string]*TreeIndex), Logger: logger}
+	ret := Client{
+		TreeIndexPool: make(map[string]*TreeIndex),
+		TreeCachePool: make(map[string]*TreeCache),
+		Logger:        logger,
+	}
 
 	_, err := ret.GetTreeIndex(cxt, opctx, opctx.RepoPath)
 	if err != nil {
@@ -37,11 +42,30 @@ func (c *Client) GetTreeIndex(
 		return treeIndex, nil
 	}
 
-	treeIndex, err := GetTreeIndex(cxt, opctx, repoPath)
+	treeIndex, err := getTreeIndex(cxt, opctx, repoPath)
 	if err != nil {
 		return nil, err
 	}
 
 	c.TreeIndexPool[repoPath] = treeIndex
 	return treeIndex, nil
+}
+
+func (c *Client) GetTreeCache(
+	cxt context.Context,
+	opctx *opcontext.OperationContext,
+	repoPath string,
+) (*TreeCache, error) {
+	treeCache, ok := c.TreeCachePool[repoPath]
+	if ok {
+		return treeCache, nil
+	}
+
+	treeCache, err := getTreeCache(cxt, opctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+
+	c.TreeCachePool[repoPath] = treeCache
+	return treeCache, nil
 }

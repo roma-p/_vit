@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// CheckPathIsVitRepo checks if the given path contains a .vit directory.
-func CheckPathIsVitRepo(path string) bool {
+// checkPathIsVitRepo checks if the given path contains a .vit directory.
+func checkPathIsVitRepo(path string) bool {
 	info, err := os.Stat(filepath.Join(path, ".vit"))
 	if err != nil {
 		return false
@@ -36,7 +36,7 @@ func FindVitRepoFromPath(path string, ignoreNonExisting bool) (string, string, e
 		if currpath == string(filepath.Separator) || currpath == "." {
 			break
 		}
-		if CheckPathIsVitRepo(currpath) {
+		if checkPathIsVitRepo(currpath) {
 			var relativePath string
 			if absPath == currpath {
 				relativePath = ""

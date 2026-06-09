@@ -28,7 +28,7 @@ func (b *syncBuffer) String() string {
 
 func TestProgressBar_UpdateItem_InProgress(t *testing.T) {
 	var buf bytes.Buffer
-	pb := NewProgressBar("Copying", 3, &buf)
+	pb := newProgressBar("Copying", 3, &buf)
 
 	// Simulate partial progress on an item
 	pb.UpdateItem("file1.txt", 100, 50)
@@ -52,7 +52,7 @@ func TestProgressBar_UpdateItem_InProgress(t *testing.T) {
 
 func TestProgressBar_UpdateItem_Completed(t *testing.T) {
 	var buf bytes.Buffer
-	pb := NewProgressBar("Copying", 3, &buf)
+	pb := newProgressBar("Copying", 3, &buf)
 
 	// Complete an item (done >= size)
 	pb.UpdateItem("file1.txt", 100, 100)
@@ -74,7 +74,7 @@ func TestProgressBar_UpdateItem_Completed(t *testing.T) {
 
 func TestProgressBar_UpdateItem_MultipleItems(t *testing.T) {
 	var buf bytes.Buffer
-	pb := NewProgressBar("Copying", 3, &buf)
+	pb := newProgressBar("Copying", 3, &buf)
 
 	// Complete 3 items
 	pb.UpdateItem("file1.txt", 100, 100)
@@ -91,7 +91,7 @@ func TestProgressBar_UpdateItem_MultipleItems(t *testing.T) {
 
 func TestProgressBar_Done_WritesCompletionMessage(t *testing.T) {
 	var buf syncBuffer
-	pb := NewProgressBar("Copying", 2, &buf)
+	pb := newProgressBar("Copying", 2, &buf)
 
 	// Complete some items
 	pb.UpdateItem("file1.txt", 100, 100)
@@ -118,7 +118,7 @@ func TestProgressBar_Done_WritesCompletionMessage(t *testing.T) {
 
 func TestProgressBar_Display_ShowsProgress(t *testing.T) {
 	var buf syncBuffer
-	pb := NewProgressBar("Copying", 2, &buf)
+	pb := newProgressBar("Copying", 2, &buf)
 
 	pb.StartDisplay()
 
@@ -151,7 +151,7 @@ func TestProgressBar_Display_ShowsProgress(t *testing.T) {
 
 func TestProgressBar_ZeroTotalItems(t *testing.T) {
 	var buf syncBuffer
-	pb := NewProgressBar("Copying", 0, &buf)
+	pb := newProgressBar("Copying", 0, &buf)
 
 	pb.StartDisplay()
 
@@ -172,7 +172,7 @@ func TestProgressBar_ZeroTotalItems(t *testing.T) {
 
 func TestProgressBar_ConcurrentUpdates(t *testing.T) {
 	var buf syncBuffer
-	pb := NewProgressBar("Copying", 100, &buf)
+	pb := newProgressBar("Copying", 100, &buf)
 
 	pb.StartDisplay()
 

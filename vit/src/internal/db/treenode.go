@@ -40,17 +40,23 @@ const (
 
 type JSONTreeNode = fsutil.JSONHandler[TreeNode]
 
-func CreateNewJSONTreeNode(
+func (c *Client) createNewJSONTreeNode(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	name, parentID string,
+	repoPath, treePath, parentID string,
 	treeNodeType TreeNodeType,
 ) (*JSONTreeNode, error) {
+	name := filepath.Base(treePath)
+
+	treeIndex, err := c.GetTreeIndex(ctx, opctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
 	uid := fsutil.GenerateUID(16)
-	return fsutil.ResolveHandler(
+	ret, err := fsutil.ResolveHandler(
 		ctx,
 		opctx.JSONPool,
-		TreeNodeJSONPath(opctx.RepoPath, uid),
+		treeNodeJSONPath(opctx.RepoPath, uid),
 		true,
 		&TreeNode{
 			ID:       uid,
@@ -59,10 +65,16 @@ func CreateNewJSONTreeNode(
 			Type:     treeNodeType,
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	treeIndex.AddPath(treePath, uid, treeNodeType)
+
+	return ret, nil
 }
 
-// TODO(clean): why do we need a "found" bool?
-func (c *Client) ResolveJSONTreeNode(
+func (c *Client) resolveJSONTreeNode(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	repoPath, treeNodePath string,
@@ -73,12 +85,12 @@ func (c *Client) ResolveJSONTreeNode(
 		return nil, false, err
 	}
 
-	id, ok := treeIndex.PathToID[treeNodePath]
+	entry, ok := treeIndex.PathToID[treeNodePath]
 	if !ok {
 		return nil, false, nil
 	}
 
-	path := TreeNodeJSONPath(repoPath, id)
+	path := treeNodeJSONPath(repoPath, entry.Data)
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil, false, newTreeNodeNotFoundError(repoPath, treeNodePath, path)
@@ -87,7 +99,7 @@ func (c *Client) ResolveJSONTreeNode(
 	return ret, true, err
 }
 
-func TreeNodeJSONPath(repoPath, uid string) string {
+func treeNodeJSONPath(repoPath, uid string) string {
 	return filepath.Join(
 		repoPath,
 		".vit",

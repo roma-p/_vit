@@ -51,7 +51,7 @@ type Output struct {
 	Stderr   io.Writer
 	Logger   *slog.Logger
 	Option   OutputOpt
-	progress *ProgressBar
+	progress *progressBar
 }
 
 func NewOutput(opt OutputOpt) *Output {
@@ -74,17 +74,17 @@ func (o *Output) Process(cliResult types.Result, err error) int {
 func (o *Output) InitProgress(manifest types.ProgressManifest) {
 	if o.Option.JSON {
 		o.jsonToStd(
-			JSONStdout{
-				Type: JSONStdoutTypeProgess,
-				Progress: &Progress{
-					Type:     ProgressTypeManifest,
+			jsonStdout{
+				Type: jsonStdoutTypeProgess,
+				Progress: &progressPayload{
+					Type:     progressTypeManifest,
 					Manifest: manifest,
 				},
 			},
 			false,
 		)
 	} else {
-		o.progress = NewProgressBar(manifest.Operation, 0, o.Stderr)
+		o.progress = newProgressBar(manifest.Operation, 0, o.Stderr)
 		o.progress.StartDisplay()
 	}
 }
@@ -92,10 +92,10 @@ func (o *Output) InitProgress(manifest types.ProgressManifest) {
 func (o *Output) UpdateProgress(updatedItem types.ProgressItem) {
 	if o.Option.JSON {
 		o.jsonToStd(
-			JSONStdout{
-				Type: JSONStdoutTypeProgess,
-				Progress: &Progress{
-					Type: ProgressTypeUpdate,
+			jsonStdout{
+				Type: jsonStdoutTypeProgess,
+				Progress: &progressPayload{
+					Type: progressTypeUpdate,
 					Item: updatedItem,
 				},
 			},
@@ -111,10 +111,10 @@ func (o *Output) UpdateProgress(updatedItem types.ProgressItem) {
 func (o *Output) CloseProgress(progressFinish types.ProgressFinish) {
 	if o.Option.JSON {
 		o.jsonToStd(
-			JSONStdout{
-				Type: JSONStdoutTypeProgess,
-				Progress: &Progress{
-					Type:   ProgressTypeFinish,
+			jsonStdout{
+				Type: jsonStdoutTypeProgess,
+				Progress: &progressPayload{
+					Type:   progressTypeFinish,
 					Finish: progressFinish,
 				},
 			},
@@ -132,8 +132,8 @@ func (o *Output) CloseProgress(progressFinish types.ProgressFinish) {
 func (o *Output) processResult(cliResult types.Result) int {
 	if o.Option.JSON {
 		o.jsonToStd(
-			JSONStdout{
-				Type:   JSONStdoutTypeOutput,
+			jsonStdout{
+				Type:   jsonStdoutTypeOutput,
 				Result: cliResult,
 			},
 			false,
@@ -173,15 +173,15 @@ func (o *Output) logError(err error) {
 }
 
 func (o *Output) processErrorJSON(err error) {
-	jsonStdErr := JSONStdErr{}
+	jsonStdErr := jsonStdErr{}
 	var topErr *types.TopLevelError
 	if errors.As(err, &topErr) {
 		var vitErr *types.VitError
 		if errors.As(topErr.NestedErr, &vitErr) {
 			if vitErr.Internal {
-				jsonStdErr.Type = JSONStdErrInternal
+				jsonStdErr.Type = jsonStdErrInternal
 			} else {
-				jsonStdErr.Type = JSONStdErrStandard
+				jsonStdErr.Type = jsonStdErrStandard
 			}
 			jsonStdErr.Name = vitErr.Name
 			jsonStdErr.Message = vitErr.Message
@@ -190,17 +190,17 @@ func (o *Output) processErrorJSON(err error) {
 				jsonStdErr.RawErr = vitErr.NestedErr.Error()
 			}
 		} else {
-			jsonStdErr.Type = JSONStdErrUnexpected
+			jsonStdErr.Type = jsonStdErrUnexpected
 			jsonStdErr.RawErr = topErr.NestedErr.Error()
 		}
 	} else {
-		jsonStdErr.Type = JSONStdErrUnexpected
+		jsonStdErr.Type = jsonStdErrUnexpected
 		jsonStdErr.RawErr = err.Error()
 	}
 
 	o.jsonToStd(
-		JSONStdout{
-			Type:  JSONStdoutTypeError,
+		jsonStdout{
+			Type:  jsonStdoutTypeError,
 			Error: &jsonStdErr,
 		},
 		false,
@@ -241,7 +241,7 @@ func (o *Output) HumanReadableToStd(lines []string, stderr bool) {
 	}
 }
 
-func (o *Output) jsonToStd(jsonStdout JSONStdout, stderr bool) {
+func (o *Output) jsonToStd(jsonStdout jsonStdout, stderr bool) {
 	jsonData, err := json.Marshal(jsonStdout)
 	if err != nil {
 		o.Logger.Error("failed to marshal JSON output", "error", err)

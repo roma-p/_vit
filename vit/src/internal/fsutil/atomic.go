@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-// SyncDir syncs a directory to ensure the directory entry
+// syncDir syncs a directory to ensure the directory entry
 // is persisted to disk (important for NFS).
-func SyncDir(dir string) error {
+func syncDir(dir string) error {
 	f, err := os.Open(dir)
 	if err != nil {
 		return err
@@ -62,7 +62,7 @@ func WriteFileAtomic(filename string, mode os.FileMode, write func(f *os.File) e
 	}
 
 	// Flush directory entry so NFS clients see the new file.
-	_ = SyncDir(dir)
+	_ = syncDir(dir)
 
 	return nil
 }

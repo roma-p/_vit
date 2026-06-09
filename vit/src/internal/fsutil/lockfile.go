@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	LockAcquireTimeout = 60 * time.Second
+	lockAcquireTimeout = 60 * time.Second
 	keepaliveInterval  = 2 * time.Second
 	initialBackoff     = 50 * time.Millisecond
 	maxBackoff         = 1 * time.Second
@@ -22,7 +22,7 @@ const (
 func AcquireExclusiveLock(ctx context.Context, lockPath string) (string, error) {
 	lockDir := lockDirPath(lockPath)
 
-	ctx, cancel := context.WithTimeout(ctx, LockAcquireTimeout)
+	ctx, cancel := context.WithTimeout(ctx, lockAcquireTimeout)
 	defer cancel()
 
 	cleanOrphanedLock(lockDir)
@@ -124,7 +124,7 @@ func WithExclusiveLock(ctx context.Context, lockPath string, operation func() er
 func WaitForLockRelease(ctx context.Context, lockPath string) error {
 	lockDir := lockDirPath(lockPath)
 
-	ctx, cancel := context.WithTimeout(ctx, LockAcquireTimeout)
+	ctx, cancel := context.WithTimeout(ctx, lockAcquireTimeout)
 	defer cancel()
 
 	backoff := initialBackoff
@@ -138,7 +138,7 @@ func WaitForLockRelease(ctx context.Context, lockPath string) error {
 		}
 
 		// Orphaned lock — clean it and we're done.
-		if time.Since(info.ModTime()) > LockAcquireTimeout {
+		if time.Since(info.ModTime()) > lockAcquireTimeout {
 			_ = os.Remove(lockDir)
 			return nil
 		}
@@ -157,7 +157,7 @@ func cleanOrphanedLock(lockDir string) {
 	if err != nil {
 		return
 	}
-	if time.Since(info.ModTime()) > LockAcquireTimeout {
+	if time.Since(info.ModTime()) > lockAcquireTimeout {
 		_ = os.Remove(lockDir)
 	}
 }

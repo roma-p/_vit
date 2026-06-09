@@ -11,16 +11,16 @@ import (
 //go:embed python_api_template.txt
 var pythonAPITemplate string
 
-type PythonMethod struct {
+type pythonMethod struct {
 	PythonName  string // e.g. : "init", "handle_add", "handle_push"
 	Description string
 	Usage       string
 	CmdParts    []string // e.g. : ["handle", "add"]
-	Params      []PythonParam
-	ResultType  *PythonResultType
+	Params      []pythonParam
+	ResultType  *pythonResultType
 }
 
-type PythonParam struct {
+type pythonParam struct {
 	Name         string
 	Type         string // Python type: "str", "bool"
 	Default      string // Python default value
@@ -31,20 +31,20 @@ type PythonParam struct {
 	ParamDoc     string
 }
 
-type PythonResultType struct {
+type pythonResultType struct {
 	TypeName string // e.g., "AddResult", "InitResult"
-	Fields   []PythonResultField
+	Fields   []pythonResultField
 }
 
-type PythonResultField struct {
+type pythonResultField struct {
 	Name       string // Field name (Python)
 	JSONName   string // JSON tag name
 	PythonType string // Python type annotation
 }
 
-type PythonAPIData struct {
-	Methods           []PythonMethod
-	UniqueResultTypes []*PythonResultType
+type pythonAPIData struct {
+	Methods           []pythonMethod
+	UniqueResultTypes []*pythonResultType
 }
 
 // goTypeToPython maps go types to python types.
@@ -72,7 +72,7 @@ func goTypeToPython(t reflect.Type) string {
 }
 
 // extractResultType extracts Python type information from a Go ResultType using reflection
-func extractResultType(resultType any) *PythonResultType {
+func extractResultType(resultType any) *pythonResultType {
 	if resultType == nil {
 		return nil
 	}
@@ -83,7 +83,7 @@ func extractResultType(resultType any) *PythonResultType {
 	}
 
 	typeName := t.Name()
-	fields := []PythonResultField{}
+	fields := []pythonResultField{}
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
@@ -96,14 +96,14 @@ func extractResultType(resultType any) *PythonResultType {
 		}
 		jsonName := strings.Split(jsonTag, ",")[0]
 		pythonType := goTypeToPython(field.Type)
-		fields = append(fields, PythonResultField{
+		fields = append(fields, pythonResultField{
 			Name:       field.Name,
 			JSONName:   jsonName,
 			PythonType: pythonType,
 		})
 	}
 
-	return &PythonResultType{
+	return &pythonResultType{
 		TypeName: typeName,
 		Fields:   fields,
 	}
@@ -111,9 +111,9 @@ func extractResultType(resultType any) *PythonResultType {
 
 // GenPythonAPI generates a Python API file from the command tree
 func (c *CmdTree) GenPythonAPI(outputPath string) error {
-	data := PythonAPIData{
-		Methods:           []PythonMethod{},
-		UniqueResultTypes: []*PythonResultType{},
+	data := pythonAPIData{
+		Methods:           []pythonMethod{},
+		UniqueResultTypes: []*pythonResultType{},
 	}
 
 	c.collectMethods("", []string{}, &data.Methods)
@@ -148,18 +148,18 @@ func (c *CmdTree) GenPythonAPI(outputPath string) error {
 	return os.Chmod(outputPath, 0o755)
 }
 
-func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, methods *[]PythonMethod) {
-	method := PythonMethod{
+func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, methods *[]pythonMethod) {
+	method := pythonMethod{
 		PythonName:  pythonName,
 		Description: c.Description,
 		CmdParts:    cmdParts,
-		Params:      []PythonParam{},
+		Params:      []pythonParam{},
 		ResultType:  extractResultType(c.ResultType),
 	}
 
 	// Add positional parameters (required)
 	for _, posArg := range c.ArgParser.PosArgs {
-		method.Params = append(method.Params, PythonParam{
+		method.Params = append(method.Params, pythonParam{
 			Name:         posArg,
 			Type:         "str",
 			Optional:     false,
@@ -171,7 +171,7 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 
 	// Add optional positional parameters
 	for _, optArg := range c.ArgParser.OptionalPosArgs {
-		method.Params = append(method.Params, PythonParam{
+		method.Params = append(method.Params, pythonParam{
 			Name:         optArg,
 			Type:         "Optional[str]",
 			Default:      "None",
@@ -194,7 +194,7 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 		switch flagDef.flagType {
 		// TODO(cli): implement other types... int !
 		case "bool":
-			method.Params = append(method.Params, PythonParam{
+			method.Params = append(method.Params, pythonParam{
 				Name:     pythonFlagName,
 				Type:     "bool",
 				Default:  "False",
@@ -204,7 +204,7 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 				ParamDoc: flagDef.usage,
 			})
 		case "string":
-			method.Params = append(method.Params, PythonParam{
+			method.Params = append(method.Params, pythonParam{
 				Name:     pythonFlagName,
 				Type:     "Optional[str]",
 				Default:  "None",
@@ -220,7 +220,7 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 }
 
 // collectMethods recursively walks the command tree and collects Python methods
-func (c *CmdTree) collectMethods(pythonName string, cmdParts []string, methods *[]PythonMethod) {
+func (c *CmdTree) collectMethods(pythonName string, cmdParts []string, methods *[]pythonMethod) {
 	if c.NoPyAPI {
 		return
 	}

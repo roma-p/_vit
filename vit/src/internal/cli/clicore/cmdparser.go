@@ -92,7 +92,7 @@ func (a *CmdParser) Parse(args []string) *UsageError {
 
 	// Parse flags FIRST so they're available even if there's a usage error
 	if err := a.FlagSet.Parse(flagArgs); err != nil {
-		return NewUsageError(a.Name, args, ErrInvalidFlags, err)
+		return NewUsageError(a.Name, args, errInvalidFlags, err)
 	}
 
 	// Calculate total possible positional args (required + optional)
@@ -100,9 +100,9 @@ func (a *CmdParser) Parse(args []string) *UsageError {
 
 	// Validate positional args
 	if len(posArgs) < len(a.PosArgs) {
-		return NewUsageError(a.Name, args, ErrNotEnoughPositionalArgs, nil)
+		return NewUsageError(a.Name, args, errNotEnoughPositionalArgs, nil)
 	} else if len(posArgs) > totalPosArgs {
-		return NewUsageError(a.Name, args, ErrTooMuchPositionalArgs, nil)
+		return NewUsageError(a.Name, args, errTooMuchPositionalArgs, nil)
 	}
 
 	// Map positional args (required + optional)
