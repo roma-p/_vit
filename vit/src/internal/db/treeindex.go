@@ -69,7 +69,10 @@ func isTreeCacheToRebuild(
 	}
 
 	// 2. otherwise: check for cache staleness OR missing tree index / cache
+	return isTreeCacheStale(repoPath)
+}
 
+func isTreeCacheStale(repoPath string) (bool, error) {
 	stalePath := pathTreeStale(repoPath)
 	indexPath := pathTreeIndex(repoPath)
 	assetListPath := pathAssetList(repoPath)
@@ -92,6 +95,7 @@ func isTreeCacheToRebuild(
 // buildTreeIndexAndCache rebuild TreeIndex and TreeCache and write them on disk
 // as well as returning an in-memory version of them.
 // For now the rebuild mechanism is very naive: it scan the entire database.
+// TODO(cache): incremental rebuild of cache?
 func buildTreeIndexAndCache(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
@@ -102,6 +106,23 @@ func buildTreeIndexAndCache(
 		return nil, nil, err
 	}
 	defer stopFunc()
+
+	// Double-check after acquiring lock: another process may have rebuilt while we waited.
+	doRebuild, err := isTreeCacheStale(repoPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !doRebuild {
+		idx, err := fsutil.NewJSONHandlerFromFile[TreeIndex](pathTreeIndex(repoPath))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read tree index after rebuild: %w", err)
+		}
+		cache, err := fsutil.NewJSONHandlerFromFile[TreeCache](pathAssetList(repoPath))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read tree cache after rebuild: %w", err)
+		}
+		return idx.Data, cache.Data, nil
+	}
 
 	treeIndex := NewTreeIndex()
 	treeCache := &TreeCache{}
@@ -202,8 +223,6 @@ func reccBuildIDToPath(
 
 type IDToTreeNode = map[string]TreeNode
 
-// scanAllTreeNodeFiles returns the paths of every JSON file under .vit/tree/.
-// Files are stored as .vit/tree/<id[:2]>/<id[2:]>.json.
 func scanAllTreeNodeFiles(repoPath string) ([]string, error) {
 	treeDir := filepath.Join(repoPath, ".vit", "tree")
 
