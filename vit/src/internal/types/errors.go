@@ -15,6 +15,8 @@ func NewTopLevelError(commandName string, nestedErr error) *TopLevelError {
 	}
 }
 
+func (e *TopLevelError) Unwrap() error { return e.NestedErr }
+
 func (e *TopLevelError) Error() string {
 	return fmt.Sprintf(
 		"error %s:: %s",
@@ -64,6 +66,8 @@ func NewInternalVitError(name string, nestedErr error, message []string, extra [
 	}
 }
 
+func (e *VitError) Unwrap() error { return e.NestedErr }
+
 func (e *VitError) Error() string {
 	s := fmt.Sprintf("error %s %s %s",
 		e.Name,
@@ -99,6 +103,8 @@ type CancelledError struct {
 func NewCancelledError(nestedErr error) *CancelledError {
 	return &CancelledError{NestedErr: nestedErr}
 }
+
+func (e *CancelledError) Unwrap() error { return e.NestedErr }
 
 func (e *CancelledError) Error() string {
 	return "Operation cancelled: " + e.NestedErr.Error()
