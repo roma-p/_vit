@@ -16,15 +16,17 @@ type Asset struct {
 }
 
 type AssetCommit struct {
-	PayloadSize  int64                       `json:"size"`
-	PayloadFile  string                      `json:"file"`
-	PayloadHash  string                      `json:"hash"`
-	Author       string                      `json:"author"`
-	Timestamp    time.Time                   `json:"timestamp"`
-	Message      string                      `json:"message,omitempty"`
-	Parent       string                      `json:"parent,omitempty"`
-	Dependencies map[string]*AssetDependency `json:"dependencies,omitempty"`
+	PayloadSize  int64             `json:"size"`
+	PayloadFile  string            `json:"file"`
+	PayloadHash  string            `json:"hash"`
+	Author       string            `json:"author"`
+	Timestamp    time.Time         `json:"timestamp"`
+	Message      string            `json:"message,omitempty"`
+	Parent       string            `json:"parent,omitempty"`
+	Dependencies AssetDependencies `json:"dependencies,omitempty"`
 }
+
+type AssetDependencies = map[string]*AssetDependency
 
 type AssetDependency struct {
 	Type   *AssetDependencyType `json:"type"`

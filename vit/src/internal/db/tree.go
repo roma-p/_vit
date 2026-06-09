@@ -48,8 +48,10 @@ func (c *Client) GetJSONAssetFromRef(
 func (c *Client) AddAssetToTree(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	repoPath string,
-	treePath string,
+	repoPath, treePath string,
+	branchName string,
+	blobFirstCommit, blobBranch, blobHash string,
+	blobSize int,
 ) (*JSONAsset, error) {
 	closestPath, err := c.isAssetPathAvailable(ctx, opctx, repoPath, treePath)
 	if err != nil {
@@ -57,7 +59,32 @@ func (c *Client) AddAssetToTree(
 	}
 
 	// TODO(db): look for orphan node tree (and then authorize rewrite for them)
-	treeNode, err := c.createPackageSubDir(ctx, opctx, repoPath, treePath, closestPath)
+	asset, err := createNewJSONAsset(ctx, opctx, repoPath, treePath)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := initAsset(
+		ctx, opctx,
+		asset.Data,
+		branchName,
+		blobFirstCommit, blobBranch,
+		blobHash, blobSize); err != nil {
+		return nil, err
+	}
+
+	if _, err := c.createAssetTreeNode(
+		ctx, opctx,
+		repoPath, treePath, closestPath,
+		asset.Data.AssetUID); err != nil {
+		return nil, err
+	}
+
+	if err := opctx.JSONPool.WriteHandler(asset); err != nil {
+		return nil, err
+	}
+
+	return asset, nil
 }
 
 func (c *Client) isAssetPathAvailable(
@@ -91,10 +118,10 @@ func (c *Client) isAssetPathAvailable(
 	return closer, nil
 }
 
-func (c *Client) createPackageSubDir(
+func (c *Client) createAssetTreeNode(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	repoPath, treePath, fromPath string,
+	repoPath, treePath, fromPath, assetID string,
 ) (*JSONTreeNode, error) {
 	treeIndex, err := c.GetTreeIndex(ctx, opctx, repoPath)
 	if err != nil {
@@ -105,6 +132,10 @@ func (c *Client) createPackageSubDir(
 	subPath = strings.TrimPrefix(subPath, "/") // TODO(windows)
 
 	subDirs := strings.Split(subPath, "/") // TODO(windows)
+
+	if len(subDirs) == 0 {
+		return nil, nil
+	}
 
 	currDir := fromPath
 	var parentID string
@@ -121,7 +152,7 @@ func (c *Client) createPackageSubDir(
 
 	var jsonHandlerBuffer []*JSONTreeNode
 
-	for _, d := range subDirs {
+	for _, d := range subDirs[:len(subDirs)-1] {
 		currDir = filepath.Join(currDir, d) // TODO(windows)
 		jsonTreeNode, err := c.createNewJSONTreeNode(
 			ctx, opctx, repoPath,
@@ -136,17 +167,22 @@ func (c *Client) createPackageSubDir(
 		parentID = jsonTreeNode.Data.ID
 	}
 
+	ret, err := c.createNewJSONTreeNode(ctx, opctx, repoPath, treePath, parentID, TreeNodeTypeAsset)
+	if err != nil {
+		return nil, err
+	}
+	ret.Data.AssetID = assetID
+
+	jsonHandlerBuffer = append(jsonHandlerBuffer, ret)
 	for _, h := range jsonHandlerBuffer {
 		if err := opctx.JSONPool.WriteHandler(h); err != nil {
 			return nil, err
 		}
 	}
 
-	if len(jsonHandlerBuffer) == 0 {
-		return nil, nil
-	} else {
-		return jsonHandlerBuffer[len(jsonHandlerBuffer)-1], nil
-	}
+	MarkTreeStale(repoPath)
+
+	return ret, nil
 }
 
 func newErrTreeNodeIsDir(repoPath, treePath string) error {

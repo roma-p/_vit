@@ -53,11 +53,36 @@ func resolveJSONAsset(
 	return ret, true, nil
 }
 
-// func initAsset(
-// 	asset *types.Asset,
-//
-// ) {
-// }
+func initAsset(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	asset *types.Asset,
+	branchName string,
+	blobFirstCommit, blobBranch, blobHash string,
+	blobSize int,
+) error {
+	commitFirst := types.AssetCommit{
+		PayloadSize: int64(blobSize),
+		PayloadFile: blobFirstCommit,
+		PayloadHash: blobHash,
+		Author:      opctx.User,
+		Message:     "Asset creation",
+		Timestamp:   opctx.TimeStamp,
+		Parent:      "",
+	}
+
+	commitID, err := AddCommit(asset, &commitFirst)
+	if err != nil {
+		return err
+	}
+
+	err = AddBranch(asset, commitID, branchName, opctx.User, blobBranch)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 // AddCommit adds a commit to the asset and returns the generated commit ID.
 func AddCommit(a *types.Asset, commit *types.AssetCommit) (string, error) {
@@ -98,19 +123,6 @@ func AddBranch(a *types.Asset, commitID, branchName, author, payloadfile string)
 		return err
 	}
 
-	var dependencies map[string]*types.AssetDependency
-	if len(commitFrom.Dependencies) > 0 {
-		dependencies = make(map[string]*types.AssetDependency, len(commitFrom.Dependencies))
-		for k, v := range commitFrom.Dependencies {
-			cp := *v
-			if v.Ref != nil {
-				refCp := *v.Ref
-				cp.Ref = &refCp
-			}
-			dependencies[k] = &cp
-		}
-	}
-
 	commitBranch := types.AssetCommit{
 		PayloadSize:  commitFrom.PayloadSize,
 		PayloadFile:  payloadfile,
@@ -118,11 +130,27 @@ func AddBranch(a *types.Asset, commitID, branchName, author, payloadfile string)
 		Author:       author,
 		Message:      "",
 		Parent:       commitID,
-		Dependencies: dependencies,
+		Dependencies: *deepCopyDependencies(&commitFrom.Dependencies),
 	}
 
 	a.Branches[branchName] = &commitBranch
 	return nil
+}
+
+func deepCopyDependencies(src *types.AssetDependencies) *types.AssetDependencies {
+	var ret types.AssetDependencies
+	if len(*src) > 0 {
+		ret = make(types.AssetDependencies, len(*src))
+		for k, v := range *src {
+			cp := *v
+			if v.Ref != nil {
+				refCp := *v.Ref
+				cp.Ref = &refCp
+			}
+			ret[k] = &cp
+		}
+	}
+	return &ret
 }
 
 func pathJSONAsset(repoPath, assetUID string) string {
