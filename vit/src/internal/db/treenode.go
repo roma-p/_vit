@@ -98,7 +98,7 @@ func TreeNodeJSONPath(repoPath, uid string) string {
 
 func newTreeNodeNotFoundError(repoPath, treePath, expectedPath string) error {
 	fullPath := filepath.Join(repoPath, treePath)
-	return types.NewStandardError(
+	return types.NewVitError(
 		types.ErrDBTreeNodeNotFound,
 		[]string{fmt.Sprintf("tree node not found for: %s at %s", fullPath, expectedPath)},
 		[]any{"repoPath", repoPath, "treeNode", treePath, "treeNodePath", expectedPath},

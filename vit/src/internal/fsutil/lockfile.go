@@ -169,7 +169,7 @@ func lockDirPath(lockPath string) string {
 }
 
 func newErrLockAcquireTimeout(ctx context.Context, lockPath string, attempts int) error {
-	return types.NewStandardError(
+	return types.NewVitError(
 		types.ErrLockAcquireTimeout,
 		[]string{
 			fmt.Sprintf("timeout acquiring lock on %s after %d attempts: %s",

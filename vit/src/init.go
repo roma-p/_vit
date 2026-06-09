@@ -79,7 +79,7 @@ func (c *Client) InitRepo(ctx context.Context, path string) (*types.StringResult
 func newRepoInitFailed(path string, message []string, extra []any) error {
 	_extra := []any{"path", path}
 	_extra = append(_extra, extra...)
-	return types.NewTopLevelErrorWithStandardError(
+	return types.NewTopLevelErrorWith(
 		string(types.CommandInit),
 		types.ErrRepoInitFailed,
 		message,

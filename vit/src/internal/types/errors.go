@@ -23,7 +23,7 @@ func (e *TopLevelError) Error() string {
 	)
 }
 
-func NewTopLevelErrorWithStandardError(
+func NewTopLevelErrorWith(
 	commandName string,
 	errorName string,
 	errorMessage []string,
@@ -31,56 +31,49 @@ func NewTopLevelErrorWithStandardError(
 ) error {
 	return NewTopLevelError(
 		commandName,
-		NewStandardError(errorName, errorMessage, extra),
+		NewVitError(errorName, errorMessage, extra),
 	)
 }
 
-func NewTopLevelErrorWithInternalError(commandName string, err error, message string) error {
-	return NewTopLevelError(
-		commandName,
-		NewInternalError(err, message),
-	)
+// VitError represents a structured error — both expected (standard) and
+// unexpected (internal) conditions. When Internal is true, NestedErr carries
+// the underlying Go error.
+type VitError struct {
+	Internal  bool
+	Name      string
+	Message   []string // -> will go to stderr as human readable message.
+	Extra     []any    // -> will be used as key/value to slog structured logging.
+	NestedErr error    // non-nil for internal errors
 }
 
-// StandardError represents an expected error condition with structured information.
-type StandardError struct {
-	Name    string
-	Message []string // -> will go to stderr as human readable message.
-	Extra   []any    // -> will be used as key/value to slog structured logging.
-}
-
-func NewStandardError(name string, message []string, extra []any) *StandardError {
-	return &StandardError{
+func NewVitError(name string, message []string, extra []any) *VitError {
+	return &VitError{
 		Name:    name,
 		Message: message,
 		Extra:   extra,
 	}
 }
 
-func (e *StandardError) Error() string {
-	return fmt.Sprintf(
-		"error %s %s %s",
+func NewInternalVitError(name string, nestedErr error, message []string, extra []any) *VitError {
+	return &VitError{
+		Internal:  true,
+		Name:      name,
+		Message:   message,
+		Extra:     extra,
+		NestedErr: nestedErr,
+	}
+}
+
+func (e *VitError) Error() string {
+	s := fmt.Sprintf("error %s %s %s",
 		e.Name,
 		linearizeStringSlice(e.Message),
 		linearizeAndStringifyAnySlice(e.Extra),
 	)
-}
-
-// InternalError is a thin wrapper around unexpected errors we don't handle specifically.
-type InternalError struct {
-	NestedErr error
-	Message   string
-}
-
-func NewInternalError(nestedErr error, message string) *InternalError {
-	return &InternalError{
-		NestedErr: nestedErr,
-		Message:   message,
+	if e.NestedErr != nil {
+		s += fmt.Sprintf(" cause: %s", e.NestedErr.Error())
 	}
-}
-
-func (e *InternalError) Error() string {
-	return e.NestedErr.Error()
+	return s
 }
 
 func linearizeStringSlice(messages []string) string {

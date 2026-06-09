@@ -54,13 +54,12 @@ func pathJSONAsset(repoPath, assetUID string) string {
 	)
 }
 
-// TODO(error): internal + standard shall be the same struct with an extra flag. internal shall have extra
 func newAssetObjectIndexNotFound(repoPath, assetPath, uid string) error {
 	fullPath := filepath.Join(repoPath, assetPath)
-	return types.NewStandardError( // TODO(error) make this internal !!
+	return types.NewInternalVitError(
 		types.ErrDBAssetObjectIndexNotFound,
+		nil,
 		[]string{fmt.Sprintf("asset object index not found for %s at: %s", fullPath, uid)},
-		// TODO: func should accept assetPath for logging...
 		[]any{"repoPath", repoPath, "assetPath", assetPath, "assetUID", uid},
 	)
 }

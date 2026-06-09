@@ -173,7 +173,7 @@ func (r *Ref) AbsolutePath() string {
 }
 
 func newErrInvalidRef(path string) error {
-	return NewStandardError(
+	return NewVitError(
 		ErrInvalidRef,
 		[]string{fmt.Sprintf("not a valid ref path %s", path)},
 		[]any{"refPath", path},

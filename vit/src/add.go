@@ -52,7 +52,7 @@ func addExtToAssetPath(assetPath, src string) string {
 }
 
 func newSourceNotFoundErr(assetPath, src string) error {
-	return types.NewStandardError(
+	return types.NewVitError(
 		types.ErrFileNotFound,
 		[]string{fmt.Sprintf("can't create asset '%s': source not found: '%s'", assetPath, src)},
 		[]any{"assetPath", assetPath, "src", src},

@@ -157,18 +157,19 @@ func (o *Output) processError(err error) int {
 
 func (o *Output) logError(err error) {
 	var topErr *types.TopLevelError
-	if errors.As(err, &topErr) {
-		o.Logger.Error("failure", "command", "vit."+topErr.CommandName)
-		var standardErr *types.StandardError
-		var internalErr *types.InternalError
+	if !errors.As(err, &topErr) {
+		return
+	}
+	o.Logger.Error("failure", "command", "vit."+topErr.CommandName)
 
-		if errors.As(topErr.NestedErr, &standardErr) {
-			o.Logger.Error(standardErr.Name, standardErr.Extra...)
-		} else if errors.As(topErr.NestedErr, &internalErr) {
-			o.Logger.Error("InternalError", "message", internalErr.Message, "error", internalErr.NestedErr.Error())
-		} else {
-			o.Logger.Error("UnexpectedError", "error", topErr.NestedErr.Error())
+	var vitErr *types.VitError
+	if errors.As(topErr.NestedErr, &vitErr) {
+		o.Logger.Error(vitErr.Name, vitErr.Extra...)
+		if vitErr.NestedErr != nil {
+			o.Logger.Error("cause", "error", vitErr.NestedErr.Error())
 		}
+	} else {
+		o.Logger.Error("UnexpectedError", "error", topErr.NestedErr.Error())
 	}
 }
 
@@ -176,17 +177,19 @@ func (o *Output) processErrorJSON(err error) {
 	jsonStdErr := JSONStdErr{}
 	var topErr *types.TopLevelError
 	if errors.As(err, &topErr) {
-		var standardErr *types.StandardError
-		var internalErr *types.InternalError
-		if errors.As(topErr.NestedErr, &standardErr) {
-			jsonStdErr.Type = JSONStdErrStandard
-			jsonStdErr.Name = standardErr.Name
-			jsonStdErr.Message = standardErr.Message
-			jsonStdErr.Extra = standardErr.Extra
-		} else if errors.As(topErr.NestedErr, &internalErr) {
-			jsonStdErr.Type = JSONStdErrInternal
-			jsonStdErr.Message = []string{internalErr.Message}
-			jsonStdErr.RawErr = internalErr.Error()
+		var vitErr *types.VitError
+		if errors.As(topErr.NestedErr, &vitErr) {
+			if vitErr.Internal {
+				jsonStdErr.Type = JSONStdErrInternal
+			} else {
+				jsonStdErr.Type = JSONStdErrStandard
+			}
+			jsonStdErr.Name = vitErr.Name
+			jsonStdErr.Message = vitErr.Message
+			jsonStdErr.Extra = vitErr.Extra
+			if vitErr.NestedErr != nil {
+				jsonStdErr.RawErr = vitErr.NestedErr.Error()
+			}
 		} else {
 			jsonStdErr.Type = JSONStdErrUnexpected
 			jsonStdErr.RawErr = topErr.NestedErr.Error()
@@ -208,13 +211,10 @@ func (o *Output) processErrorJSON(err error) {
 func (o *Output) processErrorHumanReadable(err error) {
 	var topErr *types.TopLevelError
 	if errors.As(err, &topErr) {
-		var standardErr *types.StandardError
-		var internalErr *types.InternalError
-		if errors.As(topErr.NestedErr, &standardErr) {
-			messages := append(standardErr.Message, fmt.Sprintf("[%s]", standardErr.Name))
+		var vitErr *types.VitError
+		if errors.As(topErr.NestedErr, &vitErr) {
+			messages := append(vitErr.Message, fmt.Sprintf("[%s]", vitErr.Name))
 			o.HumanReadableToStd(messages, true)
-		} else if errors.As(topErr.NestedErr, &internalErr) {
-			o.HumanReadableToStd([]string{internalErr.Message}, true)
 		} else {
 			o.HumanReadableToStd([]string{topErr.NestedErr.Error()}, true)
 		}
