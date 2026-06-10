@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"vit/internal/fsutil"
 	"vit/internal/opcontext"
@@ -153,11 +152,11 @@ func deepCopyDependencies(src *types.AssetDependencies) *types.AssetDependencies
 }
 
 func pathJSONAsset(repoPath, assetUID string) string {
-	return filepath.Join(repoPath, ".vit", "assets", assetUID[:2], assetUID[2:]+".json")
+	return fsutil.PathOS(repoPath, ".vit", "assets", assetUID[:2], assetUID[2:]+".json")
 }
 
 func newErrObjectIndexNotFound(repoPath, assetPath, uid string) error {
-	fullPath := filepath.Join(repoPath, assetPath)
+	fullPath := fsutil.PathOS(repoPath, assetPath)
 	return types.NewInternalVitError(
 		types.ErrDBInternal,
 		nil,

@@ -3,7 +3,6 @@ package fsutil
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -23,7 +22,8 @@ func syncDir(dir string) error {
 // (but that is not entrerly true on nfs)
 // Creates parent directories if needed.
 func WriteFileAtomic(filename string, mode os.FileMode, write func(f *os.File) error) error {
-	dir := filepath.Dir(filename)
+	filename = PathOS(filename)
+	dir := DirOS(filename)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
@@ -70,9 +70,10 @@ func WriteFileAtomic(filename string, mode os.FileMode, write func(f *os.File) e
 // RemoveFileAtomic removes a file by first renaming it to a temp name,
 // then deleting. This avoids a window where the path is half-deleted.
 func RemoveFileAtomic(filename string) error {
-	dir := filepath.Dir(filename)
-	base := filepath.Base(filename)
-	tmpFile := filepath.Join(dir, fmt.Sprintf(".%s.tmp.%d", base, time.Now().UnixNano()))
+	filename = PathOS(filename)
+	dir := DirOS(filename)
+	base := BaseOS(filename)
+	tmpFile := PathOS(dir, fmt.Sprintf(".%s.tmp.%d", base, time.Now().UnixNano()))
 
 	if err := os.Rename(filename, tmpFile); err != nil {
 		return fmt.Errorf("failed to move file to temp location: %w", err)

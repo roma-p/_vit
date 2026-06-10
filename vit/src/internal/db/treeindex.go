@@ -10,12 +10,15 @@ import (
 	"vit/internal/opcontext"
 )
 
+// NOTE: filepath.WalkDir is used raw in scanAllTreeNodeFiles — no wrapper needed for Walk.
+
 type TreeIndex struct {
 	IDToPath map[string]TreeIndexEntry `json:"id_to_path"`
 	PathToID map[string]TreeIndexEntry `json:"path_to_id"`
 }
 
 func (t *TreeIndex) AddPath(path, uid string, treeNodeType TreeNodeType) {
+	path = fsutil.PathInternal(path)
 	t.IDToPath[uid] = TreeIndexEntry{Data: path, Type: treeNodeType}
 	t.PathToID[path] = TreeIndexEntry{Data: uid, Type: treeNodeType}
 }
@@ -243,7 +246,7 @@ func reccBuildIDToPath(
 	// checking if by any chance, the parent node has already been handled
 	// to avoid too much repetitive recursion.
 	if entry, ok := treeIndex.IDToPath[uid]; ok {
-		return filepath.Join(entry.Data, path), nil
+		return fsutil.PathInternal(entry.Data, path), nil
 	}
 
 	treeNode, ok := (*idToTreeNode)[uid]
@@ -258,13 +261,13 @@ func reccBuildIDToPath(
 
 	treeIndex.IDToPath[uid] = TreeIndexEntry{Data: parentPath, Type: treeNode.Type}
 	treeIndex.PathToID[parentPath] = TreeIndexEntry{Data: uid, Type: treeNode.Type}
-	return filepath.Join(parentPath, path), nil
+	return fsutil.PathInternal(parentPath, path), nil
 }
 
 type IDToTreeNode = map[string]TreeNode
 
 func scanAllTreeNodeFiles(repoPath string) ([]string, error) {
-	treeDir := filepath.Join(repoPath, ".vit", "tree")
+	treeDir := fsutil.PathOS(repoPath, ".vit", "tree")
 
 	if _, err := os.Stat(treeDir); os.IsNotExist(err) {
 		return nil, nil
@@ -276,7 +279,7 @@ func scanAllTreeNodeFiles(repoPath string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || filepath.Ext(path) != ".json" {
+		if d.IsDir() || fsutil.ExtOS(path) != ".json" {
 			return nil
 		}
 		paths = append(paths, path)
@@ -290,17 +293,17 @@ func scanAllTreeNodeFiles(repoPath string) ([]string, error) {
 }
 
 func pathTreeIndex(repoPath string) string {
-	return filepath.Join(repoPath, ".vit", "cache", "tree_index.json")
+	return fsutil.PathOS(repoPath, ".vit", "cache", "tree_index.json")
 }
 
 func pathAssetList(repoPath string) string {
-	return filepath.Join(repoPath, ".vit", "cache", "asset_list.json")
+	return fsutil.PathOS(repoPath, ".vit", "cache", "asset_list.json")
 }
 
 func pathTreeStale(repoPath string) string {
-	return filepath.Join(repoPath, ".vit", "cache", ".tree_stale")
+	return fsutil.PathOS(repoPath, ".vit", "cache", ".tree_stale")
 }
 
 func pathTreeRebuild(repoPath string) string {
-	return filepath.Join(repoPath, ".vit", "cache", ".tree_rebuild")
+	return fsutil.PathOS(repoPath, ".vit", "cache", ".tree_rebuild")
 }

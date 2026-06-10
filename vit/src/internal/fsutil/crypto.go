@@ -24,6 +24,7 @@ func GenerateUID(byteLength int) string {
 
 // HashFile returns the SHA256 hash and size of a file.
 func HashFile(path string) (hash string, size int64, err error) {
+	path = PathOS(path)
 	f, err := os.Open(path)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to open file for hashing: %w", err)
@@ -45,6 +46,7 @@ func HashFile(path string) (hash string, size int64, err error) {
 
 // HashDir returns a hash of a directory's contents and its total size.
 func HashDir(path string) (hash string, size int64, err error) {
+	path = PathOS(path)
 	realPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to resolve symlink %s: %w", path, err)
@@ -70,7 +72,7 @@ func dirSize(path string) (int64, error) {
 		return 0, err
 	}
 	for _, entry := range entries {
-		p := filepath.Join(path, entry.Name())
+		p := PathOS(path, entry.Name())
 		if entry.IsDir() {
 			sub, err := dirSize(p)
 			if err != nil {

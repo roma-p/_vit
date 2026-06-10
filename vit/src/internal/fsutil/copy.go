@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"vit/internal/types"
 )
@@ -14,6 +13,8 @@ import (
 // with exclusive locking and progress reporting.
 // Read the file twice: Pass 1: hash + size. Pass 2: copy with progress via temp file + rename.
 func CopyFile(ctx context.Context, src, dst string, progress *CopyProgress) (hash string, size int64, err error) {
+	src = PathOS(src)
+	dst = PathOS(dst)
 	if progress == nil {
 		panic("BUG: CopyFile received an empty progress!")
 	}
@@ -43,6 +44,8 @@ func CopyFile(ctx context.Context, src, dst string, progress *CopyProgress) (has
 
 // CopyDir does the same as CopyFile but with a directory.
 func CopyDir(ctx context.Context, src, dst string, progress *CopyProgress) (hash string, size int64, err error) {
+	src = PathOS(src)
+	dst = PathOS(dst)
 	if progress == nil {
 		panic("BUG: CopyFile received an empty progress!")
 	}
@@ -63,7 +66,7 @@ func CopyDir(ctx context.Context, src, dst string, progress *CopyProgress) (hash
 	defer func() { progress.close(err == nil) }()
 
 	// Pass 2: copy to temp dir, then atomic rename
-	dstParent := filepath.Dir(dst)
+	dstParent := DirOS(dst)
 	tmpDir, err := os.MkdirTemp(dstParent, ".copy-tmp-*")
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to create temp dir: %w", err)
@@ -147,7 +150,7 @@ func copyFileAtomic(src, dst string, size int64, progress *CopyProgress) error {
 		return err
 	}
 
-	progress.updateFile(filepath.Base(src), int(size))
+	progress.updateFile(BaseOS(src), int(size))
 
 	return WriteFileAtomic(dst, srcInfo.Mode(), func(f *os.File) error {
 		reader := &progressReader{reader: srcFile, progress: progress}
@@ -172,8 +175,8 @@ func copyDirContents(src, dst string, progress *CopyProgress) error {
 	}
 
 	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
+		srcPath := PathOS(src, entry.Name())
+		dstPath := PathOS(dst, entry.Name())
 
 		if entry.IsDir() {
 			if err := copyDirContents(srcPath, dstPath, progress); err != nil {

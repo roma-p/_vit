@@ -3,9 +3,9 @@ package transaction
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"vit/internal/fsutil"
 	"vit/internal/types"
 )
 
@@ -56,7 +56,7 @@ func validateEdit(repoPath string, refs []*types.Ref) error {
 }
 
 func scanExistingTransactions(repoPath string) ([]TransactionID, error) {
-	transactionDir := filepath.Join(repoPath, ".vit", "transaction")
+	transactionDir := fsutil.PathOS(repoPath, ".vit", "transaction")
 
 	entries, err := os.ReadDir(transactionDir)
 	if err != nil {

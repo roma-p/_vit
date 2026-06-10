@@ -3,7 +3,6 @@ package transaction
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"time"
 
 	"vit/internal/fsutil"
@@ -91,8 +90,8 @@ func withTransaction(
 	validate func() error,
 	operation func() error,
 ) error {
-	lockPath := filepath.Join(repoPath, ".vit", "transaction.lock")
-	transactionDir := filepath.Join(repoPath, ".vit", "transaction")
+	lockPath := fsutil.PathOS(repoPath, ".vit", "transaction.lock")
+	transactionDir := fsutil.PathOS(repoPath, ".vit", "transaction")
 
 	var transactionFiles []string
 
@@ -109,7 +108,7 @@ func withTransaction(
 		}
 
 		for _, tid := range tids {
-			f := filepath.Join(transactionDir, tid.Encode())
+			f := fsutil.PathOS(transactionDir, tid.Encode())
 			transactionFiles = append(transactionFiles, f)
 			err := fsutil.NewJSONHandlerFromPath(f, &transactionPayload{
 				AssetPath: tid.Ref.AssetPath,
@@ -177,7 +176,7 @@ func cleanOrphanedTransactions(transactionDir string) {
 		if entry.IsDir() {
 			continue
 		}
-		path := filepath.Join(transactionDir, entry.Name())
+		path := fsutil.PathOS(transactionDir, entry.Name())
 		info, err := os.Stat(path)
 		if err != nil {
 			continue

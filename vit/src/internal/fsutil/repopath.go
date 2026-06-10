@@ -7,9 +7,10 @@ import (
 	"strings"
 )
 
+
 // checkPathIsVitRepo checks if the given path contains a .vit directory.
-func checkPathIsVitRepo(path string) bool {
-	info, err := os.Stat(filepath.Join(path, ".vit"))
+func checkPathIsVitRepo(p string) bool {
+	info, err := os.Stat(PathOS(p, ".vit"))
 	if err != nil {
 		return false
 	}
@@ -26,7 +27,7 @@ func FindVitRepoFromPath(path string, ignoreNonExisting bool) (string, string, e
 		}
 	}
 
-	absPath, err := filepath.Abs(path)
+	absPath, err := AbsOS(path)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get absolute path: %s: %w", path, err)
 	}
@@ -42,10 +43,11 @@ func FindVitRepoFromPath(path string, ignoreNonExisting bool) (string, string, e
 				relativePath = ""
 			} else {
 				relativePath = strings.TrimPrefix(absPath, currpath+string(filepath.Separator))
+				relativePath = PathInternal(relativePath)
 			}
 			return currpath, relativePath, nil
 		}
-		currpath = filepath.Dir(currpath)
+		currpath = DirOS(currpath)
 	}
 
 	return "", "", fmt.Errorf("no vit repo path found from: %s", path)

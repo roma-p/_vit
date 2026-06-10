@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"vit/internal/fsutil"
 	"vit/internal/types"
@@ -29,7 +28,7 @@ func (c *Client) InitRepo(ctx context.Context, path string) (*types.StringResult
 	}
 
 	// Check if parent directory exists
-	parentDir := filepath.Dir(path)
+	parentDir := fsutil.DirOS(path)
 	if _, err := os.Stat(parentDir); os.IsNotExist(err) {
 		return nil, newRepoInitFailed(
 			path,
@@ -52,13 +51,13 @@ func (c *Client) InitRepo(ctx context.Context, path string) (*types.StringResult
 	}
 
 	dirs := []string{
-		filepath.Join(path, ".vit", "tree"),
-		filepath.Join(path, ".vit", "cache"),
-		filepath.Join(path, ".vit", "assets"),
-		filepath.Join(path, ".vit", "blob"),
-		filepath.Join(path, ".vit", "workspace"),
-		filepath.Join(path, ".vit", "attrs"),
-		filepath.Join(path, ".vit", "transaction"),
+		fsutil.PathOS(path, ".vit", "tree"),
+		fsutil.PathOS(path, ".vit", "cache"),
+		fsutil.PathOS(path, ".vit", "assets"),
+		fsutil.PathOS(path, ".vit", "blob"),
+		fsutil.PathOS(path, ".vit", "workspace"),
+		fsutil.PathOS(path, ".vit", "attrs"),
+		fsutil.PathOS(path, ".vit", "transaction"),
 	}
 
 	for _, dir := range dirs {

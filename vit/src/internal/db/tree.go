@@ -3,9 +3,9 @@ package db
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
+	"vit/internal/fsutil"
 	"vit/internal/opcontext"
 	"vit/internal/types"
 )
@@ -52,7 +52,8 @@ func (c *Client) AddAssetToTree(
 	blobFirstCommit, blobBranch, blobHash string,
 	blobSize int,
 ) (*JSONAsset, error) {
-	closestPath, err := c.isAssetPathAvailable(ctx, opctx, repoPath, treePath)
+	treePath = fsutil.PathInternal(treePath)
+	closestPath, err := c.IsAssetPathAvailable(ctx, opctx, repoPath, treePath)
 	if err != nil {
 		return nil, err
 	}
@@ -85,12 +86,13 @@ func (c *Client) AddAssetToTree(
 	return asset, nil
 }
 
-func (c *Client) isAssetPathAvailable(
+func (c *Client) IsAssetPathAvailable(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	repoPath string,
 	treePath string,
 ) (string, error) {
+	treePath = fsutil.PathInternal(treePath)
 	treeIndex, err := c.GetTreeIndex(ctx, opctx, repoPath)
 	if err != nil {
 		return "", err
@@ -103,7 +105,7 @@ func (c *Client) isAssetPathAvailable(
 
 	closer := ""
 	for p, e := range treeIndex.PathToID {
-		if strings.HasPrefix(treePath, p+"/") { // TODO(windows): how to handle windows path here?
+		if strings.HasPrefix(treePath, p+"/") {
 			if e.Type == TreeNodeTypeAsset {
 				return "", newErrTreePathNotAvailableWithinAsset(repoPath, treePath, p)
 			}
@@ -127,9 +129,9 @@ func (c *Client) createAssetTreeNode(
 	}
 
 	subPath := strings.TrimPrefix(treePath, fromPath)
-	subPath = strings.TrimPrefix(subPath, "/") // TODO(windows)
+	subPath = strings.TrimPrefix(subPath, "/")
 
-	subDirs := strings.Split(subPath, "/") // TODO(windows)
+	subDirs := strings.Split(subPath, "/")
 
 	if len(subDirs) == 0 {
 		return nil, nil
@@ -151,7 +153,7 @@ func (c *Client) createAssetTreeNode(
 	var jsonHandlerBuffer []*JSONTreeNode
 
 	for _, d := range subDirs[:len(subDirs)-1] {
-		currDir = filepath.Join(currDir, d) // TODO(windows)
+		currDir = fsutil.PathInternal(currDir, d)
 		jsonTreeNode, err := c.createNewJSONTreeNode(
 			ctx, opctx, repoPath,
 			currDir, parentID, TreeNodeTypeDir,
@@ -184,7 +186,7 @@ func (c *Client) createAssetTreeNode(
 }
 
 func newErrTreeNodeIsDir(repoPath, treePath string) error {
-	fullPath := filepath.Join(repoPath, treePath)
+	fullPath := fsutil.PathOS(repoPath, treePath)
 	return types.NewVitError(
 		types.ErrDBTreeNode,
 		[]string{fmt.Sprintf("path %s point to a directory, not an asset.", fullPath)},
@@ -193,7 +195,7 @@ func newErrTreeNodeIsDir(repoPath, treePath string) error {
 }
 
 func newErrTreeNodeAssetNotFound(repoPath, treePath string) error {
-	fullPath := filepath.Join(repoPath, treePath)
+	fullPath := fsutil.PathOS(repoPath, treePath)
 	return types.NewVitError(
 		types.ErrDBTreeNode,
 		[]string{fmt.Sprintf("asset not found at: %s", fullPath)},
@@ -203,7 +205,7 @@ func newErrTreeNodeAssetNotFound(repoPath, treePath string) error {
 
 // TODO(error): maybe unforce that first item of extra has to be "error", and second a string.
 func newErrTreePathNotAvailable(repoPath, treePath string) error {
-	fullPath := filepath.Join(repoPath, treePath)
+	fullPath := fsutil.PathOS(repoPath, treePath)
 	return types.NewVitError(
 		types.ErrDBTreeNode,
 		[]string{fmt.Sprintf("tree path not available: %s", fullPath)},
@@ -212,8 +214,8 @@ func newErrTreePathNotAvailable(repoPath, treePath string) error {
 }
 
 func newErrTreePathNotAvailableWithinAsset(repoPath, treePath, existingAssetPath string) error {
-	fullPath1 := filepath.Join(repoPath, treePath)
-	fullPath2 := filepath.Join(repoPath, existingAssetPath)
+	fullPath1 := fsutil.PathOS(repoPath, treePath)
+	fullPath2 := fsutil.PathOS(repoPath, existingAssetPath)
 	return types.NewVitError(
 		types.ErrDBTreeNode,
 		[]string{

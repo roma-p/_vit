@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"vit/internal/types"
@@ -20,6 +19,7 @@ const (
 // AcquireExclusiveLock acquires an exclusive lock using os.Mkdir (atomic on NFS).
 // Returns the lock directory path for later release via ReleaseExclusiveLock.
 func AcquireExclusiveLock(ctx context.Context, lockPath string) (string, error) {
+	lockPath = PathOS(lockPath)
 	lockDir := lockDirPath(lockPath)
 
 	ctx, cancel := context.WithTimeout(ctx, LockAcquireTimeout)
@@ -39,7 +39,7 @@ func AcquireExclusiveLock(ctx context.Context, lockPath string) (string, error) 
 		}
 
 		if !os.IsExist(err) {
-			if mkErr := os.MkdirAll(filepath.Dir(lockDir), 0o755); mkErr != nil {
+			if mkErr := os.MkdirAll(DirOS(lockDir), 0o755); mkErr != nil {
 				return "", fmt.Errorf("failed to create parent directory for lock: %w", mkErr)
 			}
 			if err2 := os.Mkdir(lockDir, 0o755); err2 == nil {
@@ -122,6 +122,7 @@ func WithExclusiveLock(ctx context.Context, lockPath string, operation func() er
 // Returns immediately if the lock doesn't exist.
 // Cleans orphaned locks (stale mtime) and returns immediately after cleanup.
 func WaitForLockRelease(ctx context.Context, lockPath string) error {
+	lockPath = PathOS(lockPath)
 	lockDir := lockDirPath(lockPath)
 
 	ctx, cancel := context.WithTimeout(ctx, LockAcquireTimeout)
@@ -163,9 +164,9 @@ func cleanOrphanedLock(lockDir string) {
 }
 
 func lockDirPath(lockPath string) string {
-	dir := filepath.Dir(lockPath)
-	base := filepath.Base(lockPath)
-	return filepath.Join(dir, "."+base+".lock")
+	dir := DirOS(lockPath)
+	base := BaseOS(lockPath)
+	return PathOS(dir, "."+base+".lock")
 }
 
 func newErrLockAcquireTimeout(ctx context.Context, lockPath string, attempts int) error {

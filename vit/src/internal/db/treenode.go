@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"vit/internal/fsutil"
 	"vit/internal/opcontext"
@@ -46,7 +45,7 @@ func (c *Client) createNewJSONTreeNode(
 	repoPath, treePath, parentID string,
 	treeNodeType TreeNodeType,
 ) (*JSONTreeNode, error) {
-	name := filepath.Base(treePath)
+	name := fsutil.BaseInternal(treePath)
 
 	treeIndex, err := c.GetTreeIndex(ctx, opctx, repoPath)
 	if err != nil {
@@ -100,17 +99,11 @@ func (c *Client) resolveJSONTreeNode(
 }
 
 func treeNodeJSONPath(repoPath, uid string) string {
-	return filepath.Join(
-		repoPath,
-		".vit",
-		"tree",
-		uid[:2],
-		uid[2:]+".json",
-	)
+	return fsutil.PathOS(repoPath, ".vit", "tree", uid[:2], uid[2:]+".json")
 }
 
 func newTreeNodeNotFoundError(repoPath, treePath, expectedPath string) error {
-	fullPath := filepath.Join(repoPath, treePath)
+	fullPath := fsutil.PathOS(repoPath, treePath)
 	return types.NewVitError(
 		types.ErrDBTreeNode,
 		[]string{fmt.Sprintf("tree node not found for: %s at %s", fullPath, expectedPath)},
