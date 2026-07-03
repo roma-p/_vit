@@ -16,7 +16,7 @@ func runGenPy(ctx context.Context, client *vit.Client, argParser *clicore.CmdPar
 
 	err := rootCmd.GenPythonAPI(outputPath)
 	if err != nil {
-		return nil, types.NewTopLevelError("genpy", err)
+		return nil, err
 	}
 	return &types.EmptyResult{}, nil
 }

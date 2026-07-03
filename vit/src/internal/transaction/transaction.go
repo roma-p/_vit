@@ -19,7 +19,7 @@ func (t *activeTransaction) finish() {
 		t.stop()
 	}
 	for _, f := range t.files {
-		_ = os.Remove(f)
+		_ = os.Remove(f) // TODO(fsutil) atomic remove
 	}
 }
 
@@ -32,6 +32,7 @@ func WithTransactionTreeChanged(
 	command types.VitCommand,
 	user string,
 	timestamp time.Time,
+	extraValidate func() error,
 	operation func() error,
 ) error {
 	tids := make([]TransactionID, len(assetPaths))
@@ -39,7 +40,12 @@ func WithTransactionTreeChanged(
 		tids[i] = newTransactionID(TransactionTreeChanged, types.NewRefEmpty(repoPath, p))
 	}
 	return withTransaction(ctx, repoPath, tids, command, user, timestamp,
-		func() error { return validateTreeChanged(repoPath, assetPaths) },
+		func() error {
+			if err := validateTreeChanged(repoPath, assetPaths); err != nil {
+				return err
+			}
+			return extraValidate()
+		},
 		operation,
 	)
 }
@@ -54,6 +60,7 @@ func WithTransactionEdit(
 	command types.VitCommand,
 	user string,
 	timestamp time.Time,
+	extraValidate func() error,
 	operation func() error,
 ) error {
 	tids := make([]TransactionID, len(refs))
@@ -61,7 +68,12 @@ func WithTransactionEdit(
 		tids[i] = newTransactionID(op, r)
 	}
 	return withTransaction(ctx, repoPath, tids, command, user, timestamp,
-		func() error { return validateEdit(repoPath, refs) },
+		func() error {
+			if err := validateEdit(repoPath, refs); err != nil {
+				return err
+			}
+			return extraValidate()
+		},
 		operation,
 	)
 }

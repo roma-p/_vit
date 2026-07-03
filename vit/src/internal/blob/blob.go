@@ -20,13 +20,12 @@ type BlobMetadata struct {
 func InitAsset(
 	ctx context.Context,
 	repoPath, assetPath, src string,
-	ref *types.Ref,
 	user string,
 	timestamp time.Time,
 	progress types.ProgressWriter,
 ) (commitPath, branchPath string, meta *BlobMetadata, err error) {
 	commitPath = commitBlobPath(repoPath, assetPath, timestamp)
-	branchPath = branchBlobPath(repoPath, assetPath, ref.BranchName)
+	branchPath = branchBlobPath(repoPath, assetPath, types.DefaultBranchName)
 
 	// 1. Copy source → commit blob
 	hash, size, err := copyToBlob(ctx, src, commitPath, progress)
@@ -37,6 +36,7 @@ func InitAsset(
 	meta = &BlobMetadata{Size: size, Hash: hash}
 
 	// 2. Write manifest next to commit blob
+	ref := types.NewRefBranch(repoPath, assetPath, types.DefaultBranchName)
 	if err := writeManifest(commitPath, ref, user, timestamp, nil); err != nil {
 		return "", "", nil, err
 	}

@@ -44,6 +44,11 @@ func HashFile(path string) (hash string, size int64, err error) {
 	return hex.EncodeToString(hasher.Sum(nil)), info.Size(), nil
 }
 
+func HashBytes(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
 // HashDir returns a hash of a directory's contents and its total size.
 func HashDir(path string) (hash string, size int64, err error) {
 	path = PathOS(path)

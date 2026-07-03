@@ -58,6 +58,9 @@ func Main() int {
 	}
 
 	cliResult, err := findRet.CmdFunc(ctx, client, subcmdparser)
+	if err != nil {
+		err = clicore.NewCliError(findRet.CmdName, err)
+	}
 	client.Dispose()
 	return output.Process(cliResult, err)
 }

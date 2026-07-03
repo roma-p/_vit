@@ -2,41 +2,6 @@ package types
 
 import "fmt"
 
-// TopLevelError wraps command-level errors with context about which command failed.
-type TopLevelError struct {
-	CommandName string
-	NestedErr   error
-}
-
-func NewTopLevelError(commandName string, nestedErr error) *TopLevelError {
-	return &TopLevelError{
-		CommandName: commandName,
-		NestedErr:   nestedErr,
-	}
-}
-
-func (e *TopLevelError) Unwrap() error { return e.NestedErr }
-
-func (e *TopLevelError) Error() string {
-	return fmt.Sprintf(
-		"error %s:: %s",
-		e.CommandName,
-		e.NestedErr.Error(),
-	)
-}
-
-func NewTopLevelErrorWith(
-	commandName string,
-	errorName string,
-	errorMessage []string,
-	extra []any,
-) error {
-	return NewTopLevelError(
-		commandName,
-		NewVitError(errorName, errorMessage, extra),
-	)
-}
-
 // VitError represents a structured error — both expected (standard) and
 // unexpected (internal) conditions. When Internal is true, NestedErr carries
 // the underlying Go error.

@@ -62,7 +62,7 @@ func getTreeIndex(
 	} else {
 		handler, err := fsutil.NewJSONHandlerFromFile[TreeIndex](pathTreeIndex(repoPath))
 		if err != nil {
-			return nil, fmt.Errorf("failed to read tree index: %w", err)
+			return nil, newErrDBInternal(err, "failed to read tree index")
 		}
 		return handler.Data, nil
 	}
@@ -87,7 +87,7 @@ func getTreeCache(
 	} else {
 		handler, err := fsutil.NewJSONHandlerFromFile[TreeCache](pathAssetList(repoPath))
 		if err != nil {
-			return nil, fmt.Errorf("failed to read tree index: %w", err)
+			return nil, newErrDBInternal(err, "failed to read tree cache")
 		}
 		return handler.Data, nil
 	}
@@ -157,11 +157,11 @@ func buildTreeIndexAndCache(
 	if !doRebuild {
 		idx, err := fsutil.NewJSONHandlerFromFile[TreeIndex](pathTreeIndex(repoPath))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read tree index after rebuild: %w", err)
+			return nil, nil, newErrDBInternal(err, "failed to read tree index after rebuild")
 		}
 		cache, err := fsutil.NewJSONHandlerFromFile[TreeCache](pathAssetList(repoPath))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read tree cache after rebuild: %w", err)
+			return nil, nil, newErrDBInternal(err, "failed to read tree cache after rebuild")
 		}
 		return idx.Data, cache.Data, nil
 	}
@@ -221,12 +221,12 @@ func buildTreeIndexAndCache(
 	// 5. Write to disk.
 	indexPath := pathTreeIndex(repoPath)
 	if err := fsutil.NewJSONHandlerFromPath(indexPath, treeIndex).Write(); err != nil {
-		return nil, nil, fmt.Errorf("failed to write tree index: %w", err)
+		return nil, nil, newErrDBInternal(err, "failed to write tree index")
 	}
 
 	cachePath := pathAssetList(repoPath)
 	if err := fsutil.NewJSONHandlerFromPath(cachePath, treeCache).Write(); err != nil {
-		return nil, nil, fmt.Errorf("failed to write tree cache: %w", err)
+		return nil, nil, newErrDBInternal(err, "failed to write tree cache")
 	}
 
 	os.Remove(pathTreeStale(repoPath))
@@ -251,7 +251,7 @@ func reccBuildIDToPath(
 
 	treeNode, ok := (*idToTreeNode)[uid]
 	if !ok {
-		return "", fmt.Errorf("no parent path found for %s", path)
+		return "", newErrDBInternal(nil, fmt.Sprintf("no parent path found for %s", path))
 	}
 
 	parentPath, err := reccBuildIDToPath(idToTreeNode, treeIndex, treeNode.Name, treeNode.ParentID)
@@ -286,7 +286,7 @@ func scanAllTreeNodeFiles(repoPath string) ([]string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan tree directory: %w", err)
+		return nil, newErrDBInternal(err, "failed to scan tree directory")
 	}
 
 	return paths, nil

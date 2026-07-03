@@ -1,7 +1,5 @@
 package types
 
-const DefaultBranchName = "base" // neither main nor master.
-
 const (
 	ErrLockAcquireTimeout = "LockAcquireTimeout"
 
@@ -17,4 +15,5 @@ const (
 	ErrAssetObjectAlreadyExists = "AssetObjectAlreadyExists"
 
 	ErrTransactionConflict = "TransactionConflict"
+	ErrTransactionFailed   = "TransactionFailed"
 )

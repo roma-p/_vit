@@ -21,6 +21,13 @@ var cmdDefinition = clicore.CmdTree{
 			ArgParser:   clicore.NewArgParser("init", []string{"path"}, []string{}),
 			ResultType:  types.StringResult{},
 		},
+		"add": {
+			Name:        "Add",
+			Description: "Add a new asset to repository",
+			Run:         runAdd,
+			ArgParser:   buildAddArgParser(),
+			ResultType:  types.StringResult{},
+		},
 		"dev": {
 			Name:        "Dev",
 			Description: "Developer and internal commands",

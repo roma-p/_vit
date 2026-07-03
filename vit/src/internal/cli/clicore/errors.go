@@ -1,9 +1,26 @@
-
 package clicore
 
 import (
 	"fmt"
 )
+
+type CliError struct {
+	CommandName string
+	NestedErr   error
+}
+
+func NewCliError(commandName string, nestedErr error) *CliError {
+	return &CliError{
+		CommandName: commandName,
+		NestedErr:   nestedErr,
+	}
+}
+
+func (e *CliError) Unwrap() error { return e.NestedErr }
+
+func (e *CliError) Error() string {
+	return fmt.Sprintf("error %s:: %s", e.CommandName, e.NestedErr.Error())
+}
 
 type UsageErrorType string
 

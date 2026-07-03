@@ -24,6 +24,7 @@ func NewOperationContext(ctx context.Context, fullAssetPath string) (*OperationC
 		return nil, "", types.NewCancelledError(err)
 	}
 
+	fullAssetPath = fsutil.PathInternal(fullAssetPath)
 	repoPath, assetPath, err := fsutil.FindVitRepoFromPath(fullAssetPath, true)
 	if err != nil {
 		return nil, "", err

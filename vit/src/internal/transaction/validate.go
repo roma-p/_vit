@@ -63,7 +63,7 @@ func scanExistingTransactions(repoPath string) ([]TransactionID, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to read transaction directory: %w", err)
+		return nil, types.NewInternalVitError(types.ErrTransactionFailed, err, []string{"failed to read transaction directory"}, nil)
 	}
 
 	var tids []TransactionID

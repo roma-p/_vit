@@ -154,7 +154,7 @@ func (o *Output) processError(err error) int {
 }
 
 func (o *Output) logError(err error) {
-	var topErr *types.TopLevelError
+	var topErr *CliError
 	if !errors.As(err, &topErr) {
 		return
 	}
@@ -173,7 +173,7 @@ func (o *Output) logError(err error) {
 
 func (o *Output) processErrorJSON(err error) {
 	jsonStdErr := jsonStdErr{}
-	var topErr *types.TopLevelError
+	var topErr *CliError
 	if errors.As(err, &topErr) {
 		var vitErr *types.VitError
 		if errors.As(topErr.NestedErr, &vitErr) {
@@ -207,7 +207,7 @@ func (o *Output) processErrorJSON(err error) {
 }
 
 func (o *Output) processErrorHumanReadable(err error) {
-	var topErr *types.TopLevelError
+	var topErr *CliError
 	if errors.As(err, &topErr) {
 		var vitErr *types.VitError
 		if errors.As(topErr.NestedErr, &vitErr) {

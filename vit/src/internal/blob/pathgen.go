@@ -12,7 +12,7 @@ import (
 // Format: .vit/blob/<asset>/commits/<name>-<timestamp><ext>
 func commitBlobPath(repoPath, assetPath string, timestamp time.Time) string {
 	name, ext := splitNameExt(assetPath)
-	filename := fmt.Sprintf("%s-%s%s", name, formatTimestamp(timestamp), ext)
+	filename := fmt.Sprintf("%s-%s%s", name, fsutil.FormatTimestamp(timestamp), ext)
 	return fsutil.PathOS(repoPath, ".vit", "blob", assetPath, "commits", filename)
 }
 
@@ -34,8 +34,4 @@ func splitNameExt(assetPath string) (name, ext string) {
 	ext = fsutil.ExtInternal(base)
 	name = strings.TrimSuffix(base, ext)
 	return name, ext
-}
-
-func formatTimestamp(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15-04-05")
 }

@@ -53,14 +53,13 @@ func resolveJSONAsset(
 }
 
 func initAsset(
-	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	asset *types.Asset,
 	blobFirstCommit, blobBranch, blobHash string,
-	blobSize int,
+	blobSize int64,
 ) error {
 	commitFirst := types.AssetCommit{
-		PayloadSize: int64(blobSize),
+		PayloadSize: blobSize,
 		PayloadFile: blobFirstCommit,
 		PayloadHash: blobHash,
 		Author:      opctx.User,

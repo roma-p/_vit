@@ -5,7 +5,12 @@ import (
 	"log/slog"
 
 	"vit/internal/opcontext"
+	"vit/internal/types"
 )
+
+func newErrDBInternal(nestedErr error, message string) error {
+	return types.NewInternalVitError(types.ErrDBInternal, nestedErr, []string{message}, nil)
+}
 
 type Client struct {
 	TreeIndexPool map[string]*TreeIndex
