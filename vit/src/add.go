@@ -13,22 +13,21 @@ import (
 	"vit/internal/types"
 )
 
+// TOOD: full path in asset! no, internal rel to repoPath
+
 func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, types.NewCancelledError(err)
 	}
 
-	src = fsutil.PathOS(src)
 	assetPath = fsutil.PathOS(assetPath)
 
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return nil, newSourceNotFoundErr(assetPath, src)
-	}
-	isDir := srcInfo.IsDir()
-
-	if !isDir {
-		assetPath = addExtToAssetPath(assetPath, src)
+	if src != "" {
+		src = fsutil.PathOS(src)
+		_, err := os.Stat(src)
+		if err != nil {
+			return nil, newSourceNotFoundErr(assetPath, src)
+		}
 	}
 
 	c.logger.Info("AddAsset", "assetPath", assetPath, "src", src)
@@ -36,7 +35,7 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 	var pathbranch string
 	_ = pathbranch
 
-	err = opcontext.WithOperationContext(ctx, assetPath, func(
+	err := opcontext.WithOperationContext(ctx, assetPath, func(
 		opctx *opcontext.OperationContext,
 		assetPath string, // assetPath is internal here.
 	) error {
@@ -47,7 +46,7 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 			return err
 		}
 
-		op := newOperationAdd(opctx.RepoPath, assetPath, src, isDir)
+		op := newOperationAdd(opctx.RepoPath, assetPath, src)
 
 		return transaction.WithTransactionTreeChanged(
 			ctx,
@@ -92,23 +91,20 @@ type operationAdd struct {
 	RepoPath  string
 	AssetPath string
 	Src       string
-	IsDir     bool
 
 	// filled at Validate
 	ClosestPathFound string
 
 	// filled at BlobUpdate
-	BlobPathFirstCommit string
-	BlobPathBranch      string
-	BlobMeta            *blob.BlobMetadata
+	BlobPathBranch string
+	ContentNodeUID string
 }
 
-func newOperationAdd(repoPath, assetPath, src string, isDir bool) *operationAdd {
+func newOperationAdd(repoPath, assetPath, src string) *operationAdd {
 	return &operationAdd{
 		RepoPath:  repoPath,
 		AssetPath: assetPath,
 		Src:       src,
-		IsDir:     isDir,
 	}
 }
 
@@ -132,7 +128,7 @@ func (o *operationAdd) BlobUpdate(
 	c *Client,
 ) error {
 	var err error
-	o.BlobPathFirstCommit, o.BlobPathBranch, o.BlobMeta, err = blob.InitAsset(
+	o.BlobPathBranch, o.ContentNodeUID, err = blob.InitAsset(
 		ctx,
 		o.RepoPath,
 		o.AssetPath,
@@ -152,7 +148,7 @@ func (o *operationAdd) DBUpdate(
 	jsonAsset, err := dbClient.AddAssetToTree(
 		ctx, opctx,
 		o.RepoPath, o.AssetPath,
-		o.BlobPathFirstCommit, o.BlobPathBranch, o.BlobMeta.Hash, o.BlobMeta.Size,
+		o.BlobPathBranch, o.ContentNodeUID,
 	)
 	if err != nil {
 		return err

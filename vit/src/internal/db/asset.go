@@ -55,17 +55,14 @@ func resolveJSONAsset(
 func initAsset(
 	opctx *opcontext.OperationContext,
 	asset *types.Asset,
-	blobFirstCommit, blobBranch, blobHash string,
-	blobSize int64,
+	blobBranch, contentRootID string,
 ) error {
 	commitFirst := types.AssetCommit{
-		PayloadSize: blobSize,
-		PayloadFile: blobFirstCommit,
-		PayloadHash: blobHash,
-		Author:      opctx.User,
-		Message:     "Asset creation",
-		Timestamp:   opctx.TimeStamp,
-		Parent:      "",
+		Author:    opctx.User,
+		Message:   "Asset creation",
+		Timestamp: opctx.TimeStamp,
+		Parent:    "",
+		Content:   contentRootID,
 	}
 
 	commitID, err := AddCommit(asset, &commitFirst)
@@ -121,9 +118,7 @@ func AddBranch(a *types.Asset, commitID, branchName, author, payloadfile string)
 	}
 
 	commitBranch := types.AssetCommit{
-		PayloadSize:  commitFrom.PayloadSize,
-		PayloadFile:  payloadfile,
-		PayloadHash:  commitFrom.PayloadHash,
+		Content:      payloadfile,
 		Author:       author,
 		Message:      "",
 		Parent:       commitID,

@@ -9,8 +9,7 @@ import (
 )
 
 func buildAddArgParser() *clicore.CmdParser {
-	ret := clicore.NewArgParser("add", []string{"assetPath", "src"}, []string{})
-	ret.Bool("d", false, "Will create a directory instead of a file. Not needed if src is a directory")
+	ret := clicore.NewArgParser("add", []string{"assetPath"}, []string{"src"})
 	return ret
 }
 
@@ -19,6 +18,5 @@ func runAdd(ctx context.Context, client *vit.Client, argParser *clicore.CmdParse
 		ctx,
 		argParser.GetArg("assetPath"),
 		argParser.GetArg("src"),
-		// *argParser.GetFlag("d").(*bool),
 	)
 }

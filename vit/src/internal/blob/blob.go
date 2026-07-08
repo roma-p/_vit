@@ -9,10 +9,10 @@ import (
 	"vit/internal/types"
 )
 
-type BlobMetadata struct {
-	Size int64
-	Hash string
-}
+// TOOD:
+// --> 1. copy dir
+// --> 2. init tree content from dir
+// --> 3. init tree content from dir
 
 // InitAsset copies the source file into the blob store for a new asset.
 // Creates both the immutable commit blob and the mutable branch blob.
@@ -23,34 +23,46 @@ func InitAsset(
 	user string,
 	timestamp time.Time,
 	progress types.ProgressWriter,
-) (commitPath, branchPath string, meta *BlobMetadata, err error) {
-	commitPath = commitBlobPath(repoPath, assetPath, timestamp)
-	branchPath = branchBlobPath(repoPath, assetPath, types.DefaultBranchName)
+) (branchContent, commitContentNodeUID string, err error) {
+	commitPath := commitBlobPath(repoPath, assetPath, timestamp)
+	branchPath := branchBlobPath(repoPath, assetPath, types.DefaultBranchName)
 
 	// 1. Copy source → commit blob
-	hash, size, err := copyToBlob(ctx, src, commitPath, progress)
+	_, _, err = copyToBlob(ctx, src, commitPath, progress)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", err
 	}
-
-	meta = &BlobMetadata{Size: size, Hash: hash}
 
 	// 2. Write manifest next to commit blob
 	ref := types.NewRefBranch(repoPath, assetPath, types.DefaultBranchName)
+
+	// TODO: manifest with all the files (inlcuding those who are not there)
+	// and a small "sparesfile" bool to knwo at a glance if there is everything or not.
 	if err := writeManifest(commitPath, ref, user, timestamp, nil); err != nil {
-		return "", "", nil, err
+		return "", "", err
 	}
 
 	// 3. Full copy commit blob → branch blob (artist's mutable working copy)
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return "", "", nil, err
-	}
-	if err := copyCommitToBranch(ctx, commitPath, branchPath, srcInfo.IsDir(), progress); err != nil {
-		return "", "", nil, err
+	if err := copyCommitToBranch(ctx, commitPath, branchPath, progress); err != nil {
+		return "", "", err
 	}
 
-	return commitPath, branchPath, meta, nil
+	rootUID, err := initAssetContentBlob(repoPath, assetPath, commitPath)
+	if err != nil {
+		return "", "", err
+	}
+
+	// The branch's Content entry stores a repo-relative POSIX path (portable
+	// across machines and OSes), NOT the absolute on-disk branch path.
+	branchContent, err = fsutil.RelInternal(
+		fsutil.PathOS(repoPath, ".vit", "blob"),
+		branchPath,
+	)
+	if err != nil {
+		return "", "", err
+	}
+
+	return branchContent, rootUID, nil
 }
 
 func copyToBlob(
@@ -71,20 +83,17 @@ func copyToBlob(
 
 	if srcInfo.IsDir() {
 		return fsutil.CopyDir(ctx, src, dst, cp)
+	} else {
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			return "", 0, err
+		}
+		dstPath := fsutil.PathOS(dst, fsutil.BaseOS(src))
+		return fsutil.CopyFile(ctx, src, dstPath, cp)
 	}
-	return fsutil.CopyFile(ctx, src, dst, cp)
 }
 
-func copyCommitToBranch(ctx context.Context, commitPath, branchPath string, isDir bool, progress types.ProgressWriter) error {
-	if err := os.MkdirAll(fsutil.DirOS(branchPath), 0o755); err != nil {
-		return err
-	}
-
+func copyCommitToBranch(ctx context.Context, commitPath, branchPath string, progress types.ProgressWriter) error {
 	cp := fsutil.NewCopyProgress(progress)
-	if isDir {
-		_, _, err := fsutil.CopyDir(ctx, commitPath, branchPath, cp)
-		return err
-	}
-	_, _, err := fsutil.CopyFile(ctx, commitPath, branchPath, cp)
+	_, _, err := fsutil.CopyDir(ctx, commitPath, branchPath, cp)
 	return err
 }

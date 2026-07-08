@@ -16,9 +16,9 @@ type Asset struct {
 }
 
 type AssetCommit struct {
-	PayloadSize  int64             `json:"size"`
-	PayloadFile  string            `json:"file"`
-	PayloadHash  string            `json:"hash"`
+	// if branch: link to blob dir. otherwise uid of contnent root node.
+	Content string `json:"content"`
+
 	Author       string            `json:"author"`
 	Timestamp    time.Time         `json:"timestamp"`
 	Message      string            `json:"message,omitempty"`

@@ -49,8 +49,7 @@ func (c *Client) AddAssetToTree(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	repoPath, treePath string,
-	blobFirstCommit, blobBranch, blobHash string,
-	blobSize int64,
+	blobBranch, contentRootUID string,
 ) (*JSONAsset, error) {
 	treePath = fsutil.PathInternal(treePath)
 	closestPath, err := c.IsAssetPathAvailable(ctx, opctx, repoPath, treePath)
@@ -64,11 +63,7 @@ func (c *Client) AddAssetToTree(
 		return nil, err
 	}
 
-	if err := initAsset(
-		opctx,
-		asset.Data,
-		blobFirstCommit, blobBranch,
-		blobHash, blobSize); err != nil {
+	if err := initAsset(opctx, asset.Data, blobBranch, contentRootUID); err != nil {
 		return nil, err
 	}
 
