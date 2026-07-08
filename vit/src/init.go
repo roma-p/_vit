@@ -55,6 +55,7 @@ func (c *Client) InitRepo(ctx context.Context, path string) (*types.StringResult
 		fsutil.PathOS(path, ".vit", "cache"),
 		fsutil.PathOS(path, ".vit", "assets"),
 		fsutil.PathOS(path, ".vit", "blob"),
+		fsutil.PathOS(path, ".vit", "content"),
 		fsutil.PathOS(path, ".vit", "workspace"),
 		fsutil.PathOS(path, ".vit", "attrs"),
 		fsutil.PathOS(path, ".vit", "transaction"),
