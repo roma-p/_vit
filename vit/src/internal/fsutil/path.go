@@ -56,3 +56,12 @@ func ExtInternal(p string) string { return path.Ext(filepath.ToSlash(p)) }
 // --- Abs ---
 
 func AbsOS(p string) (string, error) { return filepath.Abs(filepath.FromSlash(p)) }
+
+// --- Rel ---
+func RelInternal(base, target string) (string, error) {
+	rel, err := filepath.Rel(filepath.FromSlash(base), filepath.FromSlash(target))
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
+}
