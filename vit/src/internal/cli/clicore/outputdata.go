@@ -37,9 +37,9 @@ type jsonStdErr struct {
 }
 
 type jsonStdout struct {
-	Type     jsonStdoutType `json:"type"`
-	Result   types.Result      `json:"result,omitempty"`
-	Error    *jsonStdErr    `json:"error,omitempty"`
+	Type     jsonStdoutType   `json:"type"`
+	Result   types.Result     `json:"result,omitempty"`
+	Error    *jsonStdErr      `json:"error,omitempty"`
 	Progress *progressPayload `json:"progress,omitempty"`
 }
 
@@ -59,4 +59,3 @@ type progressPayload struct {
 	Item     types.ProgressItem     `json:"item"`
 	Finish   types.ProgressFinish   `json:"finish"`
 }
-
