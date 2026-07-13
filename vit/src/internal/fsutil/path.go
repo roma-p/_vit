@@ -41,6 +41,8 @@ func PathOS(parts ...string) string {
 
 func DirOS(p string) string { return filepath.Dir(filepath.FromSlash(p)) }
 
+func DirInternal(p string) string { return path.Dir(filepath.ToSlash(p)) }
+
 // --- Base ---
 
 func BaseOS(p string) string { return filepath.Base(filepath.FromSlash(p)) }

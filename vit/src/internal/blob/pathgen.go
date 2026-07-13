@@ -12,7 +12,7 @@ import (
 // Format: .vit/blob/<asset>/commits/<name>-<timestamp><ext>
 func commitBlobPath(repoPath, assetPath string, timestamp time.Time) string {
 	base := fsutil.BaseInternal(assetPath)
-	filename := fmt.Sprintf("%s-%s", base, types.FormatTimestamp(timestamp))
+	filename := fmt.Sprintf("%s-%s", base, types.FormatTimestampLocal(timestamp))
 	return fsutil.PathOS(repoPath, ".vit", "blob", assetPath, "commits", filename)
 }
 

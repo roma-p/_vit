@@ -16,11 +16,17 @@ type Asset struct {
 }
 
 type AssetCommit struct {
-	// if branch: link to blob dir. otherwise uid of contnent root node.
+	// if branch: link to blob dir. if commit: content hash of the root content node.
 	Content string `json:"content"`
 
+	// timestamp of commit: used to reference the commit in a timeline,
+	//  registered at very start of the vit op.
+	//  (using OperationContext.Timestamp)
+	// when used as branch commit, the timestamp is registered after blob copy is done.
+	//  it is then used as a baseline timestamp to detect changes on files.
+	Timestamp time.Time `json:"timestamp"`
+
 	Author       string            `json:"author"`
-	Timestamp    time.Time         `json:"timestamp"`
 	Message      string            `json:"message,omitempty"`
 	Parent       string            `json:"parent,omitempty"`
 	Dependencies AssetDependencies `json:"dependencies,omitempty"`

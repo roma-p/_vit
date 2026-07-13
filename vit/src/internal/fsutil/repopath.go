@@ -7,7 +7,6 @@ import (
 	"strings"
 )
 
-
 // checkPathIsVitRepo checks if the given path contains a .vit directory.
 func checkPathIsVitRepo(p string) bool {
 	info, err := os.Stat(PathOS(p, ".vit"))

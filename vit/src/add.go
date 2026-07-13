@@ -3,7 +3,9 @@ package vit
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"time"
 
 	"vit/internal/blob"
 	"vit/internal/db"
@@ -11,9 +13,8 @@ import (
 	"vit/internal/opcontext"
 	"vit/internal/transaction"
 	"vit/internal/types"
+	"vit/internal/workspace"
 )
-
-// TOOD: full path in asset! no, internal rel to repoPath
 
 func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -30,12 +31,16 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 		}
 	}
 
+	presenter, err := workspace.ResolvePresenter(ctx, c.logger)
+	if err != nil {
+		return nil, err
+	}
+
 	c.logger.Info("AddAsset", "assetPath", assetPath, "src", src)
 
 	var pathbranch string
-	_ = pathbranch
 
-	err := opcontext.WithOperationContext(ctx, assetPath, func(
+	err = opcontext.WithOperationContext(ctx, assetPath, func(
 		opctx *opcontext.OperationContext,
 		assetPath string, // assetPath is internal here.
 	) error {
@@ -59,12 +64,14 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 				return op.Validate(ctx, opctx, dbClient)
 			},
 			func() error {
-				return operateAdd(ctx, opctx, c, dbClient, op)
+				ret := operateAdd(ctx, opctx, c, dbClient, op, presenter)
+				pathbranch = op.WorkspaceBranchPath
+				return ret
 			},
 		)
 	})
 
-	return &types.StringResult{String: "prout"}, err
+	return &types.StringResult{String: pathbranch}, err
 }
 
 func operateAdd(
@@ -73,16 +80,21 @@ func operateAdd(
 	client *Client,
 	dbClient *db.Client,
 	opAdd *operationAdd,
+	presenter workspace.Presenter,
 ) error {
-	// TODO: client shan't be arg of blob update.
-	// so i guess client get a blob client?
-	if err := opAdd.BlobUpdate(ctx, opctx, client); err != nil {
+	if err := opAdd.BlobUpdate(ctx, opctx, client.progress); err != nil {
 		return err
 	}
 
 	if err := opAdd.DBUpdate(ctx, opctx, dbClient); err != nil {
 		return err
 	}
+
+	if err := opctx.JSONPool.FlushForWrite(); err != nil {
+		return err
+	}
+
+	opAdd.Finish(ctx, opctx, client, presenter)
 
 	return nil
 }
@@ -96,9 +108,15 @@ type operationAdd struct {
 	ClosestPathFound string
 
 	// filled at BlobUpdate
-	BlobPathBranch string
-	ContentNodeUID string
+	BlobPathBranch    string
+	ContentNode       *types.ContentNode
+	BaselineTimeStamp time.Time
+
+	// filled at Finish
+	WorkspaceBranchPath string
 }
+
+var _ Operation = (*operationAdd)(nil)
 
 func newOperationAdd(repoPath, assetPath, src string) *operationAdd {
 	return &operationAdd{
@@ -111,73 +129,87 @@ func newOperationAdd(repoPath, assetPath, src string) *operationAdd {
 func (o *operationAdd) Validate(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	dbClient *db.Client, // TODO(operation): add this to operation
+	dbClient *db.Client,
 ) error {
-	closestFound, err := dbClient.IsAssetPathAvailable(ctx, opctx, o.RepoPath, o.AssetPath)
-	if err != nil {
-		return err
-	}
-
-	o.ClosestPathFound = closestFound
-	return nil
+	var err error
+	o.ClosestPathFound, err = dbClient.IsAssetPathAvailable(ctx, opctx, o.RepoPath, o.AssetPath)
+	return err
 }
 
 func (o *operationAdd) BlobUpdate(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	c *Client,
+	progress types.ProgressWriter,
 ) error {
-	var err error
-	o.BlobPathBranch, o.ContentNodeUID, err = blob.InitAsset(
+	result, err := blob.InitAsset(
 		ctx,
-		o.RepoPath,
-		o.AssetPath,
-		o.Src,
-		opctx.User,
-		opctx.TimeStamp,
-		c.progress,
-	)
-	return err
-}
-
-func (o *operationAdd) DBUpdate(
-	ctx context.Context,
-	opctx *opcontext.OperationContext,
-	dbClient *db.Client, // TODO(operation): add this to operation
-) error {
-	jsonAsset, err := dbClient.AddAssetToTree(
-		ctx, opctx,
-		o.RepoPath, o.AssetPath,
-		o.BlobPathBranch, o.ContentNodeUID,
+		progress,
+		blob.InitAssetRequest{
+			RepoPath:  o.RepoPath,
+			AssetPath: o.AssetPath,
+			Src:       o.Src,
+			User:      opctx.User,
+			Timestamp: opctx.TimeStamp,
+		},
 	)
 	if err != nil {
 		return err
 	}
 
-	if err := opctx.JSONPool.WriteHandler(jsonAsset); err != nil {
-		return err
-	}
+	o.BlobPathBranch = result.BranchContentBlobPath
+	o.ContentNode = result.CommitRootContentNode
+	o.BaselineTimeStamp = result.BaselineTimeStamp
 
 	return nil
+}
+
+func (o *operationAdd) DBUpdate(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+) error {
+	_, err := dbClient.AddAssetToTree(
+		ctx,
+		opctx,
+		db.AddAssetToTreeRequest{
+			RepoPath:          o.RepoPath,
+			TreePath:          o.AssetPath,
+			BlobBranch:        o.BlobPathBranch,
+			ContentRootHash:   o.ContentNode.ContentHash,
+			BaselineTimeStamp: o.BaselineTimeStamp,
+		},
+	)
+	return err
 }
 
 func (o *operationAdd) Finish(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	c *Client,
-) error {
-	return nil
-}
-
-// addExtToAssetPath modify assetPath based on src.
-// by adding the ext of src if assetPath does not have it already.
-func addExtToAssetPath(assetPath, src string) string {
-	extSrc := fsutil.ExtOS(src)
-	extAssetPath := fsutil.ExtInternal(assetPath)
-	if extSrc != extAssetPath {
-		assetPath = assetPath + extSrc
+	p workspace.Presenter,
+) {
+	var err error
+	o.WorkspaceBranchPath, err = workspace.PresentBranch(
+		ctx,
+		opctx.RepoPath,
+		o.BlobPathBranch,
+		p,
+		types.NewRefBranch(opctx.RepoPath, o.AssetPath, types.DefaultBranchName),
+	)
+	if err != nil {
+		c.logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
 	}
-	return assetPath
+
+	if err := workspace.PresentCommit(
+		ctx,
+		opctx.RepoPath,
+		o.AssetPath,
+		types.FormatTimestampLocal(opctx.TimeStamp),
+		p,
+		o.ContentNode,
+	); err != nil {
+		c.logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
+	}
 }
 
 func newSourceNotFoundErr(assetPath, src string) error {

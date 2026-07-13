@@ -3,8 +3,10 @@ package vit
 import (
 	"context"
 
+	"vit/internal/db"
 	"vit/internal/opcontext"
 	"vit/internal/types"
+	"vit/internal/workspace"
 )
 
 // Operation describe the process every vit operation (commit / tag etc...) go through
@@ -61,21 +63,21 @@ type Operation interface {
 	//      - 2. Gather all the necessary data to execute "BlobUpdate" fonction.
 	//           During BlobUpdate, no access to Db so important information has to be gather here
 	//			 and stored into the Operation struct.
-	Validate(ctx context.Context, opctx *opcontext.OperationContext) error
+	Validate(ctx context.Context, opctx *opcontext.OperationContext, dbClient *db.Client) error
 
 	// BlobUpdate update the large binaries files inside vit repository.
 	// No DB acess here, use data only saved in Operation at Validate phase.
-	BlobUpdate(ctx context.Context, opctx *opcontext.OperationContext, c *Client) error
+	BlobUpdate(ctx context.Context, opctx *opcontext.OperationContext, progress types.ProgressWriter) error
 
 	// DBUpdate update a given asset
 	// - receives an asset with RW privilege.
 	// - Shan't write the file! just update the asset, writing on the Db is done at transaction level
-	DBUpdate(opctx *opcontext.OperationContext, asset *types.Asset) error
+	DBUpdate(ctx context.Context, opctx *opcontext.OperationContext, dbClient *db.Client) error
 
 	// Finish is executed after the database was successfully executed. from here: best effort only.
 	// - Presenting new files to worksapce
 	// - Rebuilding some cache.
-	Finish(ctx context.Context, opctx *opcontext.OperationContext, c *Client) error
+	Finish(ctx context.Context, opctx *opcontext.OperationContext, c *Client, p workspace.Presenter)
 }
 
 // An example of a how two operation can be executed in the same command.

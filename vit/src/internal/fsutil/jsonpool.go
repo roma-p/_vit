@@ -10,7 +10,8 @@ import (
 // Use one JSONHandlerPool per Operation!
 // Use ReleaseAll (typically via defer) to release all locks when done.
 type JSONHandlerPool struct {
-	data map[string]*poolEntry
+	data  map[string]*poolEntry
+	order []string
 }
 
 func NewJSONHandlerPool() *JSONHandlerPool {
@@ -98,28 +99,21 @@ func addHandler[T any](
 
 	entry.jsonhandler = handler
 	pool.data[path] = &entry
+	pool.order = append(pool.order, path)
 	return handler, nil
 }
 
-// WriteHandler writes the given handler to disk. The handler must be the
-// exact instance previously obtained via ResolveHandler.
-// Panics if the entry is not held for write.
-func (p *JSONHandlerPool) WriteHandler(handler AnyJSONHandler) error {
-	path := handler.FilePath()
-	entry, ok := p.data[path]
-	if !ok {
-		return fmt.Errorf("no cached handler for %s", path)
+func (p *JSONHandlerPool) FlushForWrite() error {
+	for _, path := range p.order {
+		entry, ok := p.data[path]
+		if !ok || !entry.forWrite {
+			continue
+		}
+		if err := entry.jsonhandler.Write(); err != nil {
+			return fmt.Errorf("flush write failed for %s: %w", path, err)
+		}
 	}
-	if entry.jsonhandler != handler {
-		return fmt.Errorf("handler for %s is not the one cached in this pool", path)
-	}
-	if !entry.forWrite {
-		panic(fmt.Sprintf(
-			"BUG: writing %s without holding its lock — call ResolveHandler with forWrite=true first",
-			path,
-		))
-	}
-	return handler.Write()
+	return nil
 }
 
 // Release releases a single entry and its lock. No-op if not cached.
@@ -143,6 +137,7 @@ func (p *JSONHandlerPool) ReleaseAll() {
 		}
 	}
 	p.data = make(map[string]*poolEntry)
+	p.order = nil
 }
 
 func (p *JSONHandlerPool) ListJSONPath() []string {

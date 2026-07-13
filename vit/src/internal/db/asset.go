@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"vit/internal/fsutil"
 	"vit/internal/opcontext"
@@ -55,14 +56,15 @@ func resolveJSONAsset(
 func initAsset(
 	opctx *opcontext.OperationContext,
 	asset *types.Asset,
-	blobBranch, contentRootID string,
+	blobBranch, contentRootHash string,
+	baselineTimeStamp time.Time,
 ) error {
 	commitFirst := types.AssetCommit{
 		Author:    opctx.User,
 		Message:   "Asset creation",
 		Timestamp: opctx.TimeStamp,
 		Parent:    "",
-		Content:   contentRootID,
+		Content:   contentRootHash,
 	}
 
 	commitID, err := AddCommit(asset, &commitFirst)
@@ -70,7 +72,14 @@ func initAsset(
 		return err
 	}
 
-	err = AddBranch(asset, commitID, types.DefaultBranchName, opctx.User, blobBranch)
+	err = AddBranch(
+		asset,
+		commitID,
+		types.DefaultBranchName,
+		opctx.User,
+		blobBranch,
+		baselineTimeStamp,
+	)
 	if err != nil {
 		return err
 	}
@@ -103,7 +112,11 @@ func GetCommit(a *types.Asset, commitID string) (*types.AssetCommit, error) {
 }
 
 // AddBranch creates a new branch pointing to the given commit.
-func AddBranch(a *types.Asset, commitID, branchName, author, payloadfile string) error {
+func AddBranch(
+	a *types.Asset,
+	commitID, branchName, author, payloadfile string,
+	baselineTimeStamp time.Time,
+) error {
 	if a.Branches == nil {
 		a.Branches = make(map[string]*types.AssetCommit)
 	}
@@ -122,6 +135,7 @@ func AddBranch(a *types.Asset, commitID, branchName, author, payloadfile string)
 		Author:       author,
 		Message:      "",
 		Parent:       commitID,
+		Timestamp:    baselineTimeStamp,
 		Dependencies: *deepCopyDependencies(&commitFrom.Dependencies),
 	}
 

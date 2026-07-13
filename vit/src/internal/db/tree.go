@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"vit/internal/fsutil"
 	"vit/internal/opcontext"
@@ -45,31 +46,46 @@ func (c *Client) GetJSONAssetFromRef(
 	return assetNode, nil
 }
 
+type AddAssetToTreeRequest struct {
+	RepoPath          string
+	TreePath          string
+	BlobBranch        string
+	ContentRootHash   string
+	BaselineTimeStamp time.Time
+}
+
 func (c *Client) AddAssetToTree(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	repoPath, treePath string,
-	blobBranch, contentRootUID string,
+	request AddAssetToTreeRequest,
 ) (*JSONAsset, error) {
-	treePath = fsutil.PathInternal(treePath)
-	closestPath, err := c.IsAssetPathAvailable(ctx, opctx, repoPath, treePath)
+	treePath := fsutil.PathInternal(request.TreePath)
+	closestPath, err := c.IsAssetPathAvailable(ctx, opctx, request.RepoPath, request.TreePath)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO(db): look for orphan node tree (and then authorize rewrite for them)
-	asset, err := createNewJSONAsset(ctx, opctx, repoPath, treePath)
+	asset, err := createNewJSONAsset(ctx, opctx, request.RepoPath, request.TreePath)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := initAsset(opctx, asset.Data, blobBranch, contentRootUID); err != nil {
+	if err := initAsset(
+		opctx,
+		asset.Data,
+		request.BlobBranch,
+		request.ContentRootHash,
+		request.BaselineTimeStamp,
+	); err != nil {
 		return nil, err
 	}
 
 	if _, err := c.createAssetTreeNode(
 		ctx, opctx,
-		repoPath, treePath, closestPath,
+		request.RepoPath,
+		treePath,
+		closestPath,
 		asset.Data.AssetUID); err != nil {
 		return nil, err
 	}
@@ -141,8 +157,6 @@ func (c *Client) createAssetTreeNode(
 		parentID = tmp.Data
 	}
 
-	var jsonHandlerBuffer []*JSONTreeNode
-
 	for _, d := range subDirs[:len(subDirs)-1] {
 		currDir = fsutil.PathInternal(currDir, d)
 		jsonTreeNode, err := c.createNewJSONTreeNode(
@@ -153,8 +167,6 @@ func (c *Client) createAssetTreeNode(
 			return nil, err
 		}
 
-		jsonHandlerBuffer = append(jsonHandlerBuffer, jsonTreeNode)
-
 		parentID = jsonTreeNode.Data.ID
 	}
 
@@ -163,13 +175,6 @@ func (c *Client) createAssetTreeNode(
 		return nil, err
 	}
 	ret.Data.AssetID = assetID
-
-	jsonHandlerBuffer = append(jsonHandlerBuffer, ret)
-	for _, h := range jsonHandlerBuffer {
-		if err := opctx.JSONPool.WriteHandler(h); err != nil {
-			return nil, err
-		}
-	}
 
 	MarkTreeStale(repoPath)
 
