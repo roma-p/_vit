@@ -181,6 +181,17 @@ func (r *Ref) AbsolutePath() string {
 	return fmt.Sprintf("%s/%s", r.RepoPath, r.RelativePath())
 }
 
+func (r *Ref) AssertTypeOfRef(t RefType) {
+	if r.RefType != t {
+		panic(fmt.Sprintf(
+			"Unexpected type for Ref: %s, expected %s, got %s",
+			r.RelativePath(),
+			t,
+			r.RefType,
+		))
+	}
+}
+
 func newErrInvalidRef(path string) error {
 	return NewVitError(
 		ErrInvalidRef,
