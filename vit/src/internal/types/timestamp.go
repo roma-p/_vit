@@ -8,6 +8,10 @@ func FormatTimestamp(t time.Time) string {
 	return t.UTC().Format(timestampLayout)
 }
 
+func FormatTimestampLocal(t time.Time) string {
+	return t.Local().Format(timestampLayout)
+}
+
 func ParseTimestamp(s string) (time.Time, error) {
 	return time.Parse(timestampLayout, s)
 }
