@@ -176,7 +176,7 @@ func (c *Client) createAssetTreeNode(
 	}
 	ret.Data.AssetID = assetID
 
-	MarkTreeStale(repoPath)
+	c.MarkTreeStale(repoPath)
 
 	return ret, nil
 }

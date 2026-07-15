@@ -93,14 +93,6 @@ func getTreeCache(
 	}
 }
 
-// MarkTreeStale marks the tree cache as stale.
-// Call this after any write operation that modifies .vit/tree/.
-// TODO(clean): probably not exported.
-func MarkTreeStale(repoPath string) error {
-	path := pathTreeStale(repoPath)
-	return os.WriteFile(path, []byte{}, 0o644)
-}
-
 func istreeCacheToRebuild(
 	ctx context.Context,
 	repoPath string,

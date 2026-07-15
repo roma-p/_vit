@@ -2,6 +2,7 @@ package vit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -50,6 +51,7 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 		if err != nil {
 			return err
 		}
+		defer dbClient.Close()
 
 		op := newOperationAdd(opctx.RepoPath, assetPath, src)
 
@@ -70,6 +72,10 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 			},
 		)
 	})
+
+	if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		err = types.NewCancelledError(err)
+	}
 
 	return &types.StringResult{String: pathbranch}, err
 }
@@ -100,6 +106,7 @@ func operateAdd(
 }
 
 type operationAdd struct {
+	// filled at init.
 	RepoPath  string
 	AssetPath string
 	Src       string
@@ -116,7 +123,7 @@ type operationAdd struct {
 	WorkspaceBranchPath string
 }
 
-var _ Operation = (*operationAdd)(nil)
+var _ Operation = (*operationAdd)(nil) // enforcing operation interface.
 
 func newOperationAdd(repoPath, assetPath, src string) *operationAdd {
 	return &operationAdd{

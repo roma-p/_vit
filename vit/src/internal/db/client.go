@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"log/slog"
+	"os"
 
 	"vit/internal/opcontext"
 	"vit/internal/types"
@@ -16,6 +17,7 @@ type Client struct {
 	TreeIndexPool map[string]*TreeIndex
 	TreeCachePool map[string]*TreeCache
 	Logger        *slog.Logger
+	TreeStale     map[string]bool
 }
 
 func NewClient(
@@ -26,6 +28,7 @@ func NewClient(
 	ret := Client{
 		TreeIndexPool: make(map[string]*TreeIndex),
 		TreeCachePool: make(map[string]*TreeCache),
+		TreeStale:     make(map[string]bool),
 		Logger:        logger,
 	}
 
@@ -35,6 +38,17 @@ func NewClient(
 	}
 
 	return &ret, nil
+}
+
+func (c *Client) Close() {
+	for p, s := range c.TreeStale {
+		if !s {
+			continue
+		}
+		if err := os.WriteFile(pathTreeStale(p), []byte{}, 0o644); err != nil {
+			c.Logger.Error("Error invalidating tree caches", "repo", p)
+		}
+	}
 }
 
 func (c *Client) GetTreeIndex(
@@ -73,4 +87,8 @@ func (c *Client) GetTreeCache(
 
 	c.TreeCachePool[repoPath] = treeCache
 	return treeCache, nil
+}
+
+func (c *Client) MarkTreeStale(repoPath string) {
+	c.TreeStale[repoPath] = true
 }
