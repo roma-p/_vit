@@ -35,7 +35,7 @@ func CopyFile(ctx context.Context, src, dst string, progress *CopyProgress) (has
 	defer func() { progress.close(err == nil) }()
 
 	// Pass 2: copy
-	if err = copyFileAtomic(src, dst, size, progress); err != nil {
+	if err = copyFileAtomic(ctx, src, dst, size, progress); err != nil {
 		return "", 0, err
 	}
 
@@ -73,7 +73,7 @@ func CopyDir(ctx context.Context, src, dst string, progress *CopyProgress) (hash
 	}
 	cleanup := func() { os.RemoveAll(tmpDir) }
 
-	if err = copyDirContents(src, tmpDir, progress); err != nil {
+	if err = copyDirContents(ctx, src, tmpDir, progress); err != nil {
 		cleanup()
 		return "", 0, err
 	}
@@ -138,7 +138,7 @@ func (p *CopyProgress) close(success bool) {
 	p.writer.CloseProgress(types.ProgressFinish{Status: success})
 }
 
-func copyFileAtomic(src, dst string, size int64, progress *CopyProgress) error {
+func copyFileAtomic(ctx context.Context, src, dst string, size int64, progress *CopyProgress) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
@@ -153,13 +153,13 @@ func copyFileAtomic(src, dst string, size int64, progress *CopyProgress) error {
 	progress.updateFile(BaseOS(src), int(size))
 
 	return WriteFileAtomic(dst, srcInfo.Mode(), func(f *os.File) error {
-		reader := &progressReader{reader: srcFile, progress: progress}
+		reader := &progressReader{ctx: ctx, reader: srcFile, progress: progress}
 		_, err := io.Copy(f, reader)
 		return err
 	})
 }
 
-func copyDirContents(src, dst string, progress *CopyProgress) error {
+func copyDirContents(ctx context.Context, src, dst string, progress *CopyProgress) error {
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		return err
@@ -175,11 +175,15 @@ func copyDirContents(src, dst string, progress *CopyProgress) error {
 	}
 
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		srcPath := PathOS(src, entry.Name())
 		dstPath := PathOS(dst, entry.Name())
 
 		if entry.IsDir() {
-			if err := copyDirContents(srcPath, dstPath, progress); err != nil {
+			if err := copyDirContents(ctx, srcPath, dstPath, progress); err != nil {
 				return err
 			}
 		} else {
@@ -188,7 +192,7 @@ func copyDirContents(src, dst string, progress *CopyProgress) error {
 				return err
 			}
 			progress.updateFile(entry.Name(), int(info.Size()))
-			if err := copyFileDirect(srcPath, dstPath, progress); err != nil {
+			if err := copyFileDirect(ctx, srcPath, dstPath, progress); err != nil {
 				return err
 			}
 		}
@@ -196,7 +200,7 @@ func copyDirContents(src, dst string, progress *CopyProgress) error {
 	return nil
 }
 
-func copyFileDirect(src, dst string, progress *CopyProgress) error {
+func copyFileDirect(ctx context.Context, src, dst string, progress *CopyProgress) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
@@ -214,7 +218,7 @@ func copyFileDirect(src, dst string, progress *CopyProgress) error {
 	}
 	defer dstFile.Close()
 
-	reader := &progressReader{reader: srcFile, progress: progress}
+	reader := &progressReader{ctx: ctx, reader: srcFile, progress: progress}
 
 	if _, err := io.Copy(dstFile, reader); err != nil {
 		return err
@@ -224,11 +228,15 @@ func copyFileDirect(src, dst string, progress *CopyProgress) error {
 }
 
 type progressReader struct {
+	ctx      context.Context
 	reader   io.Reader
 	progress *CopyProgress
 }
 
 func (pr *progressReader) Read(p []byte) (int, error) {
+	if err := pr.ctx.Err(); err != nil {
+		return 0, err
+	}
 	n, err := pr.reader.Read(p)
 	if n > 0 {
 		pr.progress.updateBytes(n)

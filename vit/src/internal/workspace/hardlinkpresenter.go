@@ -39,7 +39,6 @@ func newHardlinkPresenter(
 	return &ret, nil
 }
 
-// Check : here just check that hardlink are supported (might not be the case on windows).
 func (p *HardlinkPresenter) Check() error {
 	return fsutil.CheckHardlinkSupport()
 }
@@ -66,9 +65,6 @@ func (p *HardlinkPresenter) Present(
 	return nil
 }
 
-// PresentFinish seals a directory read-only once all its contents are linked in.
-// Must be called post-order: once a dir is read-only, nothing more can be created
-// inside it. A mutable (branch) presentation leaves the dir writable.
 func (p *HardlinkPresenter) PresentFinish(
 	ctx context.Context,
 	workspacePath string,
@@ -80,9 +76,6 @@ func (p *HardlinkPresenter) PresentFinish(
 	return fsutil.MakeDirectoryReadOnly(workspacePath)
 }
 
-// Unpresent removes a single presented file from the workspace. The parent dir
-// is made writable first, since an immutable presentation seals it read-only.
-// Tree teardown removes the emptied directories separately.
 func (p *HardlinkPresenter) Unpresent(workspacePath string) error {
 	parent := fsutil.DirOS(workspacePath)
 	if err := fsutil.MakeDirectoryWritable(parent); err != nil {
