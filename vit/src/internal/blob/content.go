@@ -74,7 +74,7 @@ func loadContentTree(contentRootPath, hash string) (*types.ContentNode, error) {
 		return nil, newErrContentNode(err, "failed to read content node", nodePath)
 	}
 
-	node, err := types.ParseContentNode(b)
+	node, err := types.DeserializeContentNode(b)
 	if err != nil {
 		return nil, newErrContentNode(err, "failed to parse content node", nodePath)
 	}

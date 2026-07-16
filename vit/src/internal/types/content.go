@@ -37,7 +37,7 @@ func (n *ContentNode) Serialize() []byte {
 	return []byte(b.String())
 }
 
-func ParseContentNode(b []byte) (*ContentNode, error) {
+func DeserializeContentNode(b []byte) (*ContentNode, error) {
 	n := &ContentNode{Serialized: b}
 	for i, line := range strings.Split(string(b), "\n") {
 		if line == "" {
@@ -81,4 +81,19 @@ func ParseContentNode(b []byte) (*ContentNode, error) {
 		}
 	}
 	return n, nil
+}
+
+func (n *ContentNode) ToDirStat(fullPath string) *DirStat {
+	ret := NewDirStat(fullPath)
+	n.collectDirStat("", ret)
+	return ret
+}
+
+func (n *ContentNode) collectDirStat(prefix string, dirStat *DirStat) {
+	for _, f := range n.Files {
+		dirStat.Data[path.Join(prefix, f.Name)] = FileStat{Size: f.Size, MTime: f.MTime}
+	}
+	for _, c := range n.Children {
+		c.collectDirStat(path.Join(prefix, c.Name), dirStat)
+	}
 }

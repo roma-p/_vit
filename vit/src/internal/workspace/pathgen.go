@@ -5,7 +5,7 @@ import (
 	"vit/internal/types"
 )
 
-func refToWorkspacePath(ref *types.Ref) string {
+func RefToWorkspacePath(ref *types.Ref) string {
 	// date only needed for commit.
 
 	switch ref.RefType {

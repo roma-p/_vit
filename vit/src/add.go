@@ -21,6 +21,7 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 	if err := ctx.Err(); err != nil {
 		return nil, types.NewCancelledError(err)
 	}
+	c.logger.Info("AddAsset", "assetPath", assetPath, "src", src)
 
 	assetPath = fsutil.PathOS(assetPath)
 
@@ -36,8 +37,6 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 	if err != nil {
 		return nil, err
 	}
-
-	c.logger.Info("AddAsset", "assetPath", assetPath, "src", src)
 
 	var pathbranch string
 

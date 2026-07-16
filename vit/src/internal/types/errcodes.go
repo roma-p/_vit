@@ -22,4 +22,6 @@ const (
 
 	ErrTransactionConflict = "TransactionConflict"
 	ErrTransactionFailed   = "TransactionFailed"
+
+	ErrInvalidInut = "InvalidInput"
 )

@@ -44,7 +44,7 @@ func PresentBranch(
 	ref *types.Ref,
 ) (string, error) {
 	ref.AssertTypeOfRef(types.RefTypeBranch)
-	wsPath := fsutil.PathOS(repoPath, refToWorkspacePath(ref))
+	wsPath := fsutil.PathOS(repoPath, RefToWorkspacePath(ref))
 	// blobPath is the branch content ref, relative to .vit/blob (portable, as
 	// stored in the asset JSON) — resolve it to the real on-disk blob dir.
 	blobAbs := fsutil.PathOS(repoPath, ".vit", "blob", blobPath)
@@ -86,7 +86,7 @@ func PresentTag(
 		ctx,
 		rootContentNode,
 		repoPath,
-		fsutil.PathOS(repoPath, refToWorkspacePath(ref)),
+		fsutil.PathOS(repoPath, RefToWorkspacePath(ref)),
 		true,
 		p,
 	); err != nil {

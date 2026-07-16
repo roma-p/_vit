@@ -192,6 +192,23 @@ func (r *Ref) AssertTypeOfRef(t RefType) {
 	}
 }
 
+func (r *Ref) CheckTypeOfRef(t RefType) error {
+	if r.RefType != t {
+		return NewVitError(
+			ErrInvalidInut,
+			[]string{fmt.Sprintf(
+				"Unexpected type for Ref: %s, expected %s, got %s",
+				r.RelativePath(),
+				t,
+				r.RefType,
+			)},
+			[]any{"Ref", r.RelativePath(), "ExpectedType", t, "ReceviedType", r.RefType},
+		)
+	} else {
+		return nil
+	}
+}
+
 func newErrInvalidRef(path string) error {
 	return NewVitError(
 		ErrInvalidRef,

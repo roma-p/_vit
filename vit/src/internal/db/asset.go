@@ -111,6 +111,17 @@ func GetCommit(a *types.Asset, commitID string) (*types.AssetCommit, error) {
 	return commitObj, nil
 }
 
+func GetBranchCommit(a *types.Asset, branchName string) (*types.AssetCommit, error) {
+	if a.Branches == nil {
+		return nil, newErrObjectNotFound(types.NewRefBranch(a.RepoPath, a.AssetPath, branchName))
+	}
+	commitObj, ok := a.Branches[branchName]
+	if !ok {
+		return nil, newErrObjectNotFound(types.NewRefBranch(a.RepoPath, a.AssetPath, branchName))
+	}
+	return commitObj, nil
+}
+
 // AddBranch creates a new branch pointing to the given commit.
 func AddBranch(
 	a *types.Asset,
