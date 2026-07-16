@@ -1,6 +1,7 @@
 package types
 
 import (
+	"sort"
 	"time"
 )
 
@@ -21,6 +22,10 @@ func NewDirStat(rootAbsPath string) *DirStat {
 	}
 }
 
+func (d *DirStat) WithRoot(root string) *DirStat { // rust style!
+	return &DirStat{Data: d.Data, RootAbsPath: root}
+}
+
 func (a *DirStat) Diff(b *DirStat, baselineTime time.Time) *ChangeRecord {
 	var ret ChangeRecord
 	for path, aStat := range a.Data {
@@ -38,7 +43,11 @@ func (a *DirStat) Diff(b *DirStat, baselineTime time.Time) *ChangeRecord {
 		}
 	}
 
-	// TODO: fill ChangeRecord.Dependancies when dependancy management done!
+	// TODO: fill ChangeRecord.Dependencies when dependency management done!
+
+	sort.Slice(ret.Files, func(i, j int) bool {
+		return ret.Files[i].Path < ret.Files[j].Path
+	})
 
 	return &ret
 }

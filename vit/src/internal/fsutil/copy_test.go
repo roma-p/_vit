@@ -41,136 +41,20 @@ func (w *testProgressWriter) CloseProgress(f types.ProgressFinish) {
 	w.success = f.Status
 }
 
-// --- CopyFile tests ---
-
-func TestCopyFile_Basic(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
-	defer cleanup()
-
-	src := filepath.Join(tmpDir, "src.txt")
-	dst := filepath.Join(tmpDir, "dst.txt")
-	testutils.CreateFile(t, src, "hello world")
-
-	pw := &testProgressWriter{}
-	progress := NewCopyProgress(pw)
-	ctx := context.Background()
-
-	hash, size, err := CopyFile(ctx, src, dst, progress)
+// dirStat walks src and returns its DirStat (fails the test on error).
+func dirStat(t *testing.T, src string) *types.DirStat {
+	t.Helper()
+	ds, err := NewDirStatFromDir(context.Background(), src)
 	testutils.AssertNoError(t, err)
-
-	// Destination exists with correct content
-	content, err := os.ReadFile(dst)
-	testutils.AssertNoError(t, err)
-	testutils.AssertEqual(t, string(content), "hello world")
-
-	// Hash and size are populated
-	testutils.AssertTrue(t, hash != "")
-	testutils.AssertEqual(t, size, int64(11))
-
-	// Progress was used
-	testutils.AssertTrue(t, pw.inited)
-	testutils.AssertEqual(t, pw.operation, "Copying")
-	testutils.AssertTrue(t, len(pw.updates) > 0)
-	testutils.AssertTrue(t, pw.closed)
-	testutils.AssertTrue(t, pw.success)
-
-	// Lock dir is cleaned up
-	lockDir := filepath.Join(tmpDir, ".dst.txt.lock")
-	testutils.AssertNotExists(t, lockDir)
+	return ds
 }
 
-func TestCopyFile_PreservesPermissions(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
-	defer cleanup()
-
-	src := filepath.Join(tmpDir, "script.sh")
-	dst := filepath.Join(tmpDir, "script-copy.sh")
-	testutils.CreateFile(t, src, "#!/bin/bash")
-	os.Chmod(src, 0o755)
-
-	pw := &testProgressWriter{}
-	progress := NewCopyProgress(pw)
-
-	_, _, err := CopyFile(context.Background(), src, dst, progress)
-	testutils.AssertNoError(t, err)
-
-	info, err := os.Stat(dst)
-	testutils.AssertNoError(t, err)
-	testutils.AssertEqual(t, info.Mode().Perm(), os.FileMode(0o755))
+// copyFilesOne is a single-request CopyFiles, convenient for tests.
+func copyFilesOne(ctx context.Context, dst string, src *types.DirStat, p *CopyProgress) error {
+	return CopyFiles(ctx, p, []CopyFilesRequest{{DstRoot: dst, Src: src}})
 }
 
-func TestCopyFile_ConsistentHash(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
-	defer cleanup()
-
-	src := filepath.Join(tmpDir, "src.txt")
-	testutils.CreateFile(t, src, "deterministic content")
-
-	pw1 := &testProgressWriter{}
-	pw2 := &testProgressWriter{}
-
-	dst1 := filepath.Join(tmpDir, "dst1.txt")
-	dst2 := filepath.Join(tmpDir, "dst2.txt")
-
-	hash1, _, err := CopyFile(context.Background(), src, dst1, NewCopyProgress(pw1))
-	testutils.AssertNoError(t, err)
-
-	hash2, _, err := CopyFile(context.Background(), src, dst2, NewCopyProgress(pw2))
-	testutils.AssertNoError(t, err)
-
-	testutils.AssertEqual(t, hash1, hash2)
-}
-
-func TestCopyFile_SrcNotFound(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
-	defer cleanup()
-
-	src := filepath.Join(tmpDir, "nonexistent.txt")
-	dst := filepath.Join(tmpDir, "dst.txt")
-
-	pw := &testProgressWriter{}
-	_, _, err := CopyFile(context.Background(), src, dst, NewCopyProgress(pw))
-	testutils.AssertError(t, err)
-}
-
-func TestCopyFile_LargeFile(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
-	defer cleanup()
-
-	src := filepath.Join(tmpDir, "large.bin")
-	dst := filepath.Join(tmpDir, "large-copy.bin")
-
-	// 1MB file
-	data := make([]byte, 1024*1024)
-	for i := range data {
-		data[i] = byte(i % 256)
-	}
-	os.WriteFile(src, data, 0o644)
-
-	pw := &testProgressWriter{}
-	progress := NewCopyProgress(pw)
-
-	hash, size, err := CopyFile(context.Background(), src, dst, progress)
-	testutils.AssertNoError(t, err)
-	testutils.AssertEqual(t, size, int64(1024*1024))
-	testutils.AssertTrue(t, hash != "")
-
-	// Verify content matches
-	copied, err := os.ReadFile(dst)
-	testutils.AssertNoError(t, err)
-	testutils.AssertEqual(t, len(copied), len(data))
-
-	// Multiple progress updates should have been emitted
-	testutils.AssertTrue(t, len(pw.updates) > 1)
-
-	// Last update should have cumulative bytes equal to file size
-	lastUpdate := pw.updates[len(pw.updates)-1]
-	testutils.AssertEqual(t, lastUpdate.Size, 1024*1024)
-}
-
-// --- CopyDir tests ---
-
-func TestCopyDir_Basic(t *testing.T) {
+func TestCopyFiles_Basic(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
 	defer cleanup()
 
@@ -182,15 +66,9 @@ func TestCopyDir_Basic(t *testing.T) {
 	testutils.CreateFile(t, filepath.Join(srcDir, "sub", "b.txt"), "file b")
 
 	pw := &testProgressWriter{}
-	progress := NewCopyProgress(pw)
-
-	hash, size, err := CopyDir(context.Background(), srcDir, dstDir, progress)
+	err := copyFilesOne(context.Background(), dstDir, dirStat(t, srcDir), NewCopyProgress(pw))
 	testutils.AssertNoError(t, err)
 
-	testutils.AssertTrue(t, hash != "")
-	testutils.AssertEqual(t, size, int64(12)) // "file a" + "file b"
-
-	// Verify contents
 	content, err := os.ReadFile(filepath.Join(dstDir, "a.txt"))
 	testutils.AssertNoError(t, err)
 	testutils.AssertEqual(t, string(content), "file a")
@@ -199,126 +77,142 @@ func TestCopyDir_Basic(t *testing.T) {
 	testutils.AssertNoError(t, err)
 	testutils.AssertEqual(t, string(content), "file b")
 
-	// Progress
+	// Progress was used
 	testutils.AssertTrue(t, pw.inited)
+	testutils.AssertEqual(t, pw.operation, "Copying")
 	testutils.AssertTrue(t, len(pw.updates) > 0)
 	testutils.AssertTrue(t, pw.closed)
 	testutils.AssertTrue(t, pw.success)
 
 	// Lock dir cleaned up
-	lockDir := filepath.Join(tmpDir, ".dst.lock")
-	testutils.AssertNotExists(t, lockDir)
+	testutils.AssertNotExists(t, filepath.Join(tmpDir, ".dst.lock"))
 }
 
-func TestCopyDir_PreservesPermissions(t *testing.T) {
+func TestCopyFiles_PreservesFilePermissions(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
 	defer cleanup()
 
 	srcDir := filepath.Join(tmpDir, "src")
 	dstDir := filepath.Join(tmpDir, "dst")
+	os.MkdirAll(srcDir, 0o755)
 
-	os.Mkdir(srcDir, 0o750)
-	testutils.CreateFile(t, filepath.Join(srcDir, "f.txt"), "data")
+	script := filepath.Join(srcDir, "script.sh")
+	testutils.CreateFile(t, script, "#!/bin/bash")
+	os.Chmod(script, 0o755)
 
-	pw := &testProgressWriter{}
-	_, _, err := CopyDir(context.Background(), srcDir, dstDir, NewCopyProgress(pw))
+	err := copyFilesOne(context.Background(), dstDir, dirStat(t, srcDir), NewCopyProgress(&testProgressWriter{}))
 	testutils.AssertNoError(t, err)
 
-	info, err := os.Stat(dstDir)
+	info, err := os.Stat(filepath.Join(dstDir, "script.sh"))
 	testutils.AssertNoError(t, err)
-	testutils.AssertEqual(t, info.Mode().Perm(), os.FileMode(0o750))
+	testutils.AssertEqual(t, info.Mode().Perm(), os.FileMode(0o755))
 }
 
-func TestCopyDir_ConsistentHash(t *testing.T) {
+func TestCopyFiles_SrcFileMissing(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
 	defer cleanup()
 
-	srcDir := filepath.Join(tmpDir, "src")
-	os.MkdirAll(filepath.Join(srcDir, "sub"), 0o755)
-	testutils.CreateFile(t, filepath.Join(srcDir, "a.txt"), "aaa")
-	testutils.CreateFile(t, filepath.Join(srcDir, "sub", "b.txt"), "bbb")
+	// A DirStat that references a file which doesn't exist on disk.
+	ds := types.NewDirStat(filepath.Join(tmpDir, "src"))
+	ds.Data["ghost.txt"] = types.FileStat{Size: 3}
 
-	dst1 := filepath.Join(tmpDir, "dst1")
-	dst2 := filepath.Join(tmpDir, "dst2")
-
-	hash1, _, err := CopyDir(context.Background(), srcDir, dst1, NewCopyProgress(&testProgressWriter{}))
-	testutils.AssertNoError(t, err)
-
-	hash2, _, err := CopyDir(context.Background(), srcDir, dst2, NewCopyProgress(&testProgressWriter{}))
-	testutils.AssertNoError(t, err)
-
-	testutils.AssertEqual(t, hash1, hash2)
-}
-
-func TestCopyDir_SrcNotFound(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
-	defer cleanup()
-
-	src := filepath.Join(tmpDir, "nonexistent")
-	dst := filepath.Join(tmpDir, "dst")
-
-	_, _, err := CopyDir(context.Background(), src, dst, NewCopyProgress(&testProgressWriter{}))
+	err := copyFilesOne(context.Background(), filepath.Join(tmpDir, "dst"), ds, NewCopyProgress(&testProgressWriter{}))
 	testutils.AssertError(t, err)
 }
 
-func TestCopyDir_Empty(t *testing.T) {
+func TestCopyFiles_LargeFile(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
 	defer cleanup()
 
 	srcDir := filepath.Join(tmpDir, "src")
 	dstDir := filepath.Join(tmpDir, "dst")
-	os.Mkdir(srcDir, 0o755)
+	os.MkdirAll(srcDir, 0o755)
 
-	pw := &testProgressWriter{}
-	hash, size, err := CopyDir(context.Background(), srcDir, dstDir, NewCopyProgress(pw))
-	testutils.AssertNoError(t, err)
-
-	testutils.AssertTrue(t, hash != "")
-	testutils.AssertEqual(t, size, int64(0))
-	testutils.AssertExists(t, dstDir)
-}
-
-// --- Progress tracking tests ---
-
-func TestCopyFile_ProgressTracksFileName(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
-	defer cleanup()
-
-	src := filepath.Join(tmpDir, "myfile.dat")
-	dst := filepath.Join(tmpDir, "copy.dat")
-	testutils.CreateFile(t, src, "some data here")
-
-	pw := &testProgressWriter{}
-	_, _, err := CopyFile(context.Background(), src, dst, NewCopyProgress(pw))
-	testutils.AssertNoError(t, err)
-
-	// All updates should reference the source filename
-	for _, u := range pw.updates {
-		testutils.AssertEqual(t, u.Name, "myfile.dat")
+	data := make([]byte, 1024*1024) // 1MB
+	for i := range data {
+		data[i] = byte(i % 256)
 	}
+	os.WriteFile(filepath.Join(srcDir, "large.bin"), data, 0o644)
+
+	pw := &testProgressWriter{}
+	err := copyFilesOne(context.Background(), dstDir, dirStat(t, srcDir), NewCopyProgress(pw))
+	testutils.AssertNoError(t, err)
+
+	copied, err := os.ReadFile(filepath.Join(dstDir, "large.bin"))
+	testutils.AssertNoError(t, err)
+	testutils.AssertEqual(t, len(copied), len(data))
+
+	// Multiple progress updates, last one cumulative to file size.
+	testutils.AssertTrue(t, len(pw.updates) > 1)
+	lastUpdate := pw.updates[len(pw.updates)-1]
+	testutils.AssertEqual(t, lastUpdate.Done, 1024*1024)
 }
 
-func TestCopyDir_ProgressTracksEachFile(t *testing.T) {
+func TestCopyFiles_ProgressTracksEachFile(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
 	defer cleanup()
 
 	srcDir := filepath.Join(tmpDir, "src")
 	dstDir := filepath.Join(tmpDir, "dst")
-
-	os.Mkdir(srcDir, 0o755)
+	os.MkdirAll(srcDir, 0o755)
 	testutils.CreateFile(t, filepath.Join(srcDir, "alpha.txt"), "aaa")
 	testutils.CreateFile(t, filepath.Join(srcDir, "beta.txt"), "bbb")
 
 	pw := &testProgressWriter{}
-	_, _, err := CopyDir(context.Background(), srcDir, dstDir, NewCopyProgress(pw))
+	err := copyFilesOne(context.Background(), dstDir, dirStat(t, srcDir), NewCopyProgress(pw))
 	testutils.AssertNoError(t, err)
 
-	// Collect unique file names from progress updates
 	names := make(map[string]bool)
 	for _, u := range pw.updates {
 		names[u.Name] = true
 	}
-
 	testutils.AssertTrue(t, names["alpha.txt"])
 	testutils.AssertTrue(t, names["beta.txt"])
+}
+
+func TestCopyFiles_Cancelled(t *testing.T) {
+	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
+	defer cleanup()
+
+	srcDir := filepath.Join(tmpDir, "src")
+	dstDir := filepath.Join(tmpDir, "dst")
+	os.MkdirAll(srcDir, 0o755)
+	testutils.CreateFile(t, filepath.Join(srcDir, "a.txt"), "data")
+
+	ds := dirStat(t, srcDir)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled
+
+	err := copyFilesOne(ctx, dstDir, ds, NewCopyProgress(&testProgressWriter{}))
+	testutils.AssertError(t, err)
+}
+
+func TestCopyFiles_MultiRequestSingleProgress(t *testing.T) {
+	tmpDir, cleanup := testutils.TempDir(t, "copy-test-*")
+	defer cleanup()
+
+	srcDir := filepath.Join(tmpDir, "src")
+	os.MkdirAll(srcDir, 0o755)
+	testutils.CreateFile(t, filepath.Join(srcDir, "a.txt"), "aaa")
+
+	ds := dirStat(t, srcDir)
+	dstA := filepath.Join(tmpDir, "dstA")
+	dstB := filepath.Join(tmpDir, "dstB")
+
+	pw := &testProgressWriter{}
+	err := CopyFiles(context.Background(), NewCopyProgress(pw), []CopyFilesRequest{
+		{DstRoot: dstA, Src: ds},
+		{DstRoot: dstB, Src: ds},
+	})
+	testutils.AssertNoError(t, err)
+
+	// Both destinations produced.
+	testutils.AssertExists(t, filepath.Join(dstA, "a.txt"))
+	testutils.AssertExists(t, filepath.Join(dstB, "a.txt"))
+
+	// Exactly one progress session for the whole batch.
+	testutils.AssertTrue(t, pw.inited)
+	testutils.AssertTrue(t, pw.closed)
+	testutils.AssertTrue(t, pw.success)
 }

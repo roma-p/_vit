@@ -86,7 +86,7 @@ func (c *StatusResult) ToStringSlice() []string {
 
 	ret = append(ret, "")
 	ret = append(ret, fmt.Sprintf("+ %d  - %d", sizeAdded, sizeRemoved))
-	
+
 	// TODO: formatter for size.
 	// TODO: formatter for sequence!
 

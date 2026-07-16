@@ -83,7 +83,7 @@ func (o *Output) InitProgress(manifest types.ProgressManifest) {
 			false,
 		)
 	} else {
-		o.progress = newProgressBar(manifest.Operation, 0, o.Stderr)
+		o.progress = newProgressBar(manifest.Operation, manifest.TotalItems, o.Stderr)
 		o.progress.StartDisplay()
 	}
 }
@@ -102,7 +102,7 @@ func (o *Output) UpdateProgress(updatedItem types.ProgressItem) {
 		)
 	} else {
 		if o.progress != nil {
-			o.progress.UpdateItem(updatedItem.Name, updatedItem.Size, updatedItem.Size)
+			o.progress.UpdateItem(updatedItem.Name, updatedItem.Size, updatedItem.Done)
 		}
 	}
 }

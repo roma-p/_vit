@@ -9,102 +9,90 @@ import (
 	"vit/internal/types"
 )
 
-// CopyFile copies a file as atomicaly as you can on NFS,
-// with exclusive locking and progress reporting.
-// Read the file twice: Pass 1: hash + size. Pass 2: copy with progress via temp file + rename.
-func CopyFile(ctx context.Context, src, dst string, progress *CopyProgress) (hash string, size int64, err error) {
-	src = PathOS(src)
-	dst = PathOS(dst)
-	if progress == nil {
-		panic("BUG: CopyFile received an empty progress!")
-	}
-
-	stop, err := AcquireExclusiveLockWithKeepalive(ctx, dst)
-	if err != nil {
-		return "", 0, err
-	}
-	defer stop()
-
-	// Pass 1: hash + size
-	hash, size, err = HashFile(src)
-	if err != nil {
-		return "", 0, err
-	}
-
-	progress.init("Copying")
-	defer func() { progress.close(err == nil) }()
-
-	// Pass 2: copy
-	if err = copyFileAtomic(ctx, src, dst, size, progress); err != nil {
-		return "", 0, err
-	}
-
-	return hash, size, nil
+type CopyFilesRequest struct {
+	DstRoot string
+	Src     *types.DirStat
 }
 
-// CopyDir does the same as CopyFile but with a directory.
-func CopyDir(ctx context.Context, src, dst string, progress *CopyProgress) (hash string, size int64, err error) {
-	src = PathOS(src)
-	dst = PathOS(dst)
+func CopyFiles(ctx context.Context, progress *CopyProgress, requests []CopyFilesRequest) (err error) {
+	// TODO: is this really a panic case?
 	if progress == nil {
-		panic("BUG: CopyFile received an empty progress!")
+		panic("BUG: CopyFiles received an empty progress!")
 	}
 
-	stop, err := AcquireExclusiveLockWithKeepalive(ctx, dst)
+	var totalItems int
+	var totalBytes int64
+	for _, req := range requests {
+		for _, stat := range req.Src.Data {
+			totalItems++
+			totalBytes += stat.Size
+		}
+	}
+	progress.init("Copying", totalItems, totalBytes)
+	defer func() { progress.close(err == nil) }()
+
+	for _, req := range requests {
+		if err = copyOneRequest(ctx, req.DstRoot, req.Src, progress); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyOneRequest(ctx context.Context, dstRoot string, src *types.DirStat, progress *CopyProgress) error {
+	dstRoot = PathOS(dstRoot)
+
+	stop, err := AcquireExclusiveLockWithKeepalive(ctx, dstRoot)
 	if err != nil {
-		return "", 0, err
+		return err
 	}
 	defer stop()
 
-	// Pass 1: hash + size
-	hash, size, err = HashDir(src)
-	if err != nil {
-		return "", 0, err
+	dstParent := DirOS(dstRoot)
+	if err := os.MkdirAll(dstParent, 0o755); err != nil {
+		return err
 	}
-
-	progress.init("Copying")
-	defer func() { progress.close(err == nil) }()
-
-	// Pass 2: copy to temp dir, then atomic rename
-	dstParent := DirOS(dst)
 	tmpDir, err := os.MkdirTemp(dstParent, ".copy-tmp-*")
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to create temp dir: %w", err)
+		return fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	cleanup := func() { os.RemoveAll(tmpDir) }
 
-	if err = copyDirContents(ctx, src, tmpDir, progress); err != nil {
-		cleanup()
-		return "", 0, err
+	srcRoot := PathOS(src.RootAbsPath)
+	for rel, stat := range src.Data {
+		if err := ctx.Err(); err != nil {
+			cleanup()
+			return err
+		}
+		srcPath := PathOS(srcRoot, rel)
+		dstPath := PathOS(tmpDir, rel)
+		if err := os.MkdirAll(DirOS(dstPath), 0o755); err != nil {
+			cleanup()
+			return err
+		}
+		progress.updateFile(BaseOS(srcPath), int(stat.Size))
+		if err := copyFileDirect(ctx, srcPath, dstPath, progress); err != nil {
+			cleanup()
+			return err
+		}
+		if stat.Size == 0 {
+			progress.finishFile() // zero-byte files never trigger updateBytes
+		}
 	}
 
-	if err = syncDir(tmpDir); err != nil {
+	if err := syncDir(tmpDir); err != nil {
 		cleanup()
-		return "", 0, err
+		return err
 	}
-
-	// Preserve source permissions
-	srcInfo, err := os.Stat(src)
-	if err != nil {
+	if err := os.Rename(tmpDir, dstRoot); err != nil {
 		cleanup()
-		return "", 0, err
-	}
-	if err = os.Chmod(tmpDir, srcInfo.Mode()); err != nil {
-		cleanup()
-		return "", 0, err
-	}
-
-	if err = os.Rename(tmpDir, dst); err != nil {
-		cleanup()
-		return "", 0, err
+		return err
 	}
 
 	_ = syncDir(dstParent)
-	return hash, size, nil
+	return nil
 }
 
-// CopyProgress wraps a ProgressWriter for copy operations.
-// Use this to bind progress communication!
 type CopyProgress struct {
 	writer      types.ProgressWriter
 	currentFile string
@@ -116,8 +104,12 @@ func NewCopyProgress(writer types.ProgressWriter) *CopyProgress {
 	return &CopyProgress{writer: writer}
 }
 
-func (p *CopyProgress) init(operation string) {
-	p.writer.InitProgress(types.ProgressManifest{Operation: operation})
+func (p *CopyProgress) init(operation string, totalItems int, totalBytes int64) {
+	p.writer.InitProgress(types.ProgressManifest{
+		Operation:  operation,
+		TotalItems: totalItems,
+		TotalBytes: totalBytes,
+	})
 }
 
 func (p *CopyProgress) updateFile(name string, size int) {
@@ -130,74 +122,21 @@ func (p *CopyProgress) updateBytes(n int) {
 	p.bytesRead += n
 	p.writer.UpdateProgress(types.ProgressItem{
 		Name: p.currentFile,
-		Size: p.bytesRead,
+		Size: p.currentSize,
+		Done: p.bytesRead,
+	})
+}
+
+func (p *CopyProgress) finishFile() {
+	p.writer.UpdateProgress(types.ProgressItem{
+		Name: p.currentFile,
+		Size: p.currentSize,
+		Done: p.currentSize,
 	})
 }
 
 func (p *CopyProgress) close(success bool) {
 	p.writer.CloseProgress(types.ProgressFinish{Status: success})
-}
-
-func copyFileAtomic(ctx context.Context, src, dst string, size int64, progress *CopyProgress) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	srcInfo, err := srcFile.Stat()
-	if err != nil {
-		return err
-	}
-
-	progress.updateFile(BaseOS(src), int(size))
-
-	return WriteFileAtomic(dst, srcInfo.Mode(), func(f *os.File) error {
-		reader := &progressReader{ctx: ctx, reader: srcFile, progress: progress}
-		_, err := io.Copy(f, reader)
-		return err
-	})
-}
-
-func copyDirContents(ctx context.Context, src, dst string, progress *CopyProgress) error {
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
-		return err
-	}
-
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		srcPath := PathOS(src, entry.Name())
-		dstPath := PathOS(dst, entry.Name())
-
-		if entry.IsDir() {
-			if err := copyDirContents(ctx, srcPath, dstPath, progress); err != nil {
-				return err
-			}
-		} else {
-			info, err := entry.Info()
-			if err != nil {
-				return err
-			}
-			progress.updateFile(entry.Name(), int(info.Size()))
-			if err := copyFileDirect(ctx, srcPath, dstPath, progress); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func copyFileDirect(ctx context.Context, src, dst string, progress *CopyProgress) error {

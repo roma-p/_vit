@@ -23,9 +23,6 @@ type InitAssetResult struct {
 	BaselineTimeStamp     time.Time
 }
 
-// InitAsset copies the source file into the blob store for a new asset.
-// Creates both the immutable commit blob and the mutable branch blob.
-// Returns the commit blob path, branch blob path, and metadata.
 func InitAsset(
 	ctx context.Context,
 	progress types.ProgressWriter,
@@ -34,9 +31,16 @@ func InitAsset(
 	commitPath := commitBlobPath(request.RepoPath, request.AssetPath, request.Timestamp)
 	branchPath := branchBlobPath(request.RepoPath, request.AssetPath, types.DefaultBranchName)
 
-	// 1. Copy source → commit blob
-	_, _, err = copyToBlob(ctx, request.Src, commitPath, progress)
+	srcDirStat, err := sourceToDirStat(ctx, request.Src)
 	if err != nil {
+		return nil, err
+	}
+
+	// 1. Copy source → commit blob (immutable), then commit → branch blob (the
+	if err = fsutil.CopyFiles(ctx, fsutil.NewCopyProgress(progress), []fsutil.CopyFilesRequest{
+		{DstRoot: commitPath, Src: srcDirStat},
+		{DstRoot: branchPath, Src: srcDirStat.WithRoot(commitPath)},
+	}); err != nil {
 		return nil, err
 	}
 
@@ -49,18 +53,11 @@ func InitAsset(
 		return nil, err
 	}
 
-	// 3. Full copy commit blob → branch blob (artist's mutable working copy)
-	if err := copyCommitToBranch(ctx, commitPath, branchPath, progress); err != nil {
-		return nil, err
-	}
-
 	rootContentNode, err := initAssetContentBlob(request.RepoPath, request.AssetPath, commitPath)
 	if err != nil {
 		return nil, err
 	}
 
-	// The branch's Content entry stores a repo-relative POSIX path (portable
-	// across machines and OSes), NOT the absolute on-disk branch path.
 	branchContent, err := fsutil.RelInternal(
 		fsutil.PathOS(request.RepoPath, ".vit", "blob"),
 		branchPath,
@@ -76,35 +73,15 @@ func InitAsset(
 	}, nil
 }
 
-func copyToBlob(
-	ctx context.Context,
-	src, dst string,
-	progress types.ProgressWriter,
-) (hash string, size int64, err error) {
-	if err := os.MkdirAll(fsutil.DirOS(dst), 0o755); err != nil {
-		return "", 0, err
-	}
-
-	cp := fsutil.NewCopyProgress(progress)
-
+func sourceToDirStat(ctx context.Context, src string) (*types.DirStat, error) {
 	srcInfo, err := os.Stat(src)
 	if err != nil {
-		return "", 0, err
+		return nil, err
 	}
-
 	if srcInfo.IsDir() {
-		return fsutil.CopyDir(ctx, src, dst, cp)
-	} else {
-		if err := os.MkdirAll(dst, 0o755); err != nil {
-			return "", 0, err
-		}
-		dstPath := fsutil.PathOS(dst, fsutil.BaseOS(src))
-		return fsutil.CopyFile(ctx, src, dstPath, cp)
+		return fsutil.NewDirStatFromDir(ctx, src)
 	}
-}
-
-func copyCommitToBranch(ctx context.Context, commitPath, branchPath string, progress types.ProgressWriter) error {
-	cp := fsutil.NewCopyProgress(progress)
-	_, _, err := fsutil.CopyDir(ctx, commitPath, branchPath, cp)
-	return err
+	ds := types.NewDirStat(fsutil.DirOS(src))
+	ds.Data[fsutil.BaseOS(src)] = types.FileStat{Size: srcInfo.Size(), MTime: srcInfo.ModTime()}
+	return ds, nil
 }

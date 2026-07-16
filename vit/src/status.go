@@ -13,7 +13,6 @@ import (
 
 // TODO: pointer nodes and "ref from path" (either from ref path or workspace path)
 
-// DO better in the result
 func (c *Client) Status(ctx context.Context, path string) (*types.StatusResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, types.NewCancelledError(err)
@@ -21,15 +20,9 @@ func (c *Client) Status(ctx context.Context, path string) (*types.StatusResult, 
 
 	path = fsutil.PathInternal(path)
 
-	presenter, err := workspace.ResolvePresenter(ctx, c.logger)
-	_ = presenter
-	if err != nil {
-		return nil, err
-	}
-
 	var changeRecord *types.ChangeRecord
 
-	err = opcontext.WithOperationContext(ctx, path, func(opctx *opcontext.OperationContext, path string) error {
+	err := opcontext.WithOperationContext(ctx, path, func(opctx *opcontext.OperationContext, path string) error {
 		ref, err := types.NewRefFromPath(opctx.RepoPath, path)
 		if err != nil {
 			return err
@@ -43,12 +36,11 @@ func (c *Client) Status(ctx context.Context, path string) (*types.StatusResult, 
 			return err
 		}
 		defer dbClient.Close()
-		
+
 		changeRecord, err = resolveBranchChangeRecord(ctx, opctx, ref, dbClient, false)
 
 		return err
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +56,6 @@ func resolveBranchChangeRecord(
 	dbClient *db.Client,
 	editAsset bool, // TODO: remove this: will always be false, as it will sit in Validate during commit op.
 ) (*types.ChangeRecord, error) {
-
 	workspacePath := fsutil.PathOS(branchRef.RepoPath, workspace.RefToWorkspacePath(branchRef))
 
 	workspaceFileStat, err := fsutil.NewDirStatFromDir(ctx, workspacePath)
@@ -91,7 +82,6 @@ func resolveBranchChangeRecord(
 	if err != nil {
 		return nil, err
 	}
-	
 
 	contentRoot, err := blob.LoadContentTree(
 		branchRef.RepoPath,
