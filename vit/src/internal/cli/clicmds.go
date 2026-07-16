@@ -28,6 +28,13 @@ var cmdDefinition = clicore.CmdTree{
 			ArgParser:   buildAddArgParser(),
 			ResultType:  types.StringResult{},
 		},
+		"status": {
+			Name:        "Status",
+			Description: "List all non committed change for a given branch",
+			Run:         runStatus,
+			ArgParser:   buildStatusArgParser(),
+			ResultType:  types.StatusResult{},
+		},
 		"dev": {
 			Name:        "Dev",
 			Description: "Developer and internal commands",

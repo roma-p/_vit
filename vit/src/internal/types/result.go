@@ -37,45 +37,58 @@ func (r *StringListResult) ToStringSlice() []string {
 
 // StatusResult --------------------------------------------------------------
 
-type StatusResult struct {
-	Change           bool
-	FileChange       map[string]StatusResultFileChange
-	DependancyChange []any // TODO: change this
-}
-
-type StatusResultFileChange struct {
-	Type ChangeType
-	Path string
-}
+type StatusResult ChangeRecord
 
 func (c *StatusResult) ToStringSlice() []string {
+
+	if len(c.Files) == 0 {
+		return []string{"Branch clean, no change to commit"}
+	}
+
 	var ret []string
 
 	var added []string
 	var edited []string
 	var removed []string
 
-	for f, fileChange := range c.FileChange {
-		switch fileChange.Type {
-		case Added:
-			added = append(added, f)
-		case Removed:
-			removed = append(removed, f)
-		case Edited:
-			edited = append(edited, f)
+	var sizeAdded int64
+	var sizeRemoved int64
+	for _, f := range c.Files {
+		switch f.Type {
+		case FileChangeAdded:
+			added = append(added, f.Path)
+			sizeAdded += f.Size
+		case FileChangeRemoved:
+			removed = append(removed, f.Path)
+			sizeRemoved += f.Size
+		case FileChangeEdited:
+			edited = append(edited, f.Path)
+			sizeAdded += f.Size
 		default:
 			panic("unreachable")
 		}
 	}
 
+	ret = append(ret, "* added:")
 	for _, f := range added {
-		ret = append(ret, fmt.Sprintf("added   : %s", f))
+		ret = append(ret, f)
 	}
+	ret = append(ret, "")
+	ret = append(ret, "* removed:")
 	for _, f := range removed {
-		ret = append(ret, fmt.Sprintf("removed : %s", f))
+		ret = append(ret, f)
 	}
+	ret = append(ret, "")
+	ret = append(ret, "* edited:")
 	for _, f := range edited {
-		ret = append(ret, fmt.Sprintf("edited  : %s", f))
+		ret = append(ret, f)
 	}
+
+	ret = append(ret, "")
+	ret = append(ret, fmt.Sprintf("+ %d  - %d", sizeAdded, sizeRemoved))
+	
+	// TODO: formatter for size.
+	// TODO: formatter for sequence!
+
 	return ret
 }

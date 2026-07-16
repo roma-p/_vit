@@ -11,11 +11,10 @@ import (
 	"vit/internal/workspace"
 )
 
-// TODO: need a checkRefType (err, no panic), and assertRefType
 // TODO: pointer nodes and "ref from path" (either from ref path or workspace path)
 
 // DO better in the result
-func (c *Client) Status(ctx context.Context, path string) (*types.StringResult, error) {
+func (c *Client) Status(ctx context.Context, path string) (*types.StatusResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, types.NewCancelledError(err)
 	}
@@ -27,6 +26,8 @@ func (c *Client) Status(ctx context.Context, path string) (*types.StringResult, 
 	if err != nil {
 		return nil, err
 	}
+
+	var changeRecord *types.ChangeRecord
 
 	err = opcontext.WithOperationContext(ctx, path, func(opctx *opcontext.OperationContext, path string) error {
 		ref, err := types.NewRefFromPath(opctx.RepoPath, path)
@@ -42,30 +43,38 @@ func (c *Client) Status(ctx context.Context, path string) (*types.StringResult, 
 			return err
 		}
 		defer dbClient.Close()
+		
+		changeRecord, err = resolveBranchChangeRecord(ctx, opctx, ref, dbClient, false)
 
-		return nil
+		return err
 	})
 
-	return nil, err
+	if err != nil {
+		return nil, err
+	}
+
+	ret := (*types.StatusResult)(changeRecord)
+	return ret, nil
 }
 
-func doStatus(
+func resolveBranchChangeRecord(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	branchRef *types.Ref,
 	dbClient *db.Client,
-	editAsset bool,
-) error {
+	editAsset bool, // TODO: remove this: will always be false, as it will sit in Validate during commit op.
+) (*types.ChangeRecord, error) {
+
 	workspacePath := fsutil.PathOS(branchRef.RepoPath, workspace.RefToWorkspacePath(branchRef))
 
 	workspaceFileStat, err := fsutil.NewDirStatFromDir(ctx, workspacePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	jsonAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, branchRef, editAsset)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	commitBranch, err := db.GetBranchCommit(
@@ -73,15 +82,16 @@ func doStatus(
 		branchRef.BranchName,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	baseline := commitBranch.Timestamp
 
 	parentCommit, err := db.GetCommit(jsonAsset.Data, commitBranch.Parent)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	
 
 	contentRoot, err := blob.LoadContentTree(
 		branchRef.RepoPath,
@@ -89,16 +99,12 @@ func doStatus(
 		parentCommit.Content,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	lastCommitStat := contentRoot.ToDirStat("")
+	lastCommitStat := contentRoot.ToDirStat("") // TODO: do we need root path?
 
 	changes := workspaceFileStat.Diff(lastCommitStat, baseline)
 
-	_ = changes
-
-	// TODO: when SRC / LINK done update this! a diff can only consists on
-
-	return nil
+	return changes, nil
 }

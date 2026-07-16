@@ -1,38 +1,29 @@
 package types
 
-type ChangeType uint8
+type FileChangeType string
 
 const (
-	Added ChangeType = iota
-	Removed
-	Edited
+	FileChangeAdded FileChangeType = "added"
+	FileChangeRemoved = "removed"
+	FileChangeEdited = "edited"
 )
 
-type Change struct {
-	Path string
-	Type ChangeType
+type FileChange struct {
+	Path string `json:"path"`
+	Type FileChangeType `json:"type"`
 
-	Size int64 // not filled when ChangeType == Removed
+	Size int64 `json:"size"`// not filled when ChangeType == Removed
 }
 
-type Changes []Change
+type ChangeRecord struct {
+	Files []FileChange `json:"files"`
+	Dependancies []any `json:"dependancies"` // change this type when dependancy management added
+}
 
-func (c *Changes) AddChange(path string, changeType ChangeType, size int64) {
-	*c = append(*c, Change{
+func (c *ChangeRecord) AddChange(path string, changeType FileChangeType, size int64) {
+	c.Files = append(c.Files, FileChange{
 		Path: path,
 		Type: changeType,
 		Size: size,
 	})
-}
-
-func (c *Changes) ToStringSlice() []string {
-	var ret []string
-
-	var added []string
-	var deleted []string
-	var removed []string
-
-	for f, c := range c {
-		if c.Type
-	}
 }

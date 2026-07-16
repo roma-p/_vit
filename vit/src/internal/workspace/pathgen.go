@@ -32,6 +32,7 @@ func genWorkspacePathForBranch(assetPath, branch string) string {
 	)
 }
 
+// TODO SRC BRANHC + USER WHO COMMITED.
 func genWorkspacePathForCommit(assetPath, date string) string {
 	return fsutil.PathInternal(
 		assetPath,
