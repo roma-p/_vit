@@ -17,60 +17,85 @@ type InitAssetRequest struct {
 	Timestamp time.Time
 }
 
-type InitAssetResult struct {
-	BranchContentBlobPath string
-	CommitRootContentNode *types.ContentNode
-	BaselineTimeStamp     time.Time
-}
-
+// InitAsset creates a BlobUpdateRequest plan for a new asset.
+// - plan the first commit (a copy of the src if any)
+// - plan the default branch wokring area
 func InitAsset(
 	ctx context.Context,
-	progress types.ProgressWriter,
 	request InitAssetRequest,
-) (result *InitAssetResult, err error) {
+) (types.BlobUpdateRequest, error) {
 	commitPath := commitBlobPath(request.RepoPath, request.AssetPath, request.Timestamp)
 	branchPath := branchBlobPath(request.RepoPath, request.AssetPath, types.DefaultBranchName)
+	blobRootDir := fsutil.PathOS(request.RepoPath, ".vit", "blob")
 
 	srcDirStat, err := sourceToDirStat(ctx, request.Src)
 	if err != nil {
-		return nil, err
+		return types.BlobUpdateRequest{}, err
 	}
 
-	// 1. Copy source → commit blob (immutable), then commit → branch blob (the
-	if err = fsutil.CopyFiles(ctx, fsutil.NewCopyProgress(progress), []fsutil.CopyFilesRequest{
+	// Copy source → commit blob (immutable), then commit → branch blob.
+	copyRequests := []types.CopyFilesRequest{
 		{DstRoot: commitPath, Src: srcDirStat},
 		{DstRoot: branchPath, Src: srcDirStat.WithRoot(commitPath)},
-	}); err != nil {
-		return nil, err
 	}
 
-	// 2. Write manifest next to commit blob
+	// Build the content tree in memory
+	rootContentNode, err := buildContentTreeFromDirStat(srcDirStat, commitPath, blobRootDir)
+	if err != nil {
+		return types.BlobUpdateRequest{}, err
+	}
+
 	ref := types.NewRefBranch(request.RepoPath, request.AssetPath, types.DefaultBranchName)
 
-	// TODO: manifest with all the files (inlcuding those who are not there)
-	// and a small "sparesfile" bool to knwo at a glance if there is everything or not.
-	if err := writeManifest(commitPath, ref, request.User, request.Timestamp, nil); err != nil {
-		return nil, err
-	}
-
-	rootContentNode, err := initAssetContentBlob(request.RepoPath, request.AssetPath, commitPath)
-	if err != nil {
-		return nil, err
-	}
-
-	branchContent, err := fsutil.RelInternal(
-		fsutil.PathOS(request.RepoPath, ".vit", "blob"),
-		branchPath,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &InitAssetResult{
-		BranchContentBlobPath: branchContent,
-		CommitRootContentNode: rootContentNode,
-		BaselineTimeStamp:     time.Now(),
+	return types.BlobUpdateRequest{
+		CopyRequests: copyRequests,
+		ContentRoots: []types.ContentRootWrite{
+			{ContentRootPath: genContentPath(request.RepoPath, request.AssetPath), Root: rootContentNode},
+		},
+		Manifests: []types.ManifestWrite{
+			{
+				CommitBlobPath: commitPath,
+				Manifest: types.Manifest{
+					Timestamp: request.Timestamp,
+					Ref:       ref,
+					User:      request.User,
+				},
+			},
+		},
 	}, nil
+}
+
+// BranchContentPath returns a branch's blob path relative to .vit/blob (the form
+// stored on the asset). Deterministic from the ref, so callers derive it rather
+// than thread it through the plan.
+func BranchContentPath(repoPath, assetPath, branchName string) (string, error) {
+	return fsutil.RelInternal(
+		fsutil.PathOS(repoPath, ".vit", "blob"),
+		branchBlobPath(repoPath, assetPath, branchName),
+	)
+}
+
+// UpdateBlob executes a plan: it materializes the whole object tier in order —
+// blob copies, then content-node trees, then manifests.
+// Everything it writes is content-addressed or write-once and therefore orphan-safe.
+func UpdateBlob(ctx context.Context, progress types.ProgressWriter, plan types.BlobUpdateRequest) error {
+	if err := fsutil.CopyFiles(ctx, fsutil.NewCopyProgress(progress), plan.CopyRequests); err != nil {
+		return err
+	}
+
+	for _, cr := range plan.ContentRoots {
+		if err := writeContentNodesRecc(cr.ContentRootPath, cr.Root); err != nil {
+			return err
+		}
+	}
+
+	for _, m := range plan.Manifests {
+		if err := writeManifest(m.CommitBlobPath, m.Manifest); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func sourceToDirStat(ctx context.Context, src string) (*types.DirStat, error) {

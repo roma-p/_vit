@@ -1,13 +1,16 @@
-package vit
+package transaction
 
 import (
 	"context"
+	"log/slog"
 
 	"vit/internal/db"
 	"vit/internal/opcontext"
 	"vit/internal/types"
 	"vit/internal/workspace"
 )
+
+// TODO: logger interface to change: sometimes i pass a logger, othertime an interface....
 
 // Operation describe the process every vit operation (commit / tag etc...) go through
 //
@@ -35,7 +38,7 @@ import (
 //     This means the Transaction is not yet created and will be rejected if an error is returned.
 //     We prefer reject a Transaction rather than building a faulty one that will fail.
 //     -- Read only acess on DB: we can't afford to keep RW access for the duration of the blob update!
-//   - 2. BlobUpdate: do the heavy copying
+//   - 2. PlanBlobUpdate: do the heavy copying
 //   - 3. DbUpdate: Gain acess on the DB with RW privilege and update it.
 //   - 4. Finish: Update workspace, rebuild cache etc...
 //
@@ -60,24 +63,37 @@ type Operation interface {
 	//		- 1. ensure the operation is valid (mainly validate user input)
 	//          This function is to be executed in the "validate" function of transaction object.
 	//          Rejecting invalid operation at that moment prevents creating invalid transaction.
-	//      - 2. Gather all the necessary data to execute "BlobUpdate" fonction.
-	//           During BlobUpdate, no access to Db so important information has to be gather here
+	//      - 2. Gather all the necessary data to execute "PlanBlobUpdate" fonction.
+	//           During PlanBlobUpdate, no access to Db so important information has to be gather here
 	//			 and stored into the Operation struct.
 	Validate(ctx context.Context, opctx *opcontext.OperationContext, dbClient *db.Client) error
 
-	// BlobUpdate update the large binaries files inside vit repository.
+	// PlanBlobUpdate update the large binaries files inside vit repository.
 	// No DB acess here, use data only saved in Operation at Validate phase.
-	BlobUpdate(ctx context.Context, opctx *opcontext.OperationContext, progress types.ProgressWriter) error
+	PlanBlobUpdate(
+		ctx context.Context,
+		opctx *opcontext.OperationContext,
+		progress types.ProgressWriter,
+	) (types.BlobUpdateRequest, error)
 
 	// DBUpdate update a given asset
 	// - receives an asset with RW privilege.
 	// - Shan't write the file! just update the asset, writing on the Db is done at transaction level
-	DBUpdate(ctx context.Context, opctx *opcontext.OperationContext, dbClient *db.Client) error
+	DBUpdate(
+		ctx context.Context,
+		opctx *opcontext.OperationContext,
+		dbClient *db.Client,
+	) error
 
 	// Finish is executed after the database was successfully executed. from here: best effort only.
 	// - Presenting new files to worksapce
 	// - Rebuilding some cache.
-	Finish(ctx context.Context, opctx *opcontext.OperationContext, c *Client, p workspace.Presenter)
+	Finish(
+		ctx context.Context,
+		opctx *opcontext.OperationContext,
+		logger *slog.Logger,
+		p workspace.Presenter,
+	)
 }
 
 // An example of a how two operation can be executed in the same command.
@@ -96,8 +112,8 @@ type Operation interface {
 // 			},
 // 			func() error {
 //
-// 				op1.BlobUpdate()
-// 				op2.BlobUpdate()
+// 				op1.PlanBlobUpdate()
+// 				op2.PlanBlobUpdate()
 //
 // 				// Only update one json per operation (to ensure atomicity of the operation)
 // 				// only move has to update two.

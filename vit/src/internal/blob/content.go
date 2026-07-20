@@ -3,6 +3,7 @@ package blob
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"vit/internal/fsutil"
 	"vit/internal/types"
@@ -19,22 +20,6 @@ func newErrContentNode(nestedErr error, msg, nodePath string) error {
 		[]string{fmt.Sprintf("%s: %s", msg, nodePath)},
 		[]any{"nodePath", nodePath},
 	)
-}
-
-func initAssetContentBlob(repoPath, assetPath, blobDir string) (*types.ContentNode, error) {
-	rootDir := fsutil.PathOS(repoPath, ".vit", "blob")
-	rootContentNode, err := buildInMemoryContentTree(rootDir, blobDir)
-	if err != nil {
-		return nil, err
-	}
-
-	contentRootPath := genContentPath(repoPath, assetPath)
-
-	if err := writeContentNodesRecc(contentRootPath, rootContentNode); err != nil {
-		return nil, err
-	}
-
-	return rootContentNode, nil
 }
 
 func writeContentNodesRecc(contentRootPath string, node *types.ContentNode) error {
@@ -93,46 +78,48 @@ func loadContentTree(contentRootPath, hash string) (*types.ContentNode, error) {
 	return node, nil
 }
 
-func buildInMemoryContentTree(rootdir, currDir string) (*types.ContentNode, error) {
-	entries, err := os.ReadDir(currDir)
-	if err != nil {
-		return nil, err
+func buildContentTreeFromDirStat(srcDirStat *types.DirStat, commitDir, blobRootDir string) (*types.ContentNode, error) {
+	root := &types.ContentNode{Name: fsutil.BaseInternal(commitDir)}
+
+	for relPath, stat := range srcDirStat.Data {
+		blobTarget, err := fsutil.RelInternal(blobRootDir, fsutil.PathInternal(commitDir, relPath))
+		if err != nil {
+			return nil, err
+		}
+
+		// DirStat keys are POSIX- PathIternal() paths, so split on "/".
+		parts := strings.Split(relPath, "/")
+		node := root
+		for _, dir := range parts[:len(parts)-1] {
+			node = ensureChildDir(node, dir)
+		}
+		node.Files = append(node.Files, &types.ContentNodeFile{
+			Name:       parts[len(parts)-1],
+			BlobTarget: blobTarget,
+			Size:       stat.Size,
+			MTime:      stat.MTime,
+		})
 	}
 
-	node := types.ContentNode{Name: fsutil.BaseInternal(currDir)}
+	hashContentTree(root)
+	return root, nil
+}
 
-	for _, e := range entries {
-		subPath := fsutil.PathOS(currDir, e.Name())
-		if e.IsDir() {
-			subNode, err := buildInMemoryContentTree(rootdir, subPath)
-			if err != nil {
-				return nil, err
-			}
-			node.Children = append(node.Children, subNode)
-		} else {
-			info, err := e.Info()
-			if err != nil {
-				return nil, err
-			}
-
-			blobTarget, err := fsutil.RelInternal(
-				rootdir,
-				fsutil.PathInternal(currDir, e.Name()),
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			node.Files = append(node.Files, &types.ContentNodeFile{
-				Name:       e.Name(),
-				BlobTarget: blobTarget,
-				Size:       info.Size(),
-				MTime:      info.ModTime(),
-			})
+func ensureChildDir(parent *types.ContentNode, name string) *types.ContentNode {
+	for _, c := range parent.Children {
+		if c.Name == name {
+			return c
 		}
 	}
+	child := &types.ContentNode{Name: name}
+	parent.Children = append(parent.Children, child)
+	return child
+}
 
+func hashContentTree(node *types.ContentNode) {
+	for _, c := range node.Children {
+		hashContentTree(c)
+	}
 	node.Serialized = node.Serialize()
 	node.ContentHash = fsutil.HashBytes(node.Serialized)
-	return &node, nil
 }

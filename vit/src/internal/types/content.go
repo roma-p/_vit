@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -27,11 +28,16 @@ type ContentNodeFile struct {
 }
 
 func (n *ContentNode) Serialize() []byte {
+	children := append([]*ContentNode(nil), n.Children...)
+	files := append([]*ContentNodeFile(nil), n.Files...)
+	sort.Slice(children, func(i, j int) bool { return children[i].Name < children[j].Name })
+	sort.Slice(files, func(i, j int) bool { return files[i].BlobTarget < files[j].BlobTarget })
+
 	var b strings.Builder
-	for _, e := range n.Children {
+	for _, e := range children {
 		fmt.Fprintf(&b, "d %s %s\n", e.ContentHash, e.Name)
 	}
-	for _, e := range n.Files {
+	for _, e := range files {
 		fmt.Fprintf(&b, "f %s %d %s\n", FormatTimestamp(e.MTime), e.Size, e.BlobTarget)
 	}
 	return []byte(b.String())

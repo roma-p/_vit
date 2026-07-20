@@ -37,9 +37,17 @@ func (c *Client) Status(ctx context.Context, path string) (*types.StatusResult, 
 		}
 		defer dbClient.Close()
 
-		changeRecord, err = resolveBranchChangeRecord(ctx, opctx, ref, dbClient, false)
+		r, err := resolveChangeRecord(ctx, resolveChangeRecordRequest{
+			Opctx:     opctx,
+			BranchRef: ref,
+			DBClient:  dbClient,
+		})
+		if err != nil {
+			return err
+		}
 
-		return err
+		changeRecord = r.ChangeRecord
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -49,28 +57,45 @@ func (c *Client) Status(ctx context.Context, path string) (*types.StatusResult, 
 	return ret, nil
 }
 
-func resolveBranchChangeRecord(
-	ctx context.Context,
-	opctx *opcontext.OperationContext,
-	branchRef *types.Ref,
-	dbClient *db.Client,
-	editAsset bool, // TODO: remove this: will always be false, as it will sit in Validate during commit op.
-) (*types.ChangeRecord, error) {
-	workspacePath := fsutil.PathOS(branchRef.RepoPath, workspace.RefToWorkspacePath(branchRef))
+type resolveChangeRecordRequest struct {
+	Opctx     *opcontext.OperationContext
+	BranchRef *types.Ref
+	DBClient  *db.Client
+}
 
-	workspaceFileStat, err := fsutil.NewDirStatFromDir(ctx, workspacePath)
+type resolveChangeRecordResult struct {
+	ChangeRecord          *types.ChangeRecord
+	PrevCommitContentNode *types.ContentNode
+	WorkspaceDirStat      *types.DirStat
+}
+
+func resolveChangeRecord(
+	ctx context.Context,
+	request resolveChangeRecordRequest,
+) (*resolveChangeRecordResult, error) {
+	workspacePath := fsutil.PathOS(
+		request.BranchRef.RepoPath,
+		workspace.RefToWorkspacePath(request.BranchRef),
+	)
+
+	workspaceDirStat, err := fsutil.NewDirStatFromDir(ctx, workspacePath)
 	if err != nil {
 		return nil, err
 	}
 
-	jsonAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, branchRef, editAsset)
+	jsonAsset, err := request.DBClient.GetJSONAssetFromRef(
+		ctx,
+		request.Opctx,
+		request.BranchRef,
+		false,
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	commitBranch, err := db.GetBranchCommit(
 		jsonAsset.Data,
-		branchRef.BranchName,
+		request.BranchRef.BranchName,
 	)
 	if err != nil {
 		return nil, err
@@ -84,8 +109,8 @@ func resolveBranchChangeRecord(
 	}
 
 	contentRoot, err := blob.LoadContentTree(
-		branchRef.RepoPath,
-		branchRef.AssetPath,
+		request.BranchRef.RepoPath,
+		request.BranchRef.AssetPath,
 		parentCommit.Content,
 	)
 	if err != nil {
@@ -94,7 +119,11 @@ func resolveBranchChangeRecord(
 
 	lastCommitStat := contentRoot.ToDirStat("") // TODO: do we need root path?
 
-	changes := workspaceFileStat.Diff(lastCommitStat, baseline)
+	changes := workspaceDirStat.Diff(lastCommitStat, baseline)
 
-	return changes, nil
+	return &resolveChangeRecordResult{
+		ChangeRecord:          changes,
+		PrevCommitContentNode: contentRoot,
+		WorkspaceDirStat:      workspaceDirStat,
+	}, nil
 }

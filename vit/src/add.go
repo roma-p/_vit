@@ -54,54 +54,35 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 
 		op := newOperationAdd(opctx.RepoPath, assetPath, src)
 
-		return transaction.WithTransactionTreeChanged(
+		if err := transaction.RunTreeChanged(
 			ctx,
-			opctx.RepoPath,
+			transaction.Request{
+				Opctx:     opctx,
+				DBClient:  dbClient,
+				Presenter: presenter,
+				Operation: op,
+				Logger:    c.logger,
+				Progress:  c.progress,
+				Command:   types.CommandAdd,
+				User:      opctx.User,
+				RepoPath:  opctx.RepoPath,
+				Timestamp: opctx.TimeStamp,
+			},
 			[]string{assetPath},
-			types.CommandAdd,
-			opctx.User,
-			opctx.TimeStamp,
-			func() error {
-				return op.Validate(ctx, opctx, dbClient)
-			},
-			func() error {
-				ret := operateAdd(ctx, opctx, c, dbClient, op, presenter)
-				pathbranch = op.WorkspaceBranchPath
-				return ret
-			},
-		)
+		); err != nil {
+			return err
+		}
+
+		pathbranch = op.WorkspaceBranchPath
+		return nil
 	})
 
+	// TODO WTF?
 	if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 		err = types.NewCancelledError(err)
 	}
 
 	return &types.StringResult{String: pathbranch}, err
-}
-
-func operateAdd(
-	ctx context.Context,
-	opctx *opcontext.OperationContext,
-	client *Client,
-	dbClient *db.Client,
-	opAdd *operationAdd,
-	presenter workspace.Presenter,
-) error {
-	if err := opAdd.BlobUpdate(ctx, opctx, client.progress); err != nil {
-		return err
-	}
-
-	if err := opAdd.DBUpdate(ctx, opctx, dbClient); err != nil {
-		return err
-	}
-
-	if err := opctx.JSONPool.FlushForWrite(); err != nil {
-		return err
-	}
-
-	opAdd.Finish(ctx, opctx, client, presenter)
-
-	return nil
 }
 
 type operationAdd struct {
@@ -113,7 +94,7 @@ type operationAdd struct {
 	// filled at Validate
 	ClosestPathFound string
 
-	// filled at BlobUpdate
+	// filled at PlanBlobUpdate
 	BlobPathBranch    string
 	ContentNode       *types.ContentNode
 	BaselineTimeStamp time.Time
@@ -122,7 +103,7 @@ type operationAdd struct {
 	WorkspaceBranchPath string
 }
 
-var _ Operation = (*operationAdd)(nil) // enforcing operation interface.
+var _ transaction.Operation = (*operationAdd)(nil) // enforcing operation interface.
 
 func newOperationAdd(repoPath, assetPath, src string) *operationAdd {
 	return &operationAdd{
@@ -142,14 +123,13 @@ func (o *operationAdd) Validate(
 	return err
 }
 
-func (o *operationAdd) BlobUpdate(
+func (o *operationAdd) PlanBlobUpdate(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	progress types.ProgressWriter,
-) error {
-	result, err := blob.InitAsset(
+) (types.BlobUpdateRequest, error) {
+	plan, err := blob.InitAsset(
 		ctx,
-		progress,
 		blob.InitAssetRequest{
 			RepoPath:  o.RepoPath,
 			AssetPath: o.AssetPath,
@@ -159,14 +139,16 @@ func (o *operationAdd) BlobUpdate(
 		},
 	)
 	if err != nil {
-		return err
+		return types.BlobUpdateRequest{}, err
 	}
 
-	o.BlobPathBranch = result.BranchContentBlobPath
-	o.ContentNode = result.CommitRootContentNode
-	o.BaselineTimeStamp = result.BaselineTimeStamp
+	o.ContentNode = plan.ContentRoots[0].Root
+	o.BlobPathBranch, err = blob.BranchContentPath(o.RepoPath, o.AssetPath, types.DefaultBranchName)
+	if err != nil {
+		return types.BlobUpdateRequest{}, err
+	}
 
-	return nil
+	return plan, nil
 }
 
 func (o *operationAdd) DBUpdate(
@@ -174,6 +156,8 @@ func (o *operationAdd) DBUpdate(
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
 ) error {
+	o.BaselineTimeStamp = time.Now()
+
 	_, err := dbClient.AddAssetToTree(
 		ctx,
 		opctx,
@@ -191,7 +175,7 @@ func (o *operationAdd) DBUpdate(
 func (o *operationAdd) Finish(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	c *Client,
+	logger *slog.Logger,
 	p workspace.Presenter,
 ) {
 	var err error
@@ -203,7 +187,7 @@ func (o *operationAdd) Finish(
 		types.NewRefBranch(opctx.RepoPath, o.AssetPath, types.DefaultBranchName),
 	)
 	if err != nil {
-		c.logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
+		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
 	}
 
 	if err := workspace.PresentCommit(
@@ -214,7 +198,7 @@ func (o *operationAdd) Finish(
 		p,
 		o.ContentNode,
 	); err != nil {
-		c.logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
+		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
 	}
 }
 

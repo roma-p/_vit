@@ -2,11 +2,16 @@ package transaction
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"time"
 
+	"vit/internal/blob"
+	"vit/internal/db"
 	"vit/internal/fsutil"
+	"vit/internal/opcontext"
 	"vit/internal/types"
+	"vit/internal/workspace"
 )
 
 type activeTransaction struct {
@@ -23,58 +28,91 @@ func (t *activeTransaction) finish() {
 	}
 }
 
-// WithTransactionTreeChanged wraps an operation that mutates the tree (add/move/delete).
+type Request struct {
+	Opctx     *opcontext.OperationContext
+	DBClient  *db.Client
+	Presenter workspace.Presenter
+	Operation Operation
+	Logger    *slog.Logger
+	Progress  types.ProgressWriter
+
+	Command   types.VitCommand
+	User      string
+	RepoPath  string
+	Timestamp time.Time
+}
+
+// RunTreeChanged drives an operation that mutates the tree (add/move/delete).
 // Conflicts with ANY existing transaction on overlapping paths.
-func WithTransactionTreeChanged(
+func RunTreeChanged(
 	ctx context.Context,
-	repoPath string,
+	r Request,
 	assetPaths []string,
-	command types.VitCommand,
-	user string,
-	timestamp time.Time,
-	extraValidate func() error,
-	operation func() error,
 ) error {
 	tids := make([]TransactionID, len(assetPaths))
 	for i, p := range assetPaths {
-		tids[i] = newTransactionID(TransactionTreeChanged, types.NewRefEmpty(repoPath, p))
+		tids[i] = newTransactionID(TransactionTreeChanged, types.NewRefEmpty(r.RepoPath, p))
 	}
-	return withTransaction(ctx, repoPath, tids, command, user, timestamp,
-		func() error {
-			if err := validateTreeChanged(repoPath, assetPaths); err != nil {
-				return err
-			}
-			return extraValidate()
-		},
-		operation,
-	)
+	return run(ctx, r, func() error { return validateTreeChanged(r.RepoPath, assetPaths) }, tids)
 }
 
-// WithTransactionEdit wraps an operation that edits existing assets (commit/branch).
+// RunEdit drives an operation that edits existing assets (commit/branch).
 // Conflicts with TreeChanged on overlapping paths, or same-ref operations.
-func WithTransactionEdit(
+func RunEdit(
 	ctx context.Context,
-	repoPath string,
+	r Request,
 	refs []*types.Ref,
 	op TransactionOperation,
-	command types.VitCommand,
-	user string,
-	timestamp time.Time,
-	extraValidate func() error,
-	operation func() error,
 ) error {
 	tids := make([]TransactionID, len(refs))
-	for i, r := range refs {
-		tids[i] = newTransactionID(op, r)
+	for i, ref := range refs {
+		tids[i] = newTransactionID(op, ref)
 	}
-	return withTransaction(ctx, repoPath, tids, command, user, timestamp,
+	return run(ctx, r, func() error { return validateEdit(r.RepoPath, refs) }, tids)
+}
+
+func run(
+	ctx context.Context,
+	r Request,
+	extraValidate func() error,
+	tids []TransactionID,
+) error {
+	return withTransaction(ctx, r.RepoPath, tids, r.Command, r.User, r.Timestamp,
 		func() error {
-			if err := validateEdit(repoPath, refs); err != nil {
+			// 1. domain validate (conflict scan) first, then operation validate.
+			if err := extraValidate(); err != nil {
 				return err
 			}
-			return extraValidate()
+			if err := r.Operation.Validate(ctx, r.Opctx, r.DBClient); err != nil {
+				return err
+			}
+			return nil
 		},
-		operation,
+		func() error {
+			// 3. Plan the object-tier writes (writes nothing), then execute them
+			//    (copy blobs, write content nodes + manifests).
+			plan, err := r.Operation.PlanBlobUpdate(ctx, r.Opctx, r.Progress)
+			if err != nil {
+				return err
+			}
+			if err := blob.UpdateBlob(ctx, r.Progress, plan); err != nil {
+				return err
+			}
+
+			// 4. run the function responsible for updating the data, and write all of them on disk.
+			//    Write lock on DB only hold here!
+			if err := r.Operation.DBUpdate(ctx, r.Opctx, r.DBClient); err != nil {
+				return err
+			}
+			if err := r.Opctx.JSONPool.FlushForWrite(); err != nil {
+				return err
+			}
+
+			// 5. Best effort finish.
+			r.Operation.Finish(ctx, r.Opctx, r.Logger, r.Presenter)
+
+			return nil
+		},
 	)
 }
 
@@ -150,8 +188,6 @@ func withTransaction(
 	return operation()
 }
 
-// transactionPayload is the JSON content written inside each transaction file.
-// Only read when reporting conflicts to the user.
 type transactionPayload struct {
 	AssetPath string               `json:"asset_path"`
 	Operation TransactionOperation `json:"operation"`

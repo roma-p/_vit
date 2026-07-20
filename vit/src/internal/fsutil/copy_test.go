@@ -51,7 +51,7 @@ func dirStat(t *testing.T, src string) *types.DirStat {
 
 // copyFilesOne is a single-request CopyFiles, convenient for tests.
 func copyFilesOne(ctx context.Context, dst string, src *types.DirStat, p *CopyProgress) error {
-	return CopyFiles(ctx, p, []CopyFilesRequest{{DstRoot: dst, Src: src}})
+	return CopyFiles(ctx, p, []types.CopyFilesRequest{{DstRoot: dst, Src: src}})
 }
 
 func TestCopyFiles_Basic(t *testing.T) {
@@ -201,7 +201,7 @@ func TestCopyFiles_MultiRequestSingleProgress(t *testing.T) {
 	dstB := filepath.Join(tmpDir, "dstB")
 
 	pw := &testProgressWriter{}
-	err := CopyFiles(context.Background(), NewCopyProgress(pw), []CopyFilesRequest{
+	err := CopyFiles(context.Background(), NewCopyProgress(pw), []types.CopyFilesRequest{
 		{DstRoot: dstA, Src: ds},
 		{DstRoot: dstB, Src: ds},
 	})

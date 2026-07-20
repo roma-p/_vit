@@ -9,12 +9,7 @@ import (
 	"vit/internal/types"
 )
 
-type CopyFilesRequest struct {
-	DstRoot string
-	Src     *types.DirStat
-}
-
-func CopyFiles(ctx context.Context, progress *CopyProgress, requests []CopyFilesRequest) (err error) {
+func CopyFiles(ctx context.Context, progress *CopyProgress, requests []types.CopyFilesRequest) (err error) {
 	// TODO: is this really a panic case?
 	if progress == nil {
 		panic("BUG: CopyFiles received an empty progress!")
