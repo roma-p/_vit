@@ -38,7 +38,8 @@ import (
 //     This means the Transaction is not yet created and will be rejected if an error is returned.
 //     We prefer reject a Transaction rather than building a faulty one that will fail.
 //     -- Read only acess on DB: we can't afford to keep RW access for the duration of the blob update!
-//   - 2. PlanBlobUpdate: do the heavy copying
+//   - 2. PlanBlobUpdate: pure compute, no I/O — describe the object-tier writes as a
+//     BlobUpdatePlan. The transaction executes it (the heavy copying) via blob.UpdateBlob.
 //   - 3. DbUpdate: Gain acess on the DB with RW privilege and update it.
 //   - 4. Finish: Update workspace, rebuild cache etc...
 //
@@ -68,13 +69,14 @@ type Operation interface {
 	//			 and stored into the Operation struct.
 	Validate(ctx context.Context, opctx *opcontext.OperationContext, dbClient *db.Client) error
 
-	// PlanBlobUpdate update the large binaries files inside vit repository.
-	// No DB acess here, use data only saved in Operation at Validate phase.
+	// PlanBlobUpdate computes the object-tier writes (blob copies, content nodes,
+	// manifests) and returns them as a BlobUpdatePlan. Pure compute: no I/O and
+	// no DB access — use only data saved into the Operation during Validate. The
+	// transaction executes the plan (the heavy copying) via blob.UpdateBlob.
 	PlanBlobUpdate(
 		ctx context.Context,
 		opctx *opcontext.OperationContext,
-		progress types.ProgressWriter,
-	) (types.BlobUpdateRequest, error)
+	) (*types.BlobUpdatePlan, error)
 
 	// DBUpdate update a given asset
 	// - receives an asset with RW privilege.
@@ -95,41 +97,3 @@ type Operation interface {
 		p workspace.Presenter,
 	)
 }
-
-// An example of a how two operation can be executed in the same command.
-// (for instance: when tagging a branch, we actually do commit the branch and tag the new commit)
-// func exampleFunc( ctx context.Context, path string) error {
-//
-// 	err := opcontext.WithOperationContext() error {
-//
-// 		op1 := Operation()
-// 		op2 := Operation()
-//
-// 		return WithTransactionEditBranch() {
-// 			func() error {
-// 				op1.Validate()
-// 				op2.Validate()
-// 			},
-// 			func() error {
-//
-// 				op1.PlanBlobUpdate()
-// 				op2.PlanBlobUpdate()
-//
-// 				// Only update one json per operation (to ensure atomicity of the operation)
-// 				// only move has to update two.
-// 				assetJSON := GetAssetWithWritePrivilege()
-// 				assetData := assetJSON.Data
-//
-// 				op1.DbUpdate(assetData)
-// 				op2.DbUpdate(assetData)
-//
-// 				WriteAsset(assetJSON)
-//
-// 				op1.Finish()
-// 				op2.Finish()
-//
-// 				UpdateGlobalHistory("something done")
-// 			}
-// 		}
-// 	}
-// }

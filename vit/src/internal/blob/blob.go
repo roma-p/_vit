@@ -17,20 +17,20 @@ type InitAssetRequest struct {
 	Timestamp time.Time
 }
 
-// InitAsset creates a BlobUpdateRequest plan for a new asset.
+// InitAsset builds the BlobUpdatePlan for a new asset.
 // - plan the first commit (a copy of the src if any)
 // - plan the default branch wokring area
 func InitAsset(
 	ctx context.Context,
 	request InitAssetRequest,
-) (types.BlobUpdateRequest, error) {
+) (*types.BlobUpdatePlan, error) {
 	commitPath := commitBlobPath(request.RepoPath, request.AssetPath, request.Timestamp)
 	branchPath := branchBlobPath(request.RepoPath, request.AssetPath, types.DefaultBranchName)
 	blobRootDir := fsutil.PathOS(request.RepoPath, ".vit", "blob")
 
 	srcDirStat, err := sourceToDirStat(ctx, request.Src)
 	if err != nil {
-		return types.BlobUpdateRequest{}, err
+		return nil, err
 	}
 
 	// Copy source → commit blob (immutable), then commit → branch blob.
@@ -42,12 +42,12 @@ func InitAsset(
 	// Build the content tree in memory
 	rootContentNode, err := buildContentTreeFromDirStat(srcDirStat, commitPath, blobRootDir)
 	if err != nil {
-		return types.BlobUpdateRequest{}, err
+		return nil, err
 	}
 
 	ref := types.NewRefBranch(request.RepoPath, request.AssetPath, types.DefaultBranchName)
 
-	return types.BlobUpdateRequest{
+	return &types.BlobUpdatePlan{
 		CopyRequests: copyRequests,
 		ContentRoots: []types.ContentRootWrite{
 			{ContentRootPath: genContentPath(request.RepoPath, request.AssetPath), Root: rootContentNode},
@@ -76,7 +76,10 @@ func BranchContentPath(repoPath, assetPath, branchName string) (string, error) {
 // UpdateBlob executes a plan: it materializes the whole object tier in order —
 // blob copies, then content-node trees, then manifests.
 // Everything it writes is content-addressed or write-once and therefore orphan-safe.
-func UpdateBlob(ctx context.Context, progress types.ProgressWriter, plan types.BlobUpdateRequest) error {
+func UpdateBlob(ctx context.Context, progress types.ProgressWriter, plan *types.BlobUpdatePlan) error {
+	if plan == nil {
+		return nil
+	}
 	if err := fsutil.CopyFiles(ctx, fsutil.NewCopyProgress(progress), plan.CopyRequests); err != nil {
 		return err
 	}

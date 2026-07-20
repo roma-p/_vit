@@ -91,7 +91,7 @@ func run(
 		func() error {
 			// 3. Plan the object-tier writes (writes nothing), then execute them
 			//    (copy blobs, write content nodes + manifests).
-			plan, err := r.Operation.PlanBlobUpdate(ctx, r.Opctx, r.Progress)
+			plan, err := r.Operation.PlanBlobUpdate(ctx, r.Opctx)
 			if err != nil {
 				return err
 			}

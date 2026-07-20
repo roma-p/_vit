@@ -126,8 +126,7 @@ func (o *operationAdd) Validate(
 func (o *operationAdd) PlanBlobUpdate(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	progress types.ProgressWriter,
-) (types.BlobUpdateRequest, error) {
+) (*types.BlobUpdatePlan, error) {
 	plan, err := blob.InitAsset(
 		ctx,
 		blob.InitAssetRequest{
@@ -139,13 +138,13 @@ func (o *operationAdd) PlanBlobUpdate(
 		},
 	)
 	if err != nil {
-		return types.BlobUpdateRequest{}, err
+		return nil, err
 	}
 
 	o.ContentNode = plan.ContentRoots[0].Root
 	o.BlobPathBranch, err = blob.BranchContentPath(o.RepoPath, o.AssetPath, types.DefaultBranchName)
 	if err != nil {
-		return types.BlobUpdateRequest{}, err
+		return nil, err
 	}
 
 	return plan, nil
