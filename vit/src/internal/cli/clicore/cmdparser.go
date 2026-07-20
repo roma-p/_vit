@@ -44,11 +44,11 @@ func (a *CmdParser) String(name string, value string, usage string) error {
 	return nil
 }
 
-func (a *CmdParser) GetFlag(name string) any {
+func (a *CmdParser) Flag(name string) any {
 	return a.FlagArgs[name]
 }
 
-func (a *CmdParser) GetArg(name string) string {
+func (a *CmdParser) Arg(name string) string {
 	return a.ArgsMap[name]
 }
 

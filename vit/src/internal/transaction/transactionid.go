@@ -29,22 +29,22 @@ func newTransactionID(op TransactionOperation, ref *types.Ref) TransactionID {
 }
 
 func newTransactionIDFromName(repoPath, encodedName string) (*TransactionID, error) {
-	splitTransactionId := strings.Split(encodedName, "---")
+	splitTransactionID := strings.Split(encodedName, "---")
 
-	if len(splitTransactionId) < 2 || len(splitTransactionId) > 3 {
+	if len(splitTransactionID) < 2 || len(splitTransactionID) > 3 {
 		return nil, fmt.Errorf("not a valid transaction id: %s", encodedName)
 	}
 
-	decoded := strings.ReplaceAll(splitTransactionId[0], "%20", "+")
+	decoded := strings.ReplaceAll(splitTransactionID[0], "%20", "+")
 	decoded, err := url.QueryUnescape(decoded)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode transaction id '%s' : %w", encodedName, err)
 	}
 
-	operation := splitTransactionId[1]
+	operation := splitTransactionID[1]
 	var ref *types.Ref = nil
-	if len(splitTransactionId) == 3 {
-		refSubPath := splitTransactionId[2]
+	if len(splitTransactionID) == 3 {
+		refSubPath := splitTransactionID[2]
 		refPath := decoded + refSubPath
 		ref, err = types.NewRefFromPath(repoPath, refPath)
 		if err != nil {

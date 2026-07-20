@@ -16,7 +16,7 @@ func buildAddArgParser() *clicore.CmdParser {
 func runAdd(ctx context.Context, client *vit.Client, argParser *clicore.CmdParser) (types.Result, error) {
 	return client.Add(
 		ctx,
-		argParser.GetArg("assetPath"),
-		argParser.GetArg("src"),
+		argParser.Arg("assetPath"),
+		argParser.Arg("src"),
 	)
 }

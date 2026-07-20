@@ -96,17 +96,6 @@ func ReleaseExclusiveLock(lockDir string) {
 	_ = os.Remove(lockDir)
 }
 
-// WithExclusiveLockKeepalive is like WithExclusiveLock but keeps the lock alive
-// for the duration of the operation. Use for long-running operations.
-func WithExclusiveLockKeepalive(ctx context.Context, lockPath string, operation func() error) error {
-	stop, err := AcquireExclusiveLockWithKeepalive(ctx, lockPath)
-	if err != nil {
-		return err
-	}
-	defer stop()
-	return operation()
-}
-
 // WithExclusiveLock is a wrapper on AcquireExclusiveLock / ReleaseExclusiveLock.
 // Acquires the lock, runs the operation, and releases the lock.
 func WithExclusiveLock(ctx context.Context, lockPath string, operation func() error) error {

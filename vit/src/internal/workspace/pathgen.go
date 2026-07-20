@@ -20,10 +20,6 @@ func RefToWorkspacePath(ref *types.Ref) string {
 	}
 }
 
-func workspacePathToSourcePath(workspacePath, sourceName string) string {
-	return fsutil.PathInternal(fsutil.DirInternal(workspacePath), sourceName)
-}
-
 func genWorkspacePathForBranch(assetPath, branch string) string {
 	return fsutil.PathInternal(
 		assetPath,

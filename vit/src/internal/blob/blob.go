@@ -59,15 +59,13 @@ func InitAsset(
 					Timestamp: request.Timestamp,
 					Ref:       ref,
 					User:      request.User,
+					// TODO: missing: all files.
 				},
 			},
 		},
 	}, nil
 }
 
-// BranchContentPath returns a branch's blob path relative to .vit/blob (the form
-// stored on the asset). Deterministic from the ref, so callers derive it rather
-// than thread it through the plan.
 func BranchContentPath(repoPath, assetPath, branchName string) (string, error) {
 	return fsutil.RelInternal(
 		fsutil.PathOS(repoPath, ".vit", "blob"),
