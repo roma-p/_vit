@@ -4,24 +4,18 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"vit/internal/fsutil"
 	"vit/internal/types"
 )
 
+// genContentPath: absolute path to content node
 func genContentPath(repoPath, assetPath string) string {
 	return fsutil.PathOS(repoPath, ".vit", "content", assetPath)
 }
 
-func newErrContentNode(nestedErr error, msg, nodePath string) error {
-	return types.NewInternalVitError(
-		types.ErrBlobInternal,
-		nestedErr,
-		[]string{fmt.Sprintf("%s: %s", msg, nodePath)},
-		[]any{"nodePath", nodePath},
-	)
-}
-
+// writeContentNodesRecc: write all content nodes to disk from a root node.
 func writeContentNodesRecc(contentRootPath string, node *types.ContentNode) error {
 	nodePath := fsutil.PathOS(contentRootPath, node.ContentHash[:2], node.ContentHash[2:])
 
@@ -78,6 +72,8 @@ func loadContentTree(contentRootPath, hash string) (*types.ContentNode, error) {
 	return node, nil
 }
 
+// buildContentTreeFromDirStat: build a tree of content nodes from a dir stat object,
+// return the root node.
 func buildContentTreeFromDirStat(srcDirStat *types.DirStat, commitDir, blobRootDir string) (*types.ContentNode, error) {
 	root := &types.ContentNode{Name: fsutil.BaseInternal(commitDir)}
 
@@ -122,4 +118,112 @@ func hashContentTree(node *types.ContentNode) {
 	}
 	node.Serialized = node.Serialize()
 	node.ContentHash = fsutil.HashBytes(node.Serialized)
+}
+
+// applyChangeRecord: modify a tree of content node according a ChangeRecord object
+func applyChangeRecord(
+	n *types.ContentNode,
+	cr *types.ChangeRecord,
+	baseline time.Time,
+	commitDir, blobRootDir string,
+) error {
+	plan := applyPlan{
+		fileChanges: make(map[string][]contentChange),
+		dirsTouched: make(map[string]map[string]bool),
+	}
+
+	for _, f := range cr.Files {
+		dir := fsutil.DirInternal(f.Path)
+
+		blobTarget, err := fsutil.RelInternal(blobRootDir, fsutil.PathInternal(commitDir, f.Path))
+		if err != nil {
+			return err
+		}
+		plan.fileChanges[dir] = append(plan.fileChanges[dir], contentChange{
+			name:       fsutil.BaseInternal(f.Path),
+			typ:        f.Type,
+			size:       f.Size,
+			blobTarget: blobTarget,
+		})
+
+		curr := ""
+		for _, sub := range fsutil.SplitInternal(dir) {
+			curr = fsutil.PathInternal(curr, sub)
+			parent := fsutil.DirInternal(curr)
+			if plan.dirsTouched[parent] == nil {
+				plan.dirsTouched[parent] = make(map[string]bool)
+			}
+			plan.dirsTouched[parent][fsutil.BaseInternal(curr)] = true
+		}
+	}
+
+	applyPlanRecc(n, &plan, ".", baseline)
+	hashContentTree(n)
+	return nil
+}
+
+type applyPlan struct {
+	fileChanges map[string][]contentChange
+	dirsTouched map[string]map[string]bool
+}
+
+type contentChange struct {
+	name       string
+	typ        types.FileChangeType
+	size       int64
+	blobTarget string
+}
+
+func applyPlanRecc(n *types.ContentNode, plan *applyPlan, nodePath string, baseline time.Time) {
+	for _, fc := range plan.fileChanges[nodePath] {
+		switch fc.typ {
+		case types.FileChangeAdded:
+			n.Files = append(n.Files, &types.ContentNodeFile{
+				Name:       fc.name,
+				Size:       fc.size,
+				MTime:      baseline,
+				BlobTarget: fc.blobTarget,
+			})
+		case types.FileChangeEdited:
+			for _, f := range n.Files {
+				if f.Name == fc.name {
+					f.Size = fc.size
+					f.MTime = baseline
+					f.BlobTarget = fc.blobTarget
+					break
+				}
+			}
+		case types.FileChangeRemoved:
+			for i, f := range n.Files {
+				if f.Name == fc.name {
+					n.Files = append(n.Files[:i], n.Files[i+1:]...)
+					break
+				}
+			}
+		}
+	}
+
+	for childName := range plan.dirsTouched[nodePath] {
+		var child *types.ContentNode
+		for _, sub := range n.Children {
+			if sub.Name == childName {
+				child = sub
+				break
+			}
+		}
+		if child == nil {
+			child = &types.ContentNode{Name: childName}
+			n.Children = append(n.Children, child)
+		}
+		applyPlanRecc(child, plan, fsutil.PathInternal(nodePath, childName), baseline)
+	}
+}
+
+func newErrContentNode(nestedErr error, msg, nodePath string) error {
+	return types.NewInternalVitError(
+		types.ErrBlobInternal,
+		nestedErr,
+		[]string{fmt.Sprintf("%s: %s", msg, nodePath)},
+		[]any{"nodePath", nodePath},
+	)
 }

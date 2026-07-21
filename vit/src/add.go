@@ -127,9 +127,9 @@ func (o *operationAdd) PlanBlobUpdate(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 ) (*types.BlobUpdatePlan, error) {
-	plan, err := blob.InitAsset(
+	plan, err := blob.PlanInitAsset(
 		ctx,
-		blob.InitAssetRequest{
+		blob.PlanInitAssetRequest{
 			RepoPath:  o.RepoPath,
 			AssetPath: o.AssetPath,
 			Src:       o.Src,

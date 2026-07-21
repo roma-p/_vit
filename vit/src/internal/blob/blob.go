@@ -9,7 +9,77 @@ import (
 	"vit/internal/types"
 )
 
-type InitAssetRequest struct {
+type CommitBranchRequest struct {
+	RepoPath              string
+	AssetPath             string
+	BranchName            string
+	User                  string
+	Timestamp             time.Time
+	PrevCommitContentNode *types.ContentNode
+	WorkspaceDirStat      *types.DirStat
+	ChangeRecord          *types.ChangeRecord
+}
+
+func PlanCommitBranch(
+	ctx context.Context,
+	r CommitBranchRequest,
+) (*types.BlobUpdatePlan, error) {
+	topCopy := filterFilesToCopyToBlob(r.WorkspaceDirStat, r.ChangeRecord)
+	commitPath := commitBlobPath(r.RepoPath, r.AssetPath, r.BranchName, r.User, r.Timestamp)
+	blobRootDir := fsutil.PathOS(r.RepoPath, ".vit", "blob")
+
+	if err := applyChangeRecord(
+		r.PrevCommitContentNode,
+		r.ChangeRecord,
+		time.Now(),
+		commitPath,
+		blobRootDir,
+	); err != nil {
+		return nil, err
+	}
+
+	return &types.BlobUpdatePlan{
+		CopyRequests: []types.CopyFilesRequest{
+			{
+				Src:     topCopy,
+				DstRoot: commitPath,
+			},
+		},
+		ContentRoots: []types.ContentRootWrite{
+			{
+				ContentRootPath: genContentPath(r.RepoPath, r.AssetPath),
+				Root:            r.PrevCommitContentNode,
+			},
+		},
+		Manifests: []types.ManifestWrite{
+			{
+				CommitBlobPath: commitPath,
+				Manifest: types.Manifest{
+					Timestamp: r.Timestamp,
+					Ref:       types.NewRefBranch(r.RepoPath, r.AssetPath, r.BranchName),
+					User:      r.User,
+				},
+			},
+		},
+	}, nil
+}
+
+func filterFilesToCopyToBlob(d *types.DirStat, c *types.ChangeRecord) *types.DirStat {
+	ret := types.NewDirStat(d.RootAbsPath)
+	for _, f := range c.Files {
+		if f.Type == types.FileChangeRemoved {
+			continue
+		}
+		origF, ok := d.Data[f.Path]
+		if !ok {
+			panic("passed a change record and a dir stat that are not matching !")
+		}
+		ret.Data[f.Path] = origF
+	}
+	return ret
+}
+
+type PlanInitAssetRequest struct {
 	RepoPath  string
 	AssetPath string
 	Src       string
@@ -17,14 +87,20 @@ type InitAssetRequest struct {
 	Timestamp time.Time
 }
 
-// InitAsset builds the BlobUpdatePlan for a new asset.
+// PlanInitAsset builds the BlobUpdatePlan for a new asset.
 // - plan the first commit (a copy of the src if any)
 // - plan the default branch wokring area
-func InitAsset(
+func PlanInitAsset(
 	ctx context.Context,
-	request InitAssetRequest,
+	request PlanInitAssetRequest,
 ) (*types.BlobUpdatePlan, error) {
-	commitPath := commitBlobPath(request.RepoPath, request.AssetPath, request.Timestamp)
+	commitPath := commitBlobPath(
+		request.RepoPath,
+		request.AssetPath,
+		types.DefaultBranchName,
+		request.User,
+		request.Timestamp,
+	)
 	branchPath := branchBlobPath(request.RepoPath, request.AssetPath, types.DefaultBranchName)
 	blobRootDir := fsutil.PathOS(request.RepoPath, ".vit", "blob")
 
@@ -50,7 +126,10 @@ func InitAsset(
 	return &types.BlobUpdatePlan{
 		CopyRequests: copyRequests,
 		ContentRoots: []types.ContentRootWrite{
-			{ContentRootPath: genContentPath(request.RepoPath, request.AssetPath), Root: rootContentNode},
+			{
+				ContentRootPath: genContentPath(request.RepoPath, request.AssetPath),
+				Root:            rootContentNode,
+			},
 		},
 		Manifests: []types.ManifestWrite{
 			{
@@ -73,9 +152,9 @@ func BranchContentPath(repoPath, assetPath, branchName string) (string, error) {
 	)
 }
 
-// UpdateBlob executes a plan: it materializes the whole object tier in order —
-// blob copies, then content-node trees, then manifests.
-// Everything it writes is content-addressed or write-once and therefore orphan-safe.
+// UpdateBlob executes a plan:
+// blob copies, then write content-node trees to disk, then manifests, finally manifest
+// Everything it writes is content-addressed or write-once so orphan-safe.
 func UpdateBlob(ctx context.Context, progress types.ProgressWriter, plan *types.BlobUpdatePlan) error {
 	if plan == nil {
 		return nil

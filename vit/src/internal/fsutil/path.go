@@ -3,6 +3,7 @@ package fsutil
 import (
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 // Vit supports windows and linux / mac meaning:
@@ -58,6 +59,16 @@ func ExtInternal(p string) string { return path.Ext(filepath.ToSlash(p)) }
 // --- Abs ---
 
 func AbsOS(p string) (string, error) { return filepath.Abs(filepath.FromSlash(p)) }
+
+// --- Split ---
+
+func SplitInternal(p string) []string {
+	p = path.Clean(filepath.ToSlash(p))
+	if p == "" || p == "." || p == "/" {
+		return nil
+	}
+	return strings.Split(strings.TrimPrefix(p, "/"), "/")
+}
 
 // --- Rel ---
 func RelInternal(base, target string) (string, error) {

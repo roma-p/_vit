@@ -35,6 +35,13 @@ var cmdDefinition = clicore.CmdTree{
 			ArgParser:   buildStatusArgParser(),
 			ResultType:  types.StatusResult{},
 		},
+		"commit": {
+			Name:        "Commit",
+			Description: "Commit a given branch if there is change to commit",
+			Run:         runCommit,
+			ArgParser:   buildCommitArgParser(),
+			ResultType:  types.StringResult{},
+		},
 		"dev": {
 			Name:        "Dev",
 			Description: "Developer and internal commands",

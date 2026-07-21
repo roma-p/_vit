@@ -27,3 +27,7 @@ func (c *ChangeRecord) AddChange(path string, changeType FileChangeType, size in
 		Size: size,
 	})
 }
+
+func (c *ChangeRecord) HasChange() bool {
+	return len(c.Files) != 0 || len(c.Dependencies) != 0
+}

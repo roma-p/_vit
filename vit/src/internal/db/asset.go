@@ -26,6 +26,7 @@ func createNewJSONAsset(
 		true,
 		&types.Asset{
 			AssetUID: uid,
+
 			// comodity, not exported written in the json, and not source of truth
 			AssetPath: assetPath,
 			RepoPath:  repoPath,
@@ -47,9 +48,11 @@ func resolveJSONAsset(
 	if err != nil {
 		return nil, false, err
 	}
+
 	// commodity, not persisted in json, not source of truth
 	ret.Data.AssetPath = assetPath
 	ret.Data.RepoPath = repoPath
+
 	return ret, true, nil
 }
 
@@ -84,6 +87,41 @@ func initAsset(
 		return err
 	}
 
+	return nil
+}
+
+type CommitBranchRequest struct {
+	Asset              *types.Asset
+	BranchName         string
+	RootcontentNodeUID string
+	Author             string
+	Message            string
+	TimeStamp          time.Time
+	// TODO dependancies
+}
+
+// CommitBranch create a new commit from branch commit
+// advance the TimeStamp of the branch.
+func CommitBranch(r CommitBranchRequest) error {
+	branchCommit, err := GetBranchCommit(r.Asset, r.BranchName)
+	if err != nil {
+		return err
+	}
+
+	ret := &types.AssetCommit{
+		Content:   r.RootcontentNodeUID,
+		Author:    r.Author,
+		Message:   r.Message,
+		Parent:    branchCommit.Parent,
+		Timestamp: r.TimeStamp,
+	}
+
+	newCommitID, err := AddCommit(r.Asset, ret)
+	if err != nil {
+		return err
+	}
+	branchCommit.Parent = newCommitID
+	branchCommit.Timestamp = r.TimeStamp
 	return nil
 }
 

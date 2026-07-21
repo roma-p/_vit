@@ -24,4 +24,6 @@ const (
 	ErrTransactionFailed   = "TransactionFailed"
 
 	ErrInvalidInut = "InvalidInput"
+
+	ErrNoChangeToCommit = "NoChangeToCommit"
 )
