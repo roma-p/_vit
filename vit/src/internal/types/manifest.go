@@ -8,5 +8,6 @@ type Manifest struct {
 	Ref       *Ref              `json:"ref"`
 	User      string            `json:"user"`
 	Sources   map[string]string `json:"sources,omitempty"`
+	Message   string            `json:"message,omitempty"`
 	// Dependencies []Dependency `json:"dependencies,omitempty"` // TODO: when dependency mgmt is done
 }

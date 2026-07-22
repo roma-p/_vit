@@ -60,18 +60,19 @@ func PresentCommit(
 	commitDate string,
 	p Presenter,
 	rootContentNode *types.ContentNode,
-) error {
+) (string, error) {
+	ret := fsutil.PathOS(repoPath, genWorkspacePathForCommit(assetPath, commitDate))
 	if err := presentFromContentNode(
 		ctx,
 		rootContentNode,
 		repoPath,
-		fsutil.PathOS(repoPath, genWorkspacePathForCommit(assetPath, commitDate)),
+		ret,
 		true,
 		p,
 	); err != nil {
-		return newErrWorkspaceInternal(err, fmt.Sprintf("failed to present commit to workspace: %s", assetPath))
+		return "", newErrWorkspaceInternal(err, fmt.Sprintf("failed to present commit to workspace: %s", assetPath))
 	}
-	return nil
+	return ret, nil
 }
 
 func PresentTag(

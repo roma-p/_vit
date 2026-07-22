@@ -23,7 +23,8 @@ func (c *Client) Commit(ctx context.Context, path, message string) (*types.Strin
 	if err != nil {
 		return nil, err
 	}
-	_ = presenter
+
+	var pathCommit string
 
 	err = opcontext.WithOperationContext(ctx, path, func(
 		opctx *opcontext.OperationContext,
@@ -57,7 +58,7 @@ func (c *Client) Commit(ctx context.Context, path, message string) (*types.Strin
 				Operation: op,
 				Logger:    c.logger,
 				Progress:  c.progress,
-				Command:   types.CommandAdd,
+				Command:   types.CommandCommit,
 				User:      opctx.User,
 				RepoPath:  opctx.RepoPath,
 				Timestamp: opctx.TimeStamp,
@@ -68,13 +69,14 @@ func (c *Client) Commit(ctx context.Context, path, message string) (*types.Strin
 			return err
 		}
 
+		pathCommit = op.CommitPath
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &types.StringResult{String: "prout"}, nil
+	return &types.StringResult{String: pathCommit}, nil
 }
 
 type operationCommit struct {
@@ -84,6 +86,7 @@ type operationCommit struct {
 	ChangeRecord     *types.ChangeRecord
 	ContentNode      *types.ContentNode
 	WorkspaceDirStat *types.DirStat
+	CommitPath       string
 }
 
 var _ transaction.Operation = (*operationCommit)(nil) // enforcing operation interface.
@@ -118,15 +121,16 @@ func (o *operationCommit) PlanBlobUpdate(
 ) (*types.BlobUpdatePlan, error) {
 	plan, err := blob.PlanCommitBranch(
 		ctx,
-		blob.CommitBranchRequest{
-			RepoPath:              o.Ref.RepoPath,
-			AssetPath:             o.Ref.AssetPath,
-			BranchName:            o.Ref.BranchName,
-			User:                  opctx.User,
-			Timestamp:             opctx.TimeStamp,
-			PrevCommitContentNode: o.ContentNode,
-			WorkspaceDirStat:      o.WorkspaceDirStat,
-			ChangeRecord:          o.ChangeRecord,
+		blob.PlanCommitBranchRequest{
+			RepoPath:         o.Ref.RepoPath,
+			AssetPath:        o.Ref.AssetPath,
+			BranchName:       o.Ref.BranchName,
+			User:             opctx.User,
+			Message:          o.Message,
+			Timestamp:        opctx.TimeStamp,
+			ContentNode:      o.ContentNode,
+			WorkspaceDirStat: o.WorkspaceDirStat,
+			ChangeRecord:     o.ChangeRecord,
 		},
 	)
 	if err != nil {
@@ -164,14 +168,16 @@ func (o *operationCommit) Finish(
 	logger *slog.Logger,
 	p workspace.Presenter,
 ) {
-	if err := workspace.PresentCommit(
+	var err error
+	o.CommitPath, err = workspace.PresentCommit(
 		ctx,
 		o.Ref.RepoPath,
 		o.Ref.AssetPath,
 		types.FormatTimestampLocal(opctx.TimeStamp),
 		p,
 		o.ContentNode,
-	); err != nil {
+	)
+	if err != nil {
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
 	}
 }
@@ -179,7 +185,7 @@ func (o *operationCommit) Finish(
 func newNothingToCommitErr(ref *types.Ref) error {
 	return types.NewVitError(
 		types.ErrNoChangeToCommit,
-		[]string{fmt.Sprintf("no change to comit at: %s", ref.RelativePath())},
+		[]string{fmt.Sprintf("no change to commit at: %s", ref.RelativePath())},
 		[]any{"ref", ref},
 	)
 }

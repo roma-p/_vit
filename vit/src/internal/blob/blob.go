@@ -9,29 +9,30 @@ import (
 	"vit/internal/types"
 )
 
-type CommitBranchRequest struct {
-	RepoPath              string
-	AssetPath             string
-	BranchName            string
-	User                  string
-	Timestamp             time.Time
-	PrevCommitContentNode *types.ContentNode
-	WorkspaceDirStat      *types.DirStat
-	ChangeRecord          *types.ChangeRecord
+type PlanCommitBranchRequest struct {
+	RepoPath         string
+	AssetPath        string
+	BranchName       string
+	User             string
+	Message          string
+	Timestamp        time.Time
+	ContentNode      *types.ContentNode
+	WorkspaceDirStat *types.DirStat
+	ChangeRecord     *types.ChangeRecord
 }
 
 func PlanCommitBranch(
 	ctx context.Context,
-	r CommitBranchRequest,
+	r PlanCommitBranchRequest,
 ) (*types.BlobUpdatePlan, error) {
 	topCopy := filterFilesToCopyToBlob(r.WorkspaceDirStat, r.ChangeRecord)
 	commitPath := commitBlobPath(r.RepoPath, r.AssetPath, r.BranchName, r.User, r.Timestamp)
 	blobRootDir := fsutil.PathOS(r.RepoPath, ".vit", "blob")
 
 	if err := applyChangeRecord(
-		r.PrevCommitContentNode,
+		r.ContentNode,
 		r.ChangeRecord,
-		time.Now(),
+		r.Timestamp,
 		commitPath,
 		blobRootDir,
 	); err != nil {
@@ -48,7 +49,7 @@ func PlanCommitBranch(
 		ContentRoots: []types.ContentRootWrite{
 			{
 				ContentRootPath: genContentPath(r.RepoPath, r.AssetPath),
-				Root:            r.PrevCommitContentNode,
+				Root:            r.ContentNode,
 			},
 		},
 		Manifests: []types.ManifestWrite{
@@ -58,6 +59,7 @@ func PlanCommitBranch(
 					Timestamp: r.Timestamp,
 					Ref:       types.NewRefBranch(r.RepoPath, r.AssetPath, r.BranchName),
 					User:      r.User,
+					Message:   r.Message,
 				},
 			},
 		},
@@ -138,6 +140,7 @@ func PlanInitAsset(
 					Timestamp: request.Timestamp,
 					Ref:       ref,
 					User:      request.User,
+					Message:   "Asset created",
 					// TODO: missing: all files.
 				},
 			},

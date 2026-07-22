@@ -2,6 +2,10 @@ package types
 
 import (
 	"fmt"
+	// Exception to the "no raw path.*/filepath.* outside fsutil/path.go" convention:
+	// okay because we know it will always be poxix here (internal)
+	// but myabe serialize unserialize to move?
+	// OR path utils to move to tyes?
 	"path"
 	"sort"
 	"strconv"

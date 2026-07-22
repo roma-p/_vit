@@ -189,7 +189,7 @@ func (o *operationAdd) Finish(
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
 	}
 
-	if err := workspace.PresentCommit(
+	if _, err := workspace.PresentCommit(
 		ctx,
 		opctx.RepoPath,
 		o.AssetPath,
