@@ -1,6 +1,8 @@
 package types
 
 const (
+	ErrInternalRepoCorrupted = "RepoCorrupted"
+
 	ErrLockAcquireTimeout = "LockAcquireTimeout"
 
 	ErrRepoInitFailed = "RepoInitFailed"

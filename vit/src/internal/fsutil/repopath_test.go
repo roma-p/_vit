@@ -3,6 +3,7 @@ package fsutil
 import (
 	"path/filepath"
 	"testing"
+
 	testutils "vit/internal/testhelpers"
 )
 
@@ -11,7 +12,7 @@ func TestCheckPathIsVitRepoOk(t *testing.T) {
 	defer cleanup()
 	testutils.CreateDirectories(t, tempDir, []string{"path/to/ok/.vit"})
 
-	s := checkPathIsVitRepo(filepath.Join(tempDir, "path/to/ok"))
+	s := CheckPathIsVitRepo(filepath.Join(tempDir, "path/to/ok"))
 	testutils.AssertEqual(t, s, true)
 }
 
@@ -19,7 +20,7 @@ func TestCheckPathIsVitRepoNonExistent(t *testing.T) {
 	tempDir, cleanup := testutils.TempDir(t, "test_repo_path_non_existent_*")
 	defer cleanup()
 
-	s := checkPathIsVitRepo(filepath.Join(tempDir, "does/not/exist"))
+	s := CheckPathIsVitRepo(filepath.Join(tempDir, "does/not/exist"))
 	testutils.AssertEqual(t, s, false)
 }
 
@@ -31,7 +32,7 @@ func TestCheckPathIsVitRepoFileNotDir(t *testing.T) {
 	vitFilePath := filepath.Join(tempDir, "path/to/repo/.vit")
 	testutils.CreateFile(t, vitFilePath, "not a directory")
 
-	s := checkPathIsVitRepo(filepath.Join(tempDir, "path/to/repo"))
+	s := CheckPathIsVitRepo(filepath.Join(tempDir, "path/to/repo"))
 	testutils.AssertEqual(t, s, false)
 }
 

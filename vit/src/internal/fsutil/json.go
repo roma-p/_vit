@@ -68,8 +68,10 @@ func (j *JSONHandler[T]) Read() error {
 	return nil
 }
 
-const jsonReadMaxRetries = 3
-const jsonReadRetryDelay = 100 * time.Millisecond
+const (
+	jsonReadMaxRetries = 3
+	jsonReadRetryDelay = 100 * time.Millisecond
+)
 
 func jsonRead[T any](filename string) (*T, error) {
 	var lastErr error

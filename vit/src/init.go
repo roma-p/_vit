@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"vit/internal/config"
 	"vit/internal/fsutil"
 	"vit/internal/types"
 )
@@ -71,6 +72,10 @@ func (c *Client) InitRepo(ctx context.Context, path string) (*types.StringResult
 				[]any{"error", "DirCreationError", "Dir", dir},
 			)
 		}
+	}
+
+	if err := config.InitRepoConfig(path, ""); err != nil {
+		return nil, err
 	}
 
 	return &types.StringResult{String: path}, nil

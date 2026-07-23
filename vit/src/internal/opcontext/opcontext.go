@@ -5,6 +5,7 @@ import (
 	"os/user"
 	"time"
 
+	"vit/internal/config"
 	"vit/internal/fsutil"
 	"vit/internal/types"
 )
@@ -13,10 +14,11 @@ import (
 // - info about the operation
 // - JSONPool holding all json data used for that operation.
 type OperationContext struct {
-	RepoPath  string
-	User      string
-	TimeStamp time.Time
-	JSONPool  *fsutil.JSONHandlerPool
+	RepoPath   string
+	RepoConfig *config.RepoConfig
+	User       string
+	TimeStamp  time.Time
+	JSONPool   *fsutil.JSONHandlerPool
 }
 
 func NewOperationContext(ctx context.Context, fullAssetPath string) (*OperationContext, string, error) {
@@ -34,11 +36,17 @@ func NewOperationContext(ctx context.Context, fullAssetPath string) (*OperationC
 		return nil, "", err
 	}
 
+	repoConfig, err := config.LoadRepoConfig(repoPath)
+	if err != nil {
+		return nil, "", err
+	}
+
 	return &OperationContext{
-		RepoPath:  repoPath,
-		User:      usr.Username,
-		TimeStamp: time.Now(),
-		JSONPool:  fsutil.NewJSONHandlerPool(),
+		RepoPath:   repoPath,
+		RepoConfig: repoConfig,
+		User:       usr.Username,
+		TimeStamp:  time.Now(),
+		JSONPool:   fsutil.NewJSONHandlerPool(),
 	}, assetPath, nil
 }
 
