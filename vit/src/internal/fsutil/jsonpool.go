@@ -14,6 +14,13 @@ type JSONHandlerPool struct {
 	order []string
 }
 
+type poolEntry struct {
+	jsonhandler AnyJSONHandler
+	forWrite    bool
+	lockDir     string
+}
+
+// NewJSONHandlerPool init a new pool
 func NewJSONHandlerPool() *JSONHandlerPool {
 	return &JSONHandlerPool{
 		data: make(map[string]*poolEntry),
@@ -69,40 +76,9 @@ func ResolveHandler[T any](
 	return addHandler(ctx, pool, path, forWrite, initData)
 }
 
-func addHandler[T any](
-	ctx context.Context,
-	pool *JSONHandlerPool,
-	path string,
-	forWrite bool,
-	initData *T,
-) (*JSONHandler[T], error) {
-	entry := poolEntry{forWrite: forWrite}
-
-	if forWrite {
-		lockDir, err := AcquireExclusiveLock(ctx, path)
-		if err != nil {
-			return nil, err
-		}
-		entry.lockDir = lockDir
-	}
-
-	handler, err := NewJSONHandlerFromFile[T](path)
-	if err != nil {
-		if initData == nil {
-			if entry.lockDir != "" {
-				ReleaseExclusiveLock(entry.lockDir)
-			}
-			return nil, err
-		}
-		handler = NewJSONHandlerFromPath(path, initData)
-	}
-
-	entry.jsonhandler = handler
-	pool.data[path] = &entry
-	pool.order = append(pool.order, path)
-	return handler, nil
-}
-
+// FlushForWrite write all the json handler hold with Write privilege
+// in the order they were gathered  first (escalation don't change order)
+// ideally, the only way to write db is using this.
 func (p *JSONHandlerPool) FlushForWrite() error {
 	for _, path := range p.order {
 		entry, ok := p.data[path]
@@ -140,6 +116,7 @@ func (p *JSONHandlerPool) ReleaseAll() {
 	p.order = nil
 }
 
+// ListJSONPath list path to all json handler in the pool (either read or write)
 func (p *JSONHandlerPool) ListJSONPath() []string {
 	ret := []string{}
 	for i := range p.data {
@@ -148,8 +125,38 @@ func (p *JSONHandlerPool) ListJSONPath() []string {
 	return ret
 }
 
-type poolEntry struct {
-	jsonhandler AnyJSONHandler
-	forWrite    bool
-	lockDir     string
+// -- FILE LOCAL -------------------------------------------------------------
+
+func addHandler[T any](
+	ctx context.Context,
+	pool *JSONHandlerPool,
+	path string,
+	forWrite bool,
+	initData *T,
+) (*JSONHandler[T], error) {
+	entry := poolEntry{forWrite: forWrite}
+
+	if forWrite {
+		lockDir, err := AcquireExclusiveLock(ctx, path)
+		if err != nil {
+			return nil, err
+		}
+		entry.lockDir = lockDir
+	}
+
+	handler, err := NewJSONHandlerFromFile[T](path)
+	if err != nil {
+		if initData == nil {
+			if entry.lockDir != "" {
+				ReleaseExclusiveLock(entry.lockDir)
+			}
+			return nil, err
+		}
+		handler = NewJSONHandlerFromPath(path, initData)
+	}
+
+	entry.jsonhandler = handler
+	pool.data[path] = &entry
+	pool.order = append(pool.order, path)
+	return handler, nil
 }

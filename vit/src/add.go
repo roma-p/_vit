@@ -92,18 +92,16 @@ type operationAdd struct {
 	Src       string
 
 	// filled at Validate
-	ClosestPathFound string
+	closestPathFound string
 
 	// filled at PlanBlobUpdate
-	BlobPathBranch    string
-	ContentNode       *types.ContentNode
-	BaselineTimeStamp time.Time
+	blobPathBranch    string
+	contentNode       *types.ContentNode
+	baselineTimeStamp time.Time
 
 	// filled at Finish
 	WorkspaceBranchPath string
 }
-
-var _ transaction.Operation = (*operationAdd)(nil) // enforcing operation interface.
 
 func newOperationAdd(repoPath, assetPath, src string) *operationAdd {
 	return &operationAdd{
@@ -119,7 +117,7 @@ func (o *operationAdd) Validate(
 	dbClient *db.Client,
 ) error {
 	var err error
-	o.ClosestPathFound, err = dbClient.IsAssetPathAvailable(ctx, opctx, o.RepoPath, o.AssetPath)
+	o.closestPathFound, err = dbClient.IsAssetPathAvailable(ctx, opctx, o.RepoPath, o.AssetPath)
 	return err
 }
 
@@ -141,8 +139,8 @@ func (o *operationAdd) PlanBlobUpdate(
 		return nil, err
 	}
 
-	o.ContentNode = plan.ContentRoots[0].Root
-	o.BlobPathBranch, err = blob.BranchContentPath(o.RepoPath, o.AssetPath, types.DefaultBranchName)
+	o.contentNode = plan.ContentRoots[0].Root
+	o.blobPathBranch, err = blob.BranchContentPath(o.RepoPath, o.AssetPath, types.DefaultBranchName)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +153,7 @@ func (o *operationAdd) DBUpdate(
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
 ) error {
-	o.BaselineTimeStamp = time.Now()
+	o.baselineTimeStamp = time.Now()
 
 	_, err := dbClient.AddAssetToTree(
 		ctx,
@@ -163,9 +161,9 @@ func (o *operationAdd) DBUpdate(
 		db.AddAssetToTreeRequest{
 			RepoPath:          o.RepoPath,
 			TreePath:          o.AssetPath,
-			BlobBranch:        o.BlobPathBranch,
-			ContentRootHash:   o.ContentNode.ContentHash,
-			BaselineTimeStamp: o.BaselineTimeStamp,
+			BlobBranch:        o.blobPathBranch,
+			ContentRootHash:   o.contentNode.ContentHash,
+			BaselineTimeStamp: o.baselineTimeStamp,
 		},
 	)
 	return err
@@ -181,7 +179,7 @@ func (o *operationAdd) Finish(
 	o.WorkspaceBranchPath, err = workspace.PresentBranch(
 		ctx,
 		opctx.RepoPath,
-		o.BlobPathBranch,
+		o.blobPathBranch,
 		p,
 		types.NewRefBranch(opctx.RepoPath, o.AssetPath, types.DefaultBranchName),
 	)
@@ -193,9 +191,11 @@ func (o *operationAdd) Finish(
 		ctx,
 		opctx.RepoPath,
 		o.AssetPath,
+		types.DefaultBranchName,
+		opctx.User,
 		types.FormatTimestampLocal(opctx.TimeStamp),
 		p,
-		o.ContentNode,
+		o.contentNode,
 	); err != nil {
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
 	}

@@ -98,6 +98,8 @@ func (c *Client) resolveJSONTreeNode(
 	return ret, true, err
 }
 
+// -- FILE LOCAL -------------------------------------------------------------
+
 func treeNodeJSONPath(repoPath, uid string) string {
 	return fsutil.PathOS(repoPath, ".vit", "tree", uid[:2], uid[2:]+".json")
 }

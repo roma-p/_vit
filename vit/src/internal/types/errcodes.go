@@ -1,5 +1,7 @@
 package types
 
+// TODO: le derbol, a reorganiser à un moment
+
 const (
 	ErrInternalRepoCorrupted = "RepoCorrupted"
 

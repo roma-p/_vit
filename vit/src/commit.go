@@ -63,8 +63,7 @@ func (c *Client) Commit(ctx context.Context, path, message string) (*types.Strin
 				RepoPath:  opctx.RepoPath,
 				Timestamp: opctx.TimeStamp,
 			},
-			[]*types.Ref{ref},
-			transaction.TransactionBranch,
+			[]*types.Ref{ref}, transaction.TransactionBranch,
 		); err != nil {
 			return err
 		}
@@ -80,16 +79,22 @@ func (c *Client) Commit(ctx context.Context, path, message string) (*types.Strin
 }
 
 type operationCommit struct {
+	// input given at init
 	Ref     *types.Ref
 	Message string
 
-	ChangeRecord     *types.ChangeRecord
-	ContentNode      *types.ContentNode
-	WorkspaceDirStat *types.DirStat
-	CommitPath       string
-}
+	// filled at validate
+	changeRecord     *types.ChangeRecord
+	contentNode      *types.ContentNode
+	workspaceDirStat *types.DirStat
 
-var _ transaction.Operation = (*operationCommit)(nil) // enforcing operation interface.
+	// filled at DBUpdate — the created commit's ID
+	// (reused by operationTag, so exposed)
+	NewCommitID string
+
+	// filled at Finish
+	CommitPath string
+}
 
 func (o *operationCommit) Validate(
 	ctx context.Context,
@@ -109,9 +114,9 @@ func (o *operationCommit) Validate(
 		return newNothingToCommitErr(o.Ref)
 	}
 
-	o.ChangeRecord = r.ChangeRecord
-	o.ContentNode = r.PrevCommitContentNode
-	o.WorkspaceDirStat = r.WorkspaceDirStat
+	o.changeRecord = r.ChangeRecord
+	o.contentNode = r.PrevCommitContentNode
+	o.workspaceDirStat = r.WorkspaceDirStat
 	return nil
 }
 
@@ -128,9 +133,9 @@ func (o *operationCommit) PlanBlobUpdate(
 			User:             opctx.User,
 			Message:          o.Message,
 			Timestamp:        opctx.TimeStamp,
-			ContentNode:      o.ContentNode,
-			WorkspaceDirStat: o.WorkspaceDirStat,
-			ChangeRecord:     o.ChangeRecord,
+			ContentNode:      o.contentNode,
+			WorkspaceDirStat: o.workspaceDirStat,
+			ChangeRecord:     o.changeRecord,
 		},
 	)
 	if err != nil {
@@ -150,16 +155,18 @@ func (o *operationCommit) DBUpdate(
 		return err
 	}
 
-	return db.CommitBranch(
+	o.NewCommitID, err = db.CommitBranch(
 		db.CommitBranchRequest{
 			Asset:              asset.Data,
 			BranchName:         o.Ref.BranchName,
-			RootcontentNodeUID: o.ContentNode.ContentHash,
+			RootcontentNodeUID: o.contentNode.ContentHash,
 			Author:             opctx.User,
+			Site:               opctx.RepoConfig.CurrentSite,
 			Message:            o.Message,
 			TimeStamp:          opctx.TimeStamp,
 		},
 	)
+	return err
 }
 
 func (o *operationCommit) Finish(
@@ -173,9 +180,11 @@ func (o *operationCommit) Finish(
 		ctx,
 		o.Ref.RepoPath,
 		o.Ref.AssetPath,
+		o.Ref.BranchName,
+		opctx.User,
 		types.FormatTimestampLocal(opctx.TimeStamp),
 		p,
-		o.ContentNode,
+		o.contentNode,
 	)
 	if err != nil {
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)

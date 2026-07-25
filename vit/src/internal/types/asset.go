@@ -4,13 +4,21 @@ import (
 	"time"
 )
 
-type Asset struct {
-	AssetUID string                          `json:"asset-uid"`
-	Commits  map[string]*AssetCommit         `json:"commits"`
-	Branches map[string]*AssetCommit         `json:"branches"`
-	Tags     map[string]map[string]*AssetTag `json:"tags,omitempty"`
+type (
+	TagFamily = string
+	SiteUID   = string
+	TagName   = string
 
-	// set at load time, not persisted, buffered data for ease of conveniance
+	TagsCollection = map[TagFamily]map[SiteUID]map[TagName]*AssetTag
+)
+
+type Asset struct {
+	AssetUID string                  `json:"asset-uid"`
+	Commits  map[string]*AssetCommit `json:"commits"`
+	Branches map[string]*AssetCommit `json:"branches"`
+	Tags     TagsCollection          `json:"tags,omitempty"`
+
+	// set at load time, not persisted, buffered data for ease
 	RepoPath  string `json:"-"`
 	AssetPath string `json:"-"`
 }
@@ -27,8 +35,9 @@ type AssetCommit struct {
 	Timestamp time.Time `json:"timestamp"`
 
 	Author       string            `json:"author"`
-	Message      string            `json:"message,omitempty"`
-	Parent       string            `json:"parent,omitempty"`
+	Site         string            `json:"site,omitempty"`
+	Message      string            `json:"message"`
+	Parent       string            `json:"parent"`
 	Dependencies AssetDependencies `json:"dependencies,omitempty"`
 }
 
@@ -52,4 +61,26 @@ type AssetTag struct {
 	Author    string    `json:"author"`
 	Commit    string    `json:"commit"`
 	Timestamp time.Time `json:"timestamp"`
+}
+
+func (a *Asset) SetTag(family, site, name string, tag *AssetTag) {
+	if a.Tags == nil {
+		a.Tags = make(TagsCollection)
+	}
+	if a.Tags[family] == nil {
+		a.Tags[family] = make(map[SiteUID]map[TagName]*AssetTag)
+	}
+	if a.Tags[family][site] == nil {
+		a.Tags[family][site] = make(map[TagName]*AssetTag)
+	}
+	a.Tags[family][site][name] = tag
+}
+
+func (a *Asset) TagVersions(family, site string) (map[TagName]*AssetTag, bool) {
+	fam, ok := a.Tags[family]
+	if !ok {
+		return nil, false
+	}
+	leaf, ok := fam[site]
+	return leaf, ok
 }

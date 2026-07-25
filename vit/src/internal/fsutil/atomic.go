@@ -6,20 +6,9 @@ import (
 	"time"
 )
 
-// syncDir syncs a directory to ensure the directory entry
-// is persisted to disk (important for NFS).
-func syncDir(dir string) error {
-	f, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return f.Sync()
-}
-
 // WriteFileAtomic writes to filename via a temp file + sync + rename.
 // Concurrent readers never should see partial data since rename is supposed atomic.
-// (but that is not entrerly true on nfs)
+// (!! but that is not entrerly true on nfs)
 // Creates parent directories if needed.
 func WriteFileAtomic(filename string, mode os.FileMode, write func(f *os.File) error) error {
 	filename = PathOS(filename)
@@ -68,7 +57,7 @@ func WriteFileAtomic(filename string, mode os.FileMode, write func(f *os.File) e
 }
 
 // RemoveFileAtomic removes a file by first renaming it to a temp name,
-// then deleting. This avoids a window where the path is half-deleted.
+// then deleting.
 func RemoveFileAtomic(filename string) error {
 	filename = PathOS(filename)
 	dir := DirOS(filename)
@@ -82,4 +71,15 @@ func RemoveFileAtomic(filename string) error {
 		return fmt.Errorf("failed to remove temp file: %w", err)
 	}
 	return nil
+}
+
+// syncDir syncs a directory to ensure the directory entry
+// is persisted to disk (important for NFS).
+func syncDir(dir string) error {
+	f, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
 }

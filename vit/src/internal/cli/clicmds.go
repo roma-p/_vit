@@ -42,6 +42,13 @@ var cmdDefinition = clicore.CmdTree{
 			ArgParser:   buildCommitArgParser(),
 			ResultType:  types.StringResult{},
 		},
+		"tag": {
+			Name:        "Tag",
+			Description: "Tag a given ref",
+			Run:         runTag,
+			ArgParser:   buildTagArgParser(),
+			ResultType:  types.StringResult{},
+		},
 		"dev": {
 			Name:        "Dev",
 			Description: "Developer and internal commands",

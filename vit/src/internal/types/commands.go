@@ -6,4 +6,5 @@ const (
 	CommandInit   VitCommand = "init"
 	CommandAdd    VitCommand = "add"
 	CommandCommit VitCommand = "commit"
+	CommandTag    VitCommand = "tag"
 )

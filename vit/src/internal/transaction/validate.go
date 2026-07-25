@@ -55,6 +55,8 @@ func validateEdit(repoPath string, refs []*types.Ref) error {
 	return nil
 }
 
+// -- FILE LOCAL -------------------------------------------------------------
+
 func scanExistingTransactions(repoPath string) ([]TransactionID, error) {
 	transactionDir := fsutil.PathOS(repoPath, ".vit", "transaction")
 
@@ -63,7 +65,11 @@ func scanExistingTransactions(repoPath string) ([]TransactionID, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, types.NewInternalVitError(types.ErrTransactionFailed, err, []string{"failed to read transaction directory"}, nil)
+		return nil, types.NewInternalVitError(
+			types.ErrTransactionFailed, err,
+			[]string{"failed to read transaction directory"},
+			nil,
+		)
 	}
 
 	var tids []TransactionID

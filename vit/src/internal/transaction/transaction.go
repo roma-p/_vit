@@ -14,34 +14,6 @@ import (
 	"vit/internal/workspace"
 )
 
-type activeTransaction struct {
-	files []string
-	stop  func()
-}
-
-func (t *activeTransaction) finish() {
-	if t.stop != nil {
-		t.stop()
-	}
-	for _, f := range t.files {
-		_ = os.Remove(f) // TODO(fsutil) atomic remove
-	}
-}
-
-type Request struct {
-	Opctx     *opcontext.OperationContext
-	DBClient  *db.Client
-	Presenter workspace.Presenter
-	Operation Operation
-	Logger    *slog.Logger
-	Progress  types.ProgressWriter
-
-	Command   types.VitCommand
-	User      string
-	RepoPath  string
-	Timestamp time.Time
-}
-
 // RunTreeChanged drives an operation that mutates the tree (add/move/delete).
 // Conflicts with ANY existing transaction on overlapping paths.
 func RunTreeChanged(
@@ -70,6 +42,22 @@ func RunEdit(
 	}
 	return run(ctx, r, func() error { return validateEdit(r.RepoPath, refs) }, tids)
 }
+
+type Request struct {
+	Opctx     *opcontext.OperationContext
+	DBClient  *db.Client
+	Presenter workspace.Presenter
+	Operation Operation
+	Logger    *slog.Logger
+	Progress  types.ProgressWriter
+
+	Command   types.VitCommand
+	User      string
+	RepoPath  string
+	Timestamp time.Time
+}
+
+// -- FILE LOCAL -------------------------------------------------------------
 
 func run(
 	ctx context.Context,
@@ -232,5 +220,19 @@ func cleanOrphanedTransactions(transactionDir string) {
 		if time.Since(info.ModTime()) > fsutil.LockAcquireTimeout {
 			_ = os.Remove(path)
 		}
+	}
+}
+
+type activeTransaction struct {
+	files []string
+	stop  func()
+}
+
+func (t *activeTransaction) finish() {
+	if t.stop != nil {
+		t.stop()
+	}
+	for _, f := range t.files {
+		_ = os.Remove(f) // TODO(fsutil) atomic remove
 	}
 }

@@ -8,17 +8,27 @@ import (
 	"vit/internal/types"
 )
 
+type TransactionID struct {
+	Operation TransactionOperation
+	Ref       *types.Ref
+}
+
 type TransactionOperation string
 
 const (
 	TransactionTreeChanged TransactionOperation = "TreeChanged"
 	TransactionCommit      TransactionOperation = "Commit"
 	TransactionBranch      TransactionOperation = "Branch"
+	TransactionTag         TransactionOperation = "Tag"
 )
 
-type TransactionID struct {
-	Operation TransactionOperation
-	Ref       *types.Ref
+func (t *TransactionID) Encode() string {
+	encoded := url.QueryEscape(t.Ref.AssetPath)
+	encoded = strings.ReplaceAll(encoded, "+", "%20") + "---" + string(t.Operation)
+	if t.Ref.RefType != types.RefTypeEmpty {
+		encoded += "---" + t.Ref.ObjectPath()
+	}
+	return encoded
 }
 
 func newTransactionID(op TransactionOperation, ref *types.Ref) TransactionID {
@@ -56,13 +66,4 @@ func newTransactionIDFromName(repoPath, encodedName string) (*TransactionID, err
 		Operation: TransactionOperation(operation),
 		Ref:       ref,
 	}, nil
-}
-
-func (t *TransactionID) Encode() string {
-	encoded := url.QueryEscape(t.Ref.AssetPath)
-	encoded = strings.ReplaceAll(encoded, "+", "%20") + "---" + string(t.Operation)
-	if t.Ref.RefType != types.RefTypeEmpty {
-		encoded += "---" + t.Ref.ObjectPath()
-	}
-	return encoded
 }

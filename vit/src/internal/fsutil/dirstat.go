@@ -8,6 +8,8 @@ import (
 	"vit/internal/types"
 )
 
+// NewDirStatFromDir walk given dir to build a DirStat object from it.
+// DirStat only tracks files, not dir (like git)
 func NewDirStatFromDir(ctx context.Context, path string) (*types.DirStat, error) {
 	ret := types.NewDirStat(path)
 

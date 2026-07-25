@@ -10,17 +10,9 @@ import (
 	"vit/internal/opcontext"
 )
 
-// NOTE: filepath.WalkDir is used raw in scanAllTreeNodeFiles — no wrapper needed for Walk.
-
 type TreeIndex struct {
 	IDToPath map[string]TreeIndexEntry `json:"id_to_path"`
 	PathToID map[string]TreeIndexEntry `json:"path_to_id"`
-}
-
-func (t *TreeIndex) AddPath(path, uid string, treeNodeType TreeNodeType) {
-	path = fsutil.PathInternal(path)
-	t.IDToPath[uid] = TreeIndexEntry{Data: path, Type: treeNodeType}
-	t.PathToID[path] = TreeIndexEntry{Data: uid, Type: treeNodeType}
 }
 
 type TreeIndexEntry struct {
@@ -33,6 +25,12 @@ func NewTreeIndex() *TreeIndex {
 		IDToPath: make(map[string]TreeIndexEntry),
 		PathToID: make(map[string]TreeIndexEntry),
 	}
+}
+
+func (t *TreeIndex) AddPath(path, uid string, treeNodeType TreeNodeType) {
+	path = fsutil.PathInternal(path)
+	t.IDToPath[uid] = TreeIndexEntry{Data: path, Type: treeNodeType}
+	t.PathToID[path] = TreeIndexEntry{Data: uid, Type: treeNodeType}
 }
 
 type TreeCache struct {
@@ -92,6 +90,8 @@ func getTreeCache(
 		return handler.Data, nil
 	}
 }
+
+// -- FILE LOCAL -------------------------------------------------------------
 
 func istreeCacheToRebuild(
 	ctx context.Context,
@@ -174,7 +174,7 @@ func buildTreeIndexAndCache(
 	}
 
 	// 2. Reading all of them and storing them in a map.
-	idToTreeNode := make(IDToTreeNode)
+	idToTreeNode := make(idToTreeNode)
 	for _, path := range treeNodePaths {
 		treenode, err := fsutil.ResolveHandler[TreeNode](ctx, opctx.JSONPool, path, false, nil)
 		if err != nil {
@@ -226,7 +226,7 @@ func buildTreeIndexAndCache(
 }
 
 func reccBuildIDToPath(
-	idToTreeNode *IDToTreeNode,
+	idToTreeNode *idToTreeNode,
 	treeIndex *TreeIndex,
 	path, uid string,
 ) (string, error) {
@@ -256,7 +256,7 @@ func reccBuildIDToPath(
 	return fsutil.PathInternal(parentPath, path), nil
 }
 
-type IDToTreeNode = map[string]TreeNode
+type idToTreeNode = map[string]TreeNode
 
 func scanAllTreeNodeFiles(repoPath string) ([]string, error) {
 	treeDir := fsutil.PathOS(repoPath, ".vit", "tree")

@@ -71,6 +71,7 @@ func SplitInternal(p string) []string {
 }
 
 // --- Rel ---
+
 func RelInternal(base, target string) (string, error) {
 	rel, err := filepath.Rel(filepath.FromSlash(base), filepath.FromSlash(target))
 	if err != nil {

@@ -9,20 +9,6 @@ import (
 	"vit/internal/types"
 )
 
-// newErrWorkspaceInternal wraps a raw presentation failure (bare os / fsutil
-// errors from the presenter or producers) as an internal VitError, so the API
-// layer never returns a raw error. The recursive producers and the presenter
-// keep returning raw errors; this is the single wrap point at the package's
-// public boundary.
-func newErrWorkspaceInternal(nested error, msg string) error {
-	return types.NewInternalVitError(
-		types.ErrWorkspaceInternal,
-		nested,
-		[]string{msg},
-		nil,
-	)
-}
-
 func ResolvePresenter(
 	ctx context.Context,
 	logger interface {
@@ -32,7 +18,10 @@ func ResolvePresenter(
 ) (Presenter, error) {
 	p, err := newHardlinkPresenter(logger)
 	if err != nil {
-		return nil, newErrWorkspaceInternal(err, "no usable workspace presenter (hardlinks may be unsupported here)")
+		return nil, newErrWorkspaceInternal(
+			err,
+			"no usable workspace presenter (hardlinks may be unsupported here)",
+		)
 	}
 	return p, nil
 }
@@ -45,8 +34,6 @@ func PresentBranch(
 ) (string, error) {
 	ref.AssertTypeOfRef(types.RefTypeBranch)
 	wsPath := fsutil.PathOS(repoPath, RefToWorkspacePath(ref))
-	// blobPath is the branch content ref, relative to .vit/blob (portable, as
-	// stored in the asset JSON) — resolve it to the real on-disk blob dir.
 	blobAbs := fsutil.PathOS(repoPath, ".vit", "blob", blobPath)
 	if err := presentFromBlobDir(ctx, wsPath, blobAbs, false, p); err != nil {
 		return "", newErrWorkspaceInternal(err, fmt.Sprintf("failed to present branch to workspace: %s", ref.RelativePath()))
@@ -56,12 +43,14 @@ func PresentBranch(
 
 func PresentCommit(
 	ctx context.Context,
-	repoPath, assetPath string,
+	repoPath, assetPath, srcBranchName, user string,
 	commitDate string,
 	p Presenter,
 	rootContentNode *types.ContentNode,
 ) (string, error) {
-	ret := fsutil.PathOS(repoPath, genWorkspacePathForCommit(assetPath, commitDate))
+	ret := fsutil.PathOS(
+		repoPath,
+		genWorkspacePathForCommit(assetPath, commitDate, srcBranchName, user))
 	if err := presentFromContentNode(
 		ctx,
 		rootContentNode,
@@ -70,7 +59,10 @@ func PresentCommit(
 		true,
 		p,
 	); err != nil {
-		return "", newErrWorkspaceInternal(err, fmt.Sprintf("failed to present commit to workspace: %s", assetPath))
+		return "", newErrWorkspaceInternal(
+			err,
+			fmt.Sprintf("failed to present commit to workspace: %s", assetPath),
+		)
 	}
 	return ret, nil
 }
@@ -81,20 +73,26 @@ func PresentTag(
 	ref *types.Ref,
 	p Presenter,
 	rootContentNode *types.ContentNode,
-) error {
+) (string, error) {
 	ref.AssertTypeOfRef(types.RefTypeTag)
+	ret := fsutil.PathOS(repoPath, RefToWorkspacePath(ref))
 	if err := presentFromContentNode(
 		ctx,
 		rootContentNode,
 		repoPath,
-		fsutil.PathOS(repoPath, RefToWorkspacePath(ref)),
+		ret,
 		true,
 		p,
 	); err != nil {
-		return newErrWorkspaceInternal(err, fmt.Sprintf("failed to present tag to workspace: %s", ref.RelativePath()))
+		return "", newErrWorkspaceInternal(
+			err,
+			fmt.Sprintf("failed to present tag to workspace: %s", ref.RelativePath()),
+		)
 	}
-	return nil
+	return ret, nil
 }
+
+// -- FILE LOCAL -------------------------------------------------------------
 
 func presentFromContentNode(
 	ctx context.Context,
@@ -164,4 +162,13 @@ func presentFromBlobDir(
 	}
 
 	return p.PresentFinish(ctx, wsPath, readOnly)
+}
+
+func newErrWorkspaceInternal(nested error, msg string) error {
+	return types.NewInternalVitError(
+		types.ErrWorkspaceInternal,
+		nested,
+		[]string{msg},
+		nil,
+	)
 }

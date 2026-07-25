@@ -9,6 +9,8 @@ import (
 	"vit/internal/types"
 )
 
+// CopyFiles execute sequencelly all CopyFilesRequest passed.
+// will report progress in the passed Copy Progress interface.
 func CopyFiles(ctx context.Context, progress *CopyProgress, requests []types.CopyFilesRequest) (err error) {
 	// TODO: is this really a panic case?
 	if progress == nil {
@@ -34,7 +36,61 @@ func CopyFiles(ctx context.Context, progress *CopyProgress, requests []types.Cop
 	return nil
 }
 
-func copyOneRequest(ctx context.Context, dstRoot string, src *types.DirStat, progress *CopyProgress) error {
+// CopyProgress is used to report progress using the passed types.ProgressWriter.
+type CopyProgress struct {
+	writer      types.ProgressWriter
+	currentFile string
+	currentSize int
+	bytesRead   int
+}
+
+func NewCopyProgress(writer types.ProgressWriter) *CopyProgress {
+	return &CopyProgress{writer: writer}
+}
+
+func (p *CopyProgress) init(operation string, totalItems int, totalBytes int64) {
+	p.writer.InitProgress(types.ProgressManifest{
+		Operation:  operation,
+		TotalItems: totalItems,
+		TotalBytes: totalBytes,
+	})
+}
+
+func (p *CopyProgress) updateFile(name string, size int) {
+	p.currentFile = name
+	p.currentSize = size
+	p.bytesRead = 0
+}
+
+func (p *CopyProgress) updateBytes(n int) {
+	p.bytesRead += n
+	p.writer.UpdateProgress(types.ProgressItem{
+		Name: p.currentFile,
+		Size: p.currentSize,
+		Done: p.bytesRead,
+	})
+}
+
+func (p *CopyProgress) finishFile() {
+	p.writer.UpdateProgress(types.ProgressItem{
+		Name: p.currentFile,
+		Size: p.currentSize,
+		Done: p.currentSize,
+	})
+}
+
+func (p *CopyProgress) close(success bool) {
+	p.writer.CloseProgress(types.ProgressFinish{Status: success})
+}
+
+// -- FILE LOCAL -------------------------------------------------------------
+
+func copyOneRequest(
+	ctx context.Context,
+	dstRoot string,
+	src *types.DirStat,
+	progress *CopyProgress,
+) error {
 	dstRoot = PathOS(dstRoot)
 
 	stop, err := AcquireExclusiveLockWithKeepalive(ctx, dstRoot)
@@ -86,52 +142,6 @@ func copyOneRequest(ctx context.Context, dstRoot string, src *types.DirStat, pro
 
 	_ = syncDir(dstParent)
 	return nil
-}
-
-type CopyProgress struct {
-	writer      types.ProgressWriter
-	currentFile string
-	currentSize int
-	bytesRead   int
-}
-
-func NewCopyProgress(writer types.ProgressWriter) *CopyProgress {
-	return &CopyProgress{writer: writer}
-}
-
-func (p *CopyProgress) init(operation string, totalItems int, totalBytes int64) {
-	p.writer.InitProgress(types.ProgressManifest{
-		Operation:  operation,
-		TotalItems: totalItems,
-		TotalBytes: totalBytes,
-	})
-}
-
-func (p *CopyProgress) updateFile(name string, size int) {
-	p.currentFile = name
-	p.currentSize = size
-	p.bytesRead = 0
-}
-
-func (p *CopyProgress) updateBytes(n int) {
-	p.bytesRead += n
-	p.writer.UpdateProgress(types.ProgressItem{
-		Name: p.currentFile,
-		Size: p.currentSize,
-		Done: p.bytesRead,
-	})
-}
-
-func (p *CopyProgress) finishFile() {
-	p.writer.UpdateProgress(types.ProgressItem{
-		Name: p.currentFile,
-		Size: p.currentSize,
-		Done: p.currentSize,
-	})
-}
-
-func (p *CopyProgress) close(success bool) {
-	p.writer.CloseProgress(types.ProgressFinish{Status: success})
 }
 
 func copyFileDirect(ctx context.Context, src, dst string, progress *CopyProgress) error {

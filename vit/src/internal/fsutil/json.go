@@ -93,6 +93,8 @@ func jsonRead[T any](filename string) (*T, error) {
 	return nil, fmt.Errorf("failed to read JSON after %d attempts: %w", jsonReadMaxRetries, lastErr)
 }
 
+// -- FILE LOCAL -------------------------------------------------------------
+
 func jsonReadOnce[T any](filename string) (*T, error) {
 	file, err := os.Open(filename)
 	if err != nil {

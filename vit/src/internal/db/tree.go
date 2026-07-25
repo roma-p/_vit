@@ -125,6 +125,8 @@ func (c *Client) IsAssetPathAvailable(
 	return closer, nil
 }
 
+// -- FILE LOCAL -------------------------------------------------------------
+
 func (c *Client) createAssetTreeNode(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,

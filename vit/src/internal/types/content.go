@@ -2,22 +2,26 @@ package types
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
 	// Exception to the "no raw path.*/filepath.* outside fsutil/path.go" convention:
 	// okay because we know it will always be poxix here (internal)
 	// but myabe serialize unserialize to move?
 	// OR path utils to move to tyes?
 	"path"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
 )
 
+// ContentNode describe the dir / files hierarchy pointed by a commtit object.
+// it contains enough info to detect changes on the dir.
+// it also points to the underlying blob target file.
 type ContentNode struct {
 	// Payload
 	Name     string
-	Children []*ContentNode
-	Files    []*ContentNodeFile
+	Children []*ContentNode     // one content node per subdir.
+	Files    []*ContentNodeFile // one  content node file per file in that dir.
 
 	// Derived from payload
 	Serialized  []byte
@@ -98,6 +102,8 @@ func (n *ContentNode) ToDirStat(fullPath string) *DirStat {
 	n.collectDirStat("", ret)
 	return ret
 }
+
+// -- FILE LOCAL -------------------------------------------------------------
 
 func (n *ContentNode) collectDirStat(prefix string, dirStat *DirStat) {
 	for _, f := range n.Files {

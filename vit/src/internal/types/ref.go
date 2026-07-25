@@ -50,6 +50,7 @@ type Ref struct {
 	// Tag Data
 	TagFamily string `json:"tag_family,omitempty"`
 	TagName   string `json:"tag_name,omitempty"`
+	Site      string `json:"site,omitempty"`
 
 	// Commit Data
 	CommitID string `json:"commit_id,omitempty"`
@@ -73,23 +74,27 @@ func NewRefBranch(repoPath, assetPath, branchName string) *Ref {
 	}
 }
 
-func NewRefTag(repoPath, assetPath, tagFamily, tagName string) *Ref {
+func NewRefTag(repoPath, assetPath, tagFamily, tagName, site string) *Ref {
+	// site is optionnal.
 	return &Ref{
 		RepoPath:  repoPath,
 		AssetPath: assetPath,
 		RefType:   RefTypeTag,
 		TagFamily: tagFamily,
 		TagName:   tagName,
+		Site:      site,
 	}
 }
 
 // NewRefTagFloating does not point directly to a commit (here only a group of commit)
-func NewRefTagFloating(repoPath, assetPath, tagFamily string) *Ref {
+func NewRefTagFloating(repoPath, assetPath, tagFamily, site string) *Ref {
+	// site is optionnal.
 	return &Ref{
 		RepoPath:  repoPath,
 		AssetPath: assetPath,
 		RefType:   RefTypeTag,
 		TagFamily: tagFamily,
+		Site:      site,
 	}
 }
 
@@ -132,6 +137,8 @@ func NewRefFromPath(repoPath, refPath string) (*Ref, error) {
 	case RefTypeCommit:
 		ret.CommitID = tmp
 	case RefTypeTag:
+		// TODO(site): does NOT parse @site= yet (canonical form:
+		// @tag=family@site=X@name=NNN).
 		tagfamily, tmp2, found := strings.Cut(tmp, "@")
 		if !found {
 			ret.TagFamily = tmp
@@ -208,6 +215,8 @@ func (r *Ref) CheckTypeOfRef(t RefType) error {
 		return nil
 	}
 }
+
+// -- FILE LOCAL -------------------------------------------------------------
 
 func newErrInvalidRef(path string) error {
 	return NewVitError(

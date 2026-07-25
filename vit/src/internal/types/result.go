@@ -40,7 +40,6 @@ func (r *StringListResult) ToStringSlice() []string {
 type StatusResult ChangeRecord
 
 func (c *StatusResult) ToStringSlice() []string {
-
 	if len(c.Files) == 0 {
 		return []string{"Branch clean, no change to commit"}
 	}

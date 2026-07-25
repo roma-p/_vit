@@ -1,6 +1,9 @@
 package types
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // VitError represents a structured error — both expected (standard) and
 // unexpected (internal) conditions. When Internal is true, NestedErr carries
@@ -45,6 +48,27 @@ func (e *VitError) Error() string {
 	return s
 }
 
+type CancelledError struct {
+	NestedErr error
+}
+
+func NewCancelledError(nestedErr error) *CancelledError {
+	return &CancelledError{NestedErr: nestedErr}
+}
+
+func (e *CancelledError) Unwrap() error { return e.NestedErr }
+
+func (e *CancelledError) Error() string {
+	return "Operation cancelled: " + e.NestedErr.Error()
+}
+
+func IsErrCode(err error, code string) bool {
+	var ve *VitError
+	return errors.As(err, &ve) && ve.Name == code
+}
+
+// -- FILE LOCAL -------------------------------------------------------------
+
 func linearizeStringSlice(messages []string) string {
 	ret := ""
 	for _, v := range messages {
@@ -59,18 +83,4 @@ func linearizeAndStringifyAnySlice(values []any) string {
 		ret += fmt.Sprintf(" %#v", v)
 	}
 	return ret
-}
-
-type CancelledError struct {
-	NestedErr error
-}
-
-func NewCancelledError(nestedErr error) *CancelledError {
-	return &CancelledError{NestedErr: nestedErr}
-}
-
-func (e *CancelledError) Unwrap() error { return e.NestedErr }
-
-func (e *CancelledError) Error() string {
-	return "Operation cancelled: " + e.NestedErr.Error()
 }

@@ -142,6 +142,8 @@ func WaitForLockRelease(ctx context.Context, lockPath string) error {
 	}
 }
 
+// -- FILE LOCAL -------------------------------------------------------------
+
 func cleanOrphanedLock(lockDir string) {
 	info, err := os.Stat(lockDir)
 	if err != nil {

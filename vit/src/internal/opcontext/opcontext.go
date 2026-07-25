@@ -13,6 +13,7 @@ import (
 // OperationContext bundles per-operation state:
 // - info about the operation
 // - JSONPool holding all json data used for that operation.
+// - Repo config
 type OperationContext struct {
 	RepoPath   string
 	RepoConfig *config.RepoConfig
@@ -51,14 +52,12 @@ func NewOperationContext(ctx context.Context, fullAssetPath string) (*OperationC
 }
 
 // Close releases all cached JSON handlers and any locks they hold.
-// Intended to be called via defer at the top of an operation.
 func (o *OperationContext) Close() {
 	o.JSONPool.ReleaseAll()
 }
 
-// WithOperationContext creates an OperationContext, runs fn, and guarantees
-// Close is called when fn returns. This is the preferred way to use an
-// OperationContext — it makes it impossible to forget cleanup.
+// WithOperationContext create a context manager around operation context.
+// calling this ensure json pool will be released.
 func WithOperationContext(
 	ctx context.Context,
 	path string,
