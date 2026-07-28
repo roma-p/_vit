@@ -23,7 +23,7 @@ func (c *Client) Status(ctx context.Context, path string) (*types.StatusResult, 
 	var changeRecord *types.ChangeRecord
 
 	err := opcontext.WithOperationContext(ctx, path, func(opctx *opcontext.OperationContext, path string) error {
-		ref, err := types.NewRefFromPath(opctx.RepoPath, path)
+		ref, err := workspace.ResolveRefFromPath(ctx, opctx.JSONPool, opctx.RepoPath, path)
 		if err != nil {
 			return err
 		}
@@ -77,10 +77,9 @@ func resolveChangeRecord(
 		request.BranchRef.RepoPath,
 		workspace.RefToWorkspacePath(request.BranchRef),
 	)
-
 	workspaceDirStat, err := fsutil.NewDirStatFromDir(ctx, workspacePath)
 	if err != nil {
-		return nil, err
+		return nil, workspace.NewErrUntrackedFile(request.BranchRef.RelativePath())
 	}
 
 	jsonAsset, err := request.DBClient.GetJSONAssetFromRef(
@@ -116,7 +115,6 @@ func resolveChangeRecord(
 	if err != nil {
 		return nil, err
 	}
-
 	lastCommitStat := contentRoot.ToDirStat("") // TODO: do we need root path?
 
 	changes := workspaceDirStat.Diff(lastCommitStat, baseline)

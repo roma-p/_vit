@@ -66,12 +66,12 @@ func ResolveRefFromPath(
 		}
 		h, err := fsutil.ResolveHandler[Pointer](ctx, pool, pp, false, nil)
 		if err != nil {
-			return nil, newErrWorkspaceInternal(err, "pointer: read failed for "+cur)
+			return nil, NewErrUntrackedFile(path)
 		}
 		ref := h.Data.Ref
 		return &ref, nil
 	}
-	return nil, newErrPointerNotFound(path)
+	return nil, NewErrUntrackedFile(path)
 }
 
 func RemovePointer(repoPath, wsPath string) error {
@@ -91,14 +91,10 @@ func pointerPath(repoPath, rel string) string {
 	return fsutil.PathOS(repoPath, ".vit", "workspace", "pointers", rel+".json")
 }
 
-func newErrPointerNotFound(path string) error {
+func NewErrUntrackedFile(path string) error {
 	return types.NewVitError(
 		types.ErrPointerNotFound,
-		[]string{
-			fmt.Sprintf("no vit object found at path: %s", path),
-			"the path is not a ref and no workspace pointer maps to it",
-			"if it should be an asset: 'vit add " + path + "'",
-		},
+		[]string{fmt.Sprintf("unable to find tracked file at: %s", path)},
 		[]any{"path", path},
 	)
 }

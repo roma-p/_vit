@@ -10,7 +10,8 @@ import (
 
 func commitBlobPath(repoPath, assetPath, branch, user string, timestamp time.Time) string {
 	base := fsutil.BaseInternal(assetPath)
-	filename := fmt.Sprintf("%s-%s-%s-%s", base, branch, types.FormatTimestampLocal(timestamp), user)
+	filename := fmt.Sprintf("%s-%s-%s-%s-%s",
+		base, branch, types.FormatTimestampLocal(timestamp), user, fsutil.GenerateUID(2))
 	return fsutil.PathOS(repoPath, ".vit", "blob", assetPath, "commits", filename)
 }
 

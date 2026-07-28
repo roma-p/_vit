@@ -33,7 +33,7 @@ func genWorkspacePathForCommit(assetPath, date, srcBranchName, user string) stri
 	return fsutil.PathInternal(
 		assetPath,
 		"commits",
-		"commit-"+srcBranchName+"-"+date+"-"+user,
+		"commit-"+srcBranchName+"-"+date+"-"+user+"-"+fsutil.GenerateUID(2),
 	)
 }
 
