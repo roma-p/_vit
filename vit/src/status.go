@@ -11,8 +11,6 @@ import (
 	"vit/internal/workspace"
 )
 
-// TODO: pointer nodes and "ref from path" (either from ref path or workspace path)
-
 func (c *Client) Status(ctx context.Context, path string) (*types.StatusResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, types.NewCancelledError(err)

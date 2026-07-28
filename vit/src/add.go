@@ -77,7 +77,6 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 		return nil
 	})
 
-	// TODO WTF?
 	if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 		err = types.NewCancelledError(err)
 	}
