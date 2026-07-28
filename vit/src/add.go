@@ -99,6 +99,9 @@ type operationAdd struct {
 	contentNode       *types.ContentNode
 	baselineTimeStamp time.Time
 
+	// filled at DBUpdate
+	firstCommitID string
+
 	// filled at Finish
 	WorkspaceBranchPath string
 }
@@ -155,7 +158,7 @@ func (o *operationAdd) DBUpdate(
 ) error {
 	o.baselineTimeStamp = time.Now()
 
-	_, err := dbClient.AddAssetToTree(
+	asset, err := dbClient.AddAssetToTree(
 		ctx,
 		opctx,
 		db.AddAssetToTreeRequest{
@@ -166,7 +169,16 @@ func (o *operationAdd) DBUpdate(
 			BaselineTimeStamp: o.baselineTimeStamp,
 		},
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	branch, err := db.GetBranchCommit(asset.Data, types.DefaultBranchName)
+	if err != nil {
+		return err
+	}
+	o.firstCommitID = branch.Parent
+	return nil
 }
 
 func (o *operationAdd) Finish(
@@ -178,6 +190,7 @@ func (o *operationAdd) Finish(
 	var err error
 	o.WorkspaceBranchPath, err = workspace.PresentBranch(
 		ctx,
+		opctx.JSONPool,
 		opctx.RepoPath,
 		o.blobPathBranch,
 		p,
@@ -189,8 +202,8 @@ func (o *operationAdd) Finish(
 
 	if _, err := workspace.PresentCommit(
 		ctx,
-		opctx.RepoPath,
-		o.AssetPath,
+		opctx.JSONPool,
+		types.NewRefCommit(opctx.RepoPath, o.AssetPath, o.firstCommitID),
 		types.DefaultBranchName,
 		opctx.User,
 		types.FormatTimestampLocal(opctx.TimeStamp),

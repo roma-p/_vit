@@ -29,7 +29,7 @@ func (c *Client) Tag(ctx context.Context, path, tagfamily, message string) (*typ
 		opctx *opcontext.OperationContext,
 		path string, // path is internal here.
 	) error {
-		ref, err := types.NewRefFromPath(opctx.RepoPath, path)
+		ref, err := workspace.ResolveRefFromPath(ctx, opctx.JSONPool, opctx.RepoPath, path)
 		if err != nil {
 			return err
 		}
@@ -128,7 +128,11 @@ func (o *operationTag) Validate(
 	}
 	switch o.InputRef.RefType {
 	case types.RefTypeCommit:
-		panic("not implemented")
+		// tag an existing commit directly
+		if _, err := db.GetCommit(asset.Data, o.InputRef.CommitID); err != nil {
+			return err
+		}
+		o.targetCommit = o.InputRef.CommitID
 
 	case types.RefTypeBranch:
 		oc := &operationCommit{
@@ -156,6 +160,7 @@ func (o *operationTag) Validate(
 		}
 
 	case types.RefTypeTag:
+		// if tag from tag: resolve underlying commit.
 		tag, _, err := db.GetTag(asset.Data, o.InputRef)
 		if err != nil {
 			return err
@@ -252,6 +257,7 @@ func (o *operationTag) Finish(
 
 	o.TagWorkspacePath, err = workspace.PresentTag(
 		ctx,
+		opctx.JSONPool,
 		o.InputRef.RepoPath,
 		o.outputRef,
 		p,

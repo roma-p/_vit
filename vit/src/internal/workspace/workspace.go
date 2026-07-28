@@ -28,6 +28,7 @@ func ResolvePresenter(
 
 func PresentBranch(
 	ctx context.Context,
+	pool *fsutil.JSONHandlerPool,
 	repoPath, blobPath string,
 	p Presenter,
 	ref *types.Ref,
@@ -38,37 +39,46 @@ func PresentBranch(
 	if err := presentFromBlobDir(ctx, wsPath, blobAbs, false, p); err != nil {
 		return "", newErrWorkspaceInternal(err, fmt.Sprintf("failed to present branch to workspace: %s", ref.RelativePath()))
 	}
+	if err := writePointer(ctx, pool, repoPath, wsPath, ref); err != nil {
+		return "", err
+	}
 	return wsPath, nil
 }
 
 func PresentCommit(
 	ctx context.Context,
-	repoPath, assetPath, srcBranchName, user string,
-	commitDate string,
+	pool *fsutil.JSONHandlerPool,
+	ref *types.Ref,
+	srcBranchName, user, commitDate string,
 	p Presenter,
 	rootContentNode *types.ContentNode,
 ) (string, error) {
+	ref.AssertTypeOfRef(types.RefTypeCommit)
 	ret := fsutil.PathOS(
-		repoPath,
-		genWorkspacePathForCommit(assetPath, commitDate, srcBranchName, user))
+		ref.RepoPath,
+		genWorkspacePathForCommit(ref.AssetPath, commitDate, srcBranchName, user))
 	if err := presentFromContentNode(
 		ctx,
 		rootContentNode,
-		repoPath,
+		ref.RepoPath,
 		ret,
 		true,
 		p,
 	); err != nil {
 		return "", newErrWorkspaceInternal(
 			err,
-			fmt.Sprintf("failed to present commit to workspace: %s", assetPath),
+			fmt.Sprintf("failed to present commit to workspace: %s", ref.AssetPath),
 		)
+	}
+	if err := writePointer(ctx, pool, ref.RepoPath, ret, ref); err != nil {
+		return "", err
 	}
 	return ret, nil
 }
 
 func PresentTag(
 	ctx context.Context,
+	pool *fsutil.JSONHandlerPool,
 	repoPath string,
 	ref *types.Ref,
 	p Presenter,
@@ -88,6 +98,9 @@ func PresentTag(
 			err,
 			fmt.Sprintf("failed to present tag to workspace: %s", ref.RelativePath()),
 		)
+	}
+	if err := writePointer(ctx, pool, repoPath, ret, ref); err != nil {
+		return "", err
 	}
 	return ret, nil
 }

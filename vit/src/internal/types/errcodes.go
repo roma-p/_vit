@@ -21,6 +21,8 @@ const (
 	ErrWorkspaceInternal = "WorkspaceInternal" // unexpected error presenting to the workspace:
 	// failed hardlink/mkdir, hardlinks unsupported (cross-device, Windows no dev mode) etc...
 
+	ErrPointerNotFound = "PointerNotFound" // no ref/pointer resolves the given workspace path
+
 	ErrAssetObjectNotFound      = "AssetObjectNotFound"
 	ErrAssetObjectAlreadyExists = "AssetObjectAlreadyExists"
 
