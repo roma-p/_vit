@@ -19,7 +19,9 @@ type Asset struct {
 	Tags     TagsCollection          `json:"tags,omitempty"`
 
 	// set at load time, not persisted, buffered data for ease
+	RepoUID   string `json:"-"`
 	RepoPath  string `json:"-"`
+	Site      string `json:"-"`
 	AssetPath string `json:"-"`
 }
 
@@ -44,9 +46,10 @@ type AssetCommit struct {
 type AssetDependencies = map[string]*AssetDependency
 
 type AssetDependency struct {
-	Type   *AssetDependencyType `json:"type"`
-	Ref    *Ref                 `json:"ref"`
-	Commit string               `json:"commit"`
+	Type        AssetDependencyType `json:"type"`
+	RefSpec     *Ref                `json:"ref_spec"`
+	RefResolved *Ref                `json:"ref_resolved"`
+	Commit      string              `json:"commit"`
 }
 
 type AssetDependencyType string
@@ -83,4 +86,12 @@ func (a *Asset) TagVersions(family, site string) (map[TagName]*AssetTag, bool) {
 	}
 	leaf, ok := fam[site]
 	return leaf, ok
+}
+
+func (a *Asset) RepoRef() *RepoRef {
+	return &RepoRef{
+		UID:  a.RepoUID,
+		Path: a.RepoPath,
+		Site: a.Site,
+	}
 }

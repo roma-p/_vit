@@ -32,7 +32,7 @@ func (c *Client) GetJSONAssetFromRef(
 
 	assetNode, found, err := resolveJSONAsset(
 		ctx, opctx,
-		ref.RepoPath,
+		ref.RepoRef(),
 		ref.AssetPath,
 		treeNode.AssetID,
 		forWrite,
@@ -47,7 +47,7 @@ func (c *Client) GetJSONAssetFromRef(
 }
 
 type AddAssetToTreeRequest struct {
-	RepoPath          string
+	RepoRef           *types.RepoRef
 	TreePath          string
 	BlobBranch        string
 	ContentRootHash   string
@@ -60,13 +60,13 @@ func (c *Client) AddAssetToTree(
 	request AddAssetToTreeRequest,
 ) (*JSONAsset, error) {
 	treePath := fsutil.PathInternal(request.TreePath)
-	closestPath, err := c.IsAssetPathAvailable(ctx, opctx, request.RepoPath, request.TreePath)
+	closestPath, err := c.IsAssetPathAvailable(ctx, opctx, request.RepoRef.Path, request.TreePath)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO(db): look for orphan node tree (and then authorize rewrite for them)
-	asset, err := createNewJSONAsset(ctx, opctx, request.RepoPath, request.TreePath)
+	asset, err := createNewJSONAsset(ctx, opctx, request.RepoRef, request.TreePath)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (c *Client) AddAssetToTree(
 
 	if _, err := c.createAssetTreeNode(
 		ctx, opctx,
-		request.RepoPath,
+		request.RepoRef,
 		treePath,
 		closestPath,
 		asset.Data.AssetUID); err != nil {
@@ -130,9 +130,10 @@ func (c *Client) IsAssetPathAvailable(
 func (c *Client) createAssetTreeNode(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	repoPath, treePath, fromPath, assetID string,
+	repoRef *types.RepoRef,
+	treePath, fromPath, assetID string,
 ) (*JSONTreeNode, error) {
-	treeIndex, err := c.GetTreeIndex(ctx, opctx, repoPath)
+	treeIndex, err := c.GetTreeIndex(ctx, opctx, repoRef.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -162,8 +163,11 @@ func (c *Client) createAssetTreeNode(
 	for _, d := range subDirs[:len(subDirs)-1] {
 		currDir = fsutil.PathInternal(currDir, d)
 		jsonTreeNode, err := c.createNewJSONTreeNode(
-			ctx, opctx, repoPath,
-			currDir, parentID, TreeNodeTypeDir,
+			ctx, opctx,
+			repoRef.Path,
+			currDir,
+			parentID,
+			TreeNodeTypeDir,
 		)
 		if err != nil {
 			return nil, err
@@ -172,13 +176,19 @@ func (c *Client) createAssetTreeNode(
 		parentID = jsonTreeNode.Data.ID
 	}
 
-	ret, err := c.createNewJSONTreeNode(ctx, opctx, repoPath, treePath, parentID, TreeNodeTypeAsset)
+	ret, err := c.createNewJSONTreeNode(
+		ctx, opctx,
+		repoRef.Path,
+		treePath,
+		parentID,
+		TreeNodeTypeAsset,
+	)
 	if err != nil {
 		return nil, err
 	}
 	ret.Data.AssetID = assetID
 
-	c.MarkTreeStale(repoPath)
+	c.MarkTreeStale(repoRef.Path)
 
 	return ret, nil
 }

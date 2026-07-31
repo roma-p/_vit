@@ -9,8 +9,7 @@ import (
 )
 
 func buildAddArgParser() *clicore.CmdParser {
-	ret := clicore.NewArgParser("add", []string{"assetPath"}, []string{"src"})
-	return ret
+	return clicore.NewArgParser("add", []string{"assetPath"}, []string{"src"})
 }
 
 func runAdd(ctx context.Context, client *vit.Client, argParser *clicore.CmdParser) (types.Result, error) {

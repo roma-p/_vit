@@ -9,25 +9,13 @@ import (
 	"vit/internal/types"
 )
 
-type PlanCommitBranchRequest struct {
-	RepoPath         string
-	AssetPath        string
-	BranchName       string
-	User             string
-	Message          string
-	Timestamp        time.Time
-	ContentNode      *types.ContentNode
-	WorkspaceDirStat *types.DirStat
-	ChangeRecord     *types.ChangeRecord
-}
-
 func PlanCommitBranch(
 	ctx context.Context,
 	r PlanCommitBranchRequest,
 ) (*types.BlobUpdatePlan, error) {
 	topCopy := filterFilesToCopyToBlob(r.WorkspaceDirStat, r.ChangeRecord)
-	commitPath := commitBlobPath(r.RepoPath, r.AssetPath, r.BranchName, r.User, r.Timestamp)
-	blobRootDir := fsutil.PathOS(r.RepoPath, ".vit", "blob")
+	commitPath := commitBlobPath(r.RepoRef.Path, r.AssetPath, r.BranchName, r.User, r.Timestamp)
+	blobRootDir := fsutil.PathOS(r.RepoRef.Path, ".vit", "blob")
 
 	if err := applyChangeRecord(
 		r.ContentNode,
@@ -48,7 +36,7 @@ func PlanCommitBranch(
 		},
 		ContentRoots: []types.ContentRootWrite{
 			{
-				ContentRootPath: genContentPath(r.RepoPath, r.AssetPath),
+				ContentRootPath: genContentPath(r.RepoRef.Path, r.AssetPath),
 				Root:            r.ContentNode,
 			},
 		},
@@ -57,13 +45,25 @@ func PlanCommitBranch(
 				CommitBlobPath: commitPath,
 				Manifest: types.Manifest{
 					Timestamp: r.Timestamp,
-					Ref:       types.NewRefBranch(r.RepoPath, r.AssetPath, r.BranchName),
+					Ref:       types.NewRefBranch(r.RepoRef, r.AssetPath, r.BranchName),
 					User:      r.User,
 					Message:   r.Message,
 				},
 			},
 		},
 	}, nil
+}
+
+type PlanCommitBranchRequest struct {
+	RepoRef          *types.RepoRef
+	AssetPath        string
+	BranchName       string
+	User             string
+	Message          string
+	Timestamp        time.Time
+	ContentNode      *types.ContentNode
+	WorkspaceDirStat *types.DirStat
+	ChangeRecord     *types.ChangeRecord
 }
 
 func filterFilesToCopyToBlob(d *types.DirStat, c *types.ChangeRecord) *types.DirStat {
@@ -81,14 +81,6 @@ func filterFilesToCopyToBlob(d *types.DirStat, c *types.ChangeRecord) *types.Dir
 	return ret
 }
 
-type PlanInitAssetRequest struct {
-	RepoPath  string
-	AssetPath string
-	Src       string
-	User      string
-	Timestamp time.Time
-}
-
 // PlanInitAsset builds the BlobUpdatePlan for a new asset.
 // - plan the first commit (a copy of the src if any)
 // - plan the default branch wokring area
@@ -97,14 +89,14 @@ func PlanInitAsset(
 	request PlanInitAssetRequest,
 ) (*types.BlobUpdatePlan, error) {
 	commitPath := commitBlobPath(
-		request.RepoPath,
+		request.RepoRef.Path,
 		request.AssetPath,
 		types.DefaultBranchName,
 		request.User,
 		request.Timestamp,
 	)
-	branchPath := branchBlobPath(request.RepoPath, request.AssetPath, types.DefaultBranchName)
-	blobRootDir := fsutil.PathOS(request.RepoPath, ".vit", "blob")
+	branchPath := branchBlobPath(request.RepoRef.Path, request.AssetPath, types.DefaultBranchName)
+	blobRootDir := fsutil.PathOS(request.RepoRef.Path, ".vit", "blob")
 
 	srcDirStat, err := sourceToDirStat(ctx, request.Src)
 	if err != nil {
@@ -123,13 +115,13 @@ func PlanInitAsset(
 		return nil, err
 	}
 
-	ref := types.NewRefBranch(request.RepoPath, request.AssetPath, types.DefaultBranchName)
+	ref := types.NewRefBranch(request.RepoRef, request.AssetPath, types.DefaultBranchName)
 
 	return &types.BlobUpdatePlan{
 		CopyRequests: copyRequests,
 		ContentRoots: []types.ContentRootWrite{
 			{
-				ContentRootPath: genContentPath(request.RepoPath, request.AssetPath),
+				ContentRootPath: genContentPath(request.RepoRef.Path, request.AssetPath),
 				Root:            rootContentNode,
 			},
 		},
@@ -146,6 +138,14 @@ func PlanInitAsset(
 			},
 		},
 	}, nil
+}
+
+type PlanInitAssetRequest struct {
+	RepoRef   *types.RepoRef
+	AssetPath string
+	Src       string
+	User      string
+	Timestamp time.Time
 }
 
 func BranchContentPath(repoPath, assetPath, branchName string) (string, error) {

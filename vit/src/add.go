@@ -52,7 +52,7 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 		}
 		defer dbClient.Close()
 
-		op := newOperationAdd(opctx.RepoPath, assetPath, src)
+		op := newOperationAdd(opctx.Repo(), assetPath, src)
 
 		if err := transaction.RunTreeChanged(
 			ctx,
@@ -65,7 +65,7 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 				Progress:  c.progress,
 				Command:   types.CommandAdd,
 				User:      opctx.User,
-				RepoPath:  opctx.RepoPath,
+				RepoPath:  opctx.RepoPath(),
 				Timestamp: opctx.TimeStamp,
 			},
 			[]string{assetPath},
@@ -86,7 +86,8 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 
 type operationAdd struct {
 	// filled at init.
-	RepoPath  string
+	// TODO: RepoPath  string
+	RepoRef   *types.RepoRef
 	AssetPath string
 	Src       string
 
@@ -105,9 +106,9 @@ type operationAdd struct {
 	WorkspaceBranchPath string
 }
 
-func newOperationAdd(repoPath, assetPath, src string) *operationAdd {
+func newOperationAdd(repoRef *types.RepoRef, assetPath, src string) *operationAdd {
 	return &operationAdd{
-		RepoPath:  repoPath,
+		RepoRef:   repoRef,
 		AssetPath: assetPath,
 		Src:       src,
 	}
@@ -119,7 +120,11 @@ func (o *operationAdd) Validate(
 	dbClient *db.Client,
 ) error {
 	var err error
-	o.closestPathFound, err = dbClient.IsAssetPathAvailable(ctx, opctx, o.RepoPath, o.AssetPath)
+	o.closestPathFound, err = dbClient.IsAssetPathAvailable(
+		ctx, opctx,
+		o.RepoRef.Path,
+		o.AssetPath,
+	)
 	return err
 }
 
@@ -130,7 +135,7 @@ func (o *operationAdd) PlanBlobUpdate(
 	plan, err := blob.PlanInitAsset(
 		ctx,
 		blob.PlanInitAssetRequest{
-			RepoPath:  o.RepoPath,
+			RepoRef:   o.RepoRef,
 			AssetPath: o.AssetPath,
 			Src:       o.Src,
 			User:      opctx.User,
@@ -142,7 +147,11 @@ func (o *operationAdd) PlanBlobUpdate(
 	}
 
 	o.contentNode = plan.ContentRoots[0].Root
-	o.blobPathBranch, err = blob.BranchContentPath(o.RepoPath, o.AssetPath, types.DefaultBranchName)
+	o.blobPathBranch, err = blob.BranchContentPath(
+		o.RepoRef.Path,
+		o.AssetPath,
+		types.DefaultBranchName,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +170,7 @@ func (o *operationAdd) DBUpdate(
 		ctx,
 		opctx,
 		db.AddAssetToTreeRequest{
-			RepoPath:          o.RepoPath,
+			RepoRef:           o.RepoRef,
 			TreePath:          o.AssetPath,
 			BlobBranch:        o.blobPathBranch,
 			ContentRootHash:   o.contentNode.ContentHash,
@@ -190,10 +199,10 @@ func (o *operationAdd) Finish(
 	o.WorkspaceBranchPath, err = workspace.PresentBranch(
 		ctx,
 		opctx.JSONPool,
-		opctx.RepoPath,
+		o.RepoRef.Path,
 		o.blobPathBranch,
 		p,
-		types.NewRefBranch(opctx.RepoPath, o.AssetPath, types.DefaultBranchName),
+		types.NewRefBranch(o.RepoRef, o.AssetPath, types.DefaultBranchName),
 	)
 	if err != nil {
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
@@ -202,7 +211,7 @@ func (o *operationAdd) Finish(
 	if _, err := workspace.PresentCommit(
 		ctx,
 		opctx.JSONPool,
-		types.NewRefCommit(opctx.RepoPath, o.AssetPath, o.firstCommitID),
+		types.NewRefCommit(o.RepoRef, o.AssetPath, o.firstCommitID),
 		types.DefaultBranchName,
 		opctx.User,
 		types.FormatTimestampLocal(opctx.TimeStamp),

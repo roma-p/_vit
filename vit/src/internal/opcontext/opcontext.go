@@ -15,14 +15,18 @@ import (
 // - JSONPool holding all json data used for that operation.
 // - Repo config
 type OperationContext struct {
-	RepoPath   string
-	RepoConfig *config.RepoConfig
-	User       string
-	TimeStamp  time.Time
-	JSONPool   *fsutil.JSONHandlerPool
+	User        string
+	TimeStamp   time.Time
+	JSONPool    *fsutil.JSONHandlerPool
+	CurrRepoUID string
+	RefConfigs  map[string]config.RepoConfig // repo uid -> config of that repo.
 }
 
 func NewOperationContext(ctx context.Context, fullAssetPath string) (*OperationContext, string, error) {
+	opctx := &OperationContext{
+		RefConfigs: make(map[string]config.RepoConfig),
+	}
+
 	if err := ctx.Err(); err != nil {
 		return nil, "", types.NewCancelledError(err)
 	}
@@ -37,23 +41,47 @@ func NewOperationContext(ctx context.Context, fullAssetPath string) (*OperationC
 		return nil, "", err
 	}
 
-	repoConfig, err := config.LoadRepoConfig(repoPath)
+	opctx.User = usr.Username
+	opctx.TimeStamp = time.Now()
+	opctx.JSONPool = fsutil.NewJSONHandlerPool()
+
+	opctx.CurrRepoUID, err = opctx.AddRepoConfig(repoPath)
 	if err != nil {
 		return nil, "", err
 	}
 
-	return &OperationContext{
-		RepoPath:   repoPath,
-		RepoConfig: repoConfig,
-		User:       usr.Username,
-		TimeStamp:  time.Now(),
-		JSONPool:   fsutil.NewJSONHandlerPool(),
-	}, assetPath, nil
+	return opctx, assetPath, nil
 }
 
 // Close releases all cached JSON handlers and any locks they hold.
 func (o *OperationContext) Close() {
 	o.JSONPool.ReleaseAll()
+}
+
+func (o *OperationContext) RepoPath() string {
+	return o.RefConfigs[o.CurrRepoUID].RepoPath
+}
+
+func (o *OperationContext) Site() string {
+	return o.RefConfigs[o.CurrRepoUID].CurrentSite
+}
+
+func (o *OperationContext) Repo() *types.RepoRef {
+	return o.RepoRefFor(o.CurrRepoUID)
+}
+
+func (o *OperationContext) RepoRefFor(uid string) *types.RepoRef {
+	c := o.RefConfigs[uid]
+	return &types.RepoRef{UID: uid, Path: c.RepoPath, Site: c.CurrentSite}
+}
+
+func (o *OperationContext) AddRepoConfig(repoPath string) (string, error) {
+	rConfig, err := config.LoadRepoConfig(repoPath)
+	if err != nil {
+		return "", err
+	}
+	o.RefConfigs[rConfig.RepoUID] = *rConfig
+	return rConfig.RepoUID, nil
 }
 
 // WithOperationContext create a context manager around operation context.

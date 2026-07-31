@@ -28,7 +28,7 @@ func NewClient(
 		Logger:        logger,
 	}
 
-	_, err := ret.GetTreeIndex(cxt, opctx, opctx.RepoPath)
+	_, err := ret.GetTreeIndex(cxt, opctx, opctx.RepoPath())
 	if err != nil {
 		return nil, err
 	}

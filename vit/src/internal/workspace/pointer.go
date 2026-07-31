@@ -69,6 +69,7 @@ func ResolveRefFromPath(
 			return nil, NewErrUntrackedFile(path)
 		}
 		ref := h.Data.Ref
+		ref.RepoPath = repoPath
 		return &ref, nil
 	}
 	return nil, NewErrUntrackedFile(path)

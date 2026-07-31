@@ -30,7 +30,7 @@ func (c *Client) Commit(ctx context.Context, path, message string) (*types.Strin
 		opctx *opcontext.OperationContext,
 		path string, // path is internal here.
 	) error {
-		ref, err := workspace.ResolveRefFromPath(ctx, opctx.JSONPool, opctx.RepoPath, path)
+		ref, err := workspace.ResolveRefFromPath(ctx, opctx.JSONPool, opctx.RepoPath(), path)
 		if err != nil {
 			return err
 		}
@@ -60,7 +60,7 @@ func (c *Client) Commit(ctx context.Context, path, message string) (*types.Strin
 				Progress:  c.progress,
 				Command:   types.CommandCommit,
 				User:      opctx.User,
-				RepoPath:  opctx.RepoPath,
+				RepoPath:  opctx.RepoPath(),
 				Timestamp: opctx.TimeStamp,
 			},
 			[]*types.Ref{ref}, transaction.TransactionBranch,
@@ -127,7 +127,7 @@ func (o *operationCommit) PlanBlobUpdate(
 	plan, err := blob.PlanCommitBranch(
 		ctx,
 		blob.PlanCommitBranchRequest{
-			RepoPath:         o.Ref.RepoPath,
+			RepoRef:          o.Ref.RepoRef(),
 			AssetPath:        o.Ref.AssetPath,
 			BranchName:       o.Ref.BranchName,
 			User:             opctx.User,
@@ -161,7 +161,7 @@ func (o *operationCommit) DBUpdate(
 			BranchName:         o.Ref.BranchName,
 			RootcontentNodeUID: o.contentNode.ContentHash,
 			Author:             opctx.User,
-			Site:               opctx.RepoConfig.CurrentSite,
+			Site:               opctx.RepoRefFor(o.Ref.RepoUID).Site,
 			Message:            o.Message,
 			TimeStamp:          opctx.TimeStamp,
 		},
@@ -179,7 +179,7 @@ func (o *operationCommit) Finish(
 	o.CommitPath, err = workspace.PresentCommit(
 		ctx,
 		opctx.JSONPool,
-		types.NewRefCommit(o.Ref.RepoPath, o.Ref.AssetPath, o.NewCommitID),
+		types.NewRefCommit(o.Ref.RepoRef(), o.Ref.AssetPath, o.NewCommitID),
 		o.Ref.BranchName,
 		opctx.User,
 		types.FormatTimestampLocal(opctx.TimeStamp),

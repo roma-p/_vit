@@ -55,7 +55,7 @@ func (c *Client) createNewJSONTreeNode(
 	ret, err := fsutil.ResolveHandler(
 		ctx,
 		opctx.JSONPool,
-		treeNodeJSONPath(opctx.RepoPath, uid),
+		treeNodeJSONPath(repoPath, uid),
 		true,
 		&TreeNode{
 			ID:       uid,

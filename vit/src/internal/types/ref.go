@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -40,7 +41,8 @@ import (
 // Ref is a value type — all fields are comparable, so two Refs with
 // identical fields are equal via ==.
 type Ref struct {
-	RepoPath  string  `json:"repo_path"`
+	RepoUID   string  `json:"repo_uid"`
+	RepoPath  string  `json:"-"`
 	AssetPath string  `json:"asset_path"`
 	RefType   RefType `json:"ref_type"`
 
@@ -65,19 +67,27 @@ const (
 	RefTypeEmpty  RefType = "empty"
 )
 
-func NewRefBranch(repoPath, assetPath, branchName string) *Ref {
+type RepoRef struct {
+	UID  string
+	Path string
+	Site string
+}
+
+func NewRefBranch(repoRef *RepoRef, assetPath, branchName string) *Ref {
 	return &Ref{
-		RepoPath:   repoPath,
+		RepoUID:    repoRef.UID,
+		RepoPath:   repoRef.Path,
 		AssetPath:  assetPath,
 		RefType:    RefTypeBranch,
 		BranchName: branchName,
 	}
 }
 
-func NewRefTag(repoPath, assetPath, tagFamily, tagName, site string) *Ref {
+func NewRefTag(repoRef *RepoRef, assetPath, tagFamily, tagName, site string) *Ref {
 	// site is optionnal.
 	return &Ref{
-		RepoPath:  repoPath,
+		RepoUID:   repoRef.UID,
+		RepoPath:  repoRef.Path,
 		AssetPath: assetPath,
 		RefType:   RefTypeTag,
 		TagFamily: tagFamily,
@@ -87,10 +97,11 @@ func NewRefTag(repoPath, assetPath, tagFamily, tagName, site string) *Ref {
 }
 
 // NewRefTagFloating does not point directly to a commit (here only a group of commit)
-func NewRefTagFloating(repoPath, assetPath, tagFamily, site string) *Ref {
+func NewRefTagFloating(repoRef *RepoRef, assetPath, tagFamily, site string) *Ref {
 	// site is optionnal.
 	return &Ref{
-		RepoPath:  repoPath,
+		RepoUID:   repoRef.UID,
+		RepoPath:  repoRef.Path,
 		AssetPath: assetPath,
 		RefType:   RefTypeTag,
 		TagFamily: tagFamily,
@@ -98,9 +109,10 @@ func NewRefTagFloating(repoPath, assetPath, tagFamily, site string) *Ref {
 	}
 }
 
-func NewRefCommit(repoPath, assetPath, commitID string) *Ref {
+func NewRefCommit(repoRef *RepoRef, assetPath, commitID string) *Ref {
 	return &Ref{
-		RepoPath:  repoPath,
+		RepoUID:   repoRef.UID,
+		RepoPath:  repoRef.Path,
 		AssetPath: assetPath,
 		RefType:   RefTypeCommit,
 		CommitID:  commitID,
@@ -178,6 +190,10 @@ func (r *Ref) ObjectPath() string {
 		}
 	}
 	return refPath
+}
+
+func (r *Ref) RepoRef() *RepoRef {
+	return &RepoRef{UID: r.RepoUID, Path: r.RepoPath, Site: r.Site}
 }
 
 func (r *Ref) RelativePath() string {

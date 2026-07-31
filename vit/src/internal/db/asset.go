@@ -144,13 +144,14 @@ func CheckCommitNotAlreadyOnTagFamily(a *types.Asset, commitID, tagFamily, siteU
 func createNewJSONAsset(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	repoPath, assetPath string,
+	repoRef *types.RepoRef,
+	assetPath string, // TODO: change repo Path with refREPO
 ) (*JSONAsset, error) {
 	uid := fsutil.GenerateUID(16)
 	return fsutil.ResolveHandler(
 		ctx,
 		opctx.JSONPool,
-		pathJSONAsset(opctx.RepoPath, uid),
+		pathJSONAsset(repoRef.Path, uid),
 		true,
 		&types.Asset{
 			AssetUID: uid,
@@ -158,7 +159,9 @@ func createNewJSONAsset(
 			// comodity, not exported written in the json, and not source of truth
 			// just to avoid having to carry multiple data object.
 			AssetPath: assetPath,
-			RepoPath:  repoPath,
+			RepoPath:  repoRef.Path,
+			RepoUID:   repoRef.UID,
+			Site:      repoRef.Site,
 		},
 	)
 }
@@ -166,12 +169,13 @@ func createNewJSONAsset(
 func resolveJSONAsset(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	repoPath, assetPath, uid string, // asset path just used for formatting
+	repoRef *types.RepoRef,
+	assetPath, uid string, // asset path just used for formatting
 	forWrite bool,
 ) (*JSONAsset, bool, error) {
-	jsonPath := pathJSONAsset(repoPath, uid)
+	jsonPath := pathJSONAsset(repoRef.Path, uid)
 	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
-		return nil, false, newErrObjectIndexNotFound(repoPath, assetPath, uid)
+		return nil, false, newErrObjectIndexNotFound(repoRef.Path, assetPath, uid)
 	}
 	ret, err := fsutil.ResolveHandler[types.Asset](ctx, opctx.JSONPool, jsonPath, forWrite, nil)
 	if err != nil {
@@ -181,7 +185,9 @@ func resolveJSONAsset(
 	// commodity, not persisted in json, not source of truth
 	// just to avoid having to carry multiple data object.
 	ret.Data.AssetPath = assetPath
-	ret.Data.RepoPath = repoPath
+	ret.Data.RepoPath = repoRef.Path
+	ret.Data.RepoUID = repoRef.UID
+	ret.Data.Site = repoRef.Site
 
 	return ret, true, nil
 }
@@ -193,7 +199,7 @@ func initAsset(
 	baselineTimeStamp time.Time,
 ) error {
 	commitFirst := types.AssetCommit{
-		Site:      opctx.RepoConfig.CurrentSite,
+		Site:      opctx.RepoRefFor(asset.RepoUID).Site,
 		Author:    opctx.User,
 		Message:   "Asset creation",
 		Timestamp: opctx.TimeStamp,
@@ -242,7 +248,7 @@ func addBranch(
 	}
 
 	if _, ok := a.Branches[branchName]; ok {
-		return newErrObjectAlreadyExists(types.NewRefBranch(a.RepoPath, a.AssetPath, branchName))
+		return newErrObjectAlreadyExists(types.NewRefBranch(a.RepoRef(), a.AssetPath, branchName))
 	}
 
 	commitFrom, err := GetCommit(a, commitID)
@@ -338,7 +344,7 @@ func newErrObjectIndexNotFound(repoPath, assetPath, uid string) error {
 }
 
 func newErrFloatingTagObjectNotFound(a *types.Asset, tagFamily, site string) error {
-	return newErrObjectNotFound(types.NewRefTagFloating(a.RepoPath, a.AssetPath, tagFamily, site))
+	return newErrObjectNotFound(types.NewRefTagFloating(a.RepoRef(), a.AssetPath, tagFamily, site))
 }
 
 func newErrObjectNotFound(ref *types.Ref) error {
@@ -354,5 +360,29 @@ func newErrObjectAlreadyExists(ref *types.Ref) error {
 		types.ErrAssetObjectAlreadyExists,
 		[]string{fmt.Sprintf("object already exists on asset %s", ref.AbsolutePath())},
 		[]any{"ref", ref},
+	)
+}
+
+func newErrDependencyNotFound(ref *types.Ref, dependencyName string) error {
+	return types.NewVitError(
+		types.ErrDependencyNotFound,
+		[]string{fmt.Sprintf(
+			"no dependency named '%s' found at %s",
+			dependencyName,
+			ref.AbsolutePath(),
+		)},
+		[]any{"ref", ref, "name", dependencyName},
+	)
+}
+
+func newErrDependencyAlreadyExists(ref *types.Ref, dependencyName string) error {
+	return types.NewVitError(
+		types.ErrDependencyAlreadyExists,
+		[]string{fmt.Sprintf(
+			"a dependency named '%s' already exists at %s",
+			dependencyName,
+			ref.AbsolutePath(),
+		)},
+		[]any{"ref", ref, "name", dependencyName},
 	)
 }

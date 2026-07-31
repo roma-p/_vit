@@ -21,7 +21,7 @@ func (c *Client) Status(ctx context.Context, path string) (*types.StatusResult, 
 	var changeRecord *types.ChangeRecord
 
 	err := opcontext.WithOperationContext(ctx, path, func(opctx *opcontext.OperationContext, path string) error {
-		ref, err := workspace.ResolveRefFromPath(ctx, opctx.JSONPool, opctx.RepoPath, path)
+		ref, err := workspace.ResolveRefFromPath(ctx, opctx.JSONPool, opctx.RepoPath(), path)
 		if err != nil {
 			return err
 		}

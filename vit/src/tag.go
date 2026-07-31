@@ -29,14 +29,14 @@ func (c *Client) Tag(ctx context.Context, path, tagfamily, message string) (*typ
 		opctx *opcontext.OperationContext,
 		path string, // path is internal here.
 	) error {
-		ref, err := workspace.ResolveRefFromPath(ctx, opctx.JSONPool, opctx.RepoPath, path)
+		ref, err := workspace.ResolveRefFromPath(ctx, opctx.JSONPool, opctx.RepoPath(), path)
 		if err != nil {
 			return err
 		}
 
 		// for tag: if no site, defaulting to current.
 		if ref.RefType == types.RefTypeTag && ref.Site == "" {
-			ref.Site = opctx.RepoConfig.CurrentSite
+			ref.Site = opctx.Site()
 		}
 
 		dbClient, err := db.NewClient(ctx, opctx, c.logger)
@@ -69,7 +69,7 @@ func (c *Client) Tag(ctx context.Context, path, tagfamily, message string) (*typ
 				Progress:  c.progress,
 				Command:   types.CommandTag,
 				User:      opctx.User,
-				RepoPath:  opctx.RepoPath,
+				RepoPath:  opctx.RepoPath(),
 				Timestamp: opctx.TimeStamp,
 			},
 			[]*types.Ref{ref}, tt,
@@ -100,6 +100,7 @@ type operationTag struct {
 	doCommit     bool             // if the ref is a branch with non commit changes, will commit branch
 	oc           *operationCommit // the commit operation used to tag the branch refed used.
 	targetCommit string           // a tag always point to a commit in the end. Resolved commit UID.
+	targetSite   string
 
 	// filled at DBUpdate
 	contentNode *types.ContentNode // the content node used to present the tag.
@@ -121,6 +122,8 @@ func (o *operationTag) Validate(
 			[]any{"ref", o.InputRef.RelativePath()},
 		)
 	}
+
+	o.targetSite = opctx.RepoRefFor(o.InputRef.RepoUID).Site
 
 	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, o.InputRef, false)
 	if err != nil {
@@ -172,7 +175,7 @@ func (o *operationTag) Validate(
 	}
 
 	return db.CheckCommitNotAlreadyOnTagFamily(
-		asset.Data, o.targetCommit, o.TagFamily, opctx.RepoConfig.CurrentSite,
+		asset.Data, o.targetCommit, o.TagFamily, o.targetSite,
 	)
 }
 
@@ -212,7 +215,7 @@ func (o *operationTag) DBUpdate(
 		TimeStamp:    opctx.TimeStamp,
 		TagFamily:    o.TagFamily,
 		TargetCommit: o.targetCommit,
-		SiteUID:      opctx.RepoConfig.CurrentSite,
+		SiteUID:      o.targetSite,
 	})
 	if err != nil {
 		return err
@@ -233,11 +236,11 @@ func (o *operationTag) DBUpdate(
 	}
 
 	o.outputRef = types.NewRefTag(
-		o.InputRef.RepoPath,
+		o.InputRef.RepoRef(),
 		o.InputRef.AssetPath,
 		o.TagFamily,
 		tagName,
-		opctx.RepoConfig.CurrentSite,
+		o.targetSite,
 	)
 
 	return nil

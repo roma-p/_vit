@@ -9,8 +9,13 @@ import (
 )
 
 type RepoConfig struct {
-	Sites       map[string]string `json:"sites"` // SiteUID → alias
 	CurrentSite string            `json:"current_site"`
+	Sites       map[string]string `json:"sites"` // SiteUID → alias
+
+	// used for cross repository work.
+	RepoUID  string            `json:"repo_uid"`
+	RepoPath string            `json:"-"`
+	Repos    map[string]string `json:"repos"` // repoUID → local path
 }
 
 func LoadRepoConfig(repoPath string) (*RepoConfig, error) {
@@ -23,11 +28,13 @@ func LoadRepoConfig(repoPath string) (*RepoConfig, error) {
 		return nil, newMissingConfigPathError(configPath, err)
 	}
 
-	jsonAsset, err := fsutil.NewJSONHandlerFromFile[RepoConfig](configPath)
+	jsonData, err := fsutil.NewJSONHandlerFromFile[RepoConfig](configPath)
+	ret := jsonData.Data
+	ret.RepoPath = repoPath
 	if err != nil {
 		return nil, newConfigReadError(configPath, err)
 	}
-	return jsonAsset.Data, nil
+	return ret, nil
 }
 
 func InitRepoConfig(repoPath, currentSiteAlias string) error {
@@ -36,11 +43,16 @@ func InitRepoConfig(repoPath, currentSiteAlias string) error {
 	if currentSiteAlias == "" {
 		currentSiteAlias = curSiteUID
 	}
-	jsonAsset := fsutil.NewJSONHandlerFromPath[RepoConfig](
+
+	repoUID := fsutil.GenerateUID(8)
+
+	jsonAsset := fsutil.NewJSONHandlerFromPath(
 		genRepoConfigPath(repoPath),
 		&RepoConfig{
 			Sites:       make(map[string]string),
 			CurrentSite: curSiteUID,
+			RepoUID:     repoUID,
+			Repos:       make(map[string]string),
 		},
 	)
 	jsonAsset.Data.Sites[curSiteUID] = currentSiteAlias
