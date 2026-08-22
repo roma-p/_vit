@@ -30,7 +30,7 @@ func (c *Client) Commit(ctx context.Context, path, message string) (*types.Strin
 		opctx *opcontext.OperationContext,
 		path string, // path is internal here.
 	) error {
-		ref, err := workspace.ResolveRefFromPath(ctx, opctx.JSONPool, opctx.RepoPath(), path)
+		ref, err := workspace.ResolveRefFromPath(ctx, opctx, path)
 		if err != nil {
 			return err
 		}

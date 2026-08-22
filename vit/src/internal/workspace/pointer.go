@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"vit/internal/fsutil"
+	"vit/internal/opcontext"
 	"vit/internal/types"
 )
 
@@ -50,10 +51,19 @@ func writePointer(
 // (@type=value), else by walking up from the workspace path to the nearest pointer.
 func ResolveRefFromPath(
 	ctx context.Context,
-	pool *fsutil.JSONHandlerPool,
-	repoPath, path string,
+	opctx *opcontext.OperationContext,
+	path string,
 ) (*types.Ref, error) {
+	repoPath := opctx.RepoPath()
+
+	// ref-string branch: NewRefFromPath fills RepoPath but NOT RepoUID — resolve the
+	// UID from the repo the path lives in (get-or-load, local = current repo).
 	if ref, err := types.NewRefFromPath(repoPath, path); err == nil {
+		uid, err := opctx.ResolveRepoUIDFromPath(repoPath)
+		if err != nil {
+			return nil, err
+		}
+		ref.RepoUID = uid
 		return ref, nil
 	}
 
@@ -64,12 +74,14 @@ func ResolveRefFromPath(
 		if _, err := os.Stat(pp); err != nil {
 			continue
 		}
-		h, err := fsutil.ResolveHandler[Pointer](ctx, pool, pp, false, nil)
+		h, err := fsutil.ResolveHandler[Pointer](ctx, opctx.JSONPool, pp, false, nil)
 		if err != nil {
 			return nil, NewErrUntrackedFile(path)
 		}
+		// the persisted ref carries RepoUID (json); RepoPath is derived, so fill it
+		// FROM the ref's own UID (may be foreign), not from the current repoPath.
 		ref := h.Data.Ref
-		ref.RepoPath = repoPath
+		ref.RepoPath = opctx.RepoRefFor(ref.RepoUID).Path
 		return &ref, nil
 	}
 	return nil, NewErrUntrackedFile(path)

@@ -76,12 +76,12 @@ type CommitBranchRequest struct {
 
 func GetCommit(a *types.Asset, commitID string) (*types.AssetCommit, error) {
 	if a.Commits == nil {
-		return nil, newErrObjectNotFound(types.NewRefCommit(a.RepoPath, a.AssetPath, commitID))
+		return nil, newErrObjectNotFound(types.NewRefCommit(a.RepoRef(), a.AssetPath, commitID))
 	}
 
 	commitObj, ok := a.Commits[commitID]
 	if !ok {
-		return nil, newErrObjectNotFound(types.NewRefCommit(a.RepoPath, a.AssetPath, commitID))
+		return nil, newErrObjectNotFound(types.NewRefCommit(a.RepoRef(), a.AssetPath, commitID))
 	}
 
 	return commitObj, nil
@@ -89,11 +89,11 @@ func GetCommit(a *types.Asset, commitID string) (*types.AssetCommit, error) {
 
 func GetBranchCommit(a *types.Asset, branchName string) (*types.AssetCommit, error) {
 	if a.Branches == nil {
-		return nil, newErrObjectNotFound(types.NewRefBranch(a.RepoPath, a.AssetPath, branchName))
+		return nil, newErrObjectNotFound(types.NewRefBranch(a.RepoRef(), a.AssetPath, branchName))
 	}
 	commitObj, ok := a.Branches[branchName]
 	if !ok {
-		return nil, newErrObjectNotFound(types.NewRefBranch(a.RepoPath, a.AssetPath, branchName))
+		return nil, newErrObjectNotFound(types.NewRefBranch(a.RepoRef(), a.AssetPath, branchName))
 	}
 	return commitObj, nil
 }
@@ -132,11 +132,100 @@ func CheckCommitNotAlreadyOnTagFamily(a *types.Asset, commitID, tagFamily, siteU
 	for version, tag := range *versions {
 		if tag.Commit == commitID {
 			return newErrObjectAlreadyExists(
-				types.NewRefTag(a.RepoPath, a.AssetPath, tagFamily, version, siteUID),
+				types.NewRefTag(a.RepoRef(), a.AssetPath, tagFamily, version, siteUID),
 			)
 		}
 	}
 	return nil
+}
+
+func GetDependencyByName(
+	srcRef *types.Ref,
+	c *types.AssetCommit,
+	dependencyName string,
+) (*types.AssetDependency, error) {
+	ret, ok := c.Dependencies[dependencyName]
+	if !ok {
+		return nil, newErrDependencyNotFound(srcRef, dependencyName)
+	} else {
+		return ret, nil
+	}
+}
+
+func CheckDependencyNameAvailable(
+	ref *types.Ref,
+	c *types.AssetCommit,
+	dependencyName string,
+) error {
+	if _, ok := c.Dependencies[dependencyName]; ok {
+		return newErrDependencyAlreadyExists(ref, dependencyName)
+	}
+	return nil
+}
+
+func ResolveCommitForDependency(a *types.Asset, ref *types.Ref) (*types.Ref, string, error) {
+	var commitID string
+	var outRef *types.Ref
+
+	switch ref.RefType {
+	// if ref is commit: just check commit exists and returns its input.
+	case types.RefTypeCommit:
+		commitID = ref.CommitID
+		outRef = types.NewRefCommit(ref.RepoRef(), ref.AssetPath, ref.CommitID)
+
+	// if ref is tag: outRef is the non floating tag ref, commitID is the underlying commit.
+	case types.RefTypeTag:
+		tag, tagName, err := GetTag(a, ref)
+		if err != nil {
+			return nil, "", err
+		}
+		commitID = tag.Commit
+		outRef = types.NewRefTag(ref.RepoRef(), ref.AssetPath, ref.TagFamily, tagName, ref.Site)
+
+	// if ref is branch: outRef is the last commit on branch, commitId is its commit id.
+	case types.RefTypeBranch:
+		branchCommit, err := GetBranchCommit(a, ref.BranchName)
+		if err != nil {
+			return nil, "", err
+		}
+
+		commitID = branchCommit.Parent
+		outRef = types.NewRefCommit(ref.RepoRef(), ref.AssetPath, commitID)
+	}
+
+	if _, err := GetCommit(a, commitID); err != nil {
+		// TODO, maybre wrap this in a better error...
+		return nil, "", err
+	}
+
+	return outRef, commitID, nil
+}
+
+func AddSource(r AddSourceRequest) error {
+	branchCommit, err := GetBranchCommit(r.Asset, r.BranchName)
+	if err != nil {
+		return err
+	}
+
+	if branchCommit.Dependencies == nil {
+		branchCommit.Dependencies = make(types.AssetDependencies)
+	}
+	branchCommit.Dependencies[r.SourceName] = &types.AssetDependency{
+		Type:        types.AssetDependencySource,
+		RefSpec:     r.RefSpec,
+		RefResolved: r.RefResolved,
+		Commit:      r.CommitID,
+	}
+	return nil
+}
+
+type AddSourceRequest = struct {
+	Asset       *types.Asset
+	BranchName  string
+	SourceName  string
+	RefSpec     *types.Ref
+	RefResolved *types.Ref
+	CommitID    string
 }
 
 // -- USED ACROSS vit.internal.DB --------------------------------------------
@@ -323,9 +412,13 @@ func deepCopyDependencies(src *types.AssetDependencies) *types.AssetDependencies
 		ret = make(types.AssetDependencies, len(*src))
 		for k, v := range *src {
 			cp := *v
-			if v.Ref != nil {
-				refCp := *v.Ref
-				cp.Ref = &refCp
+			if v.RefSpec != nil {
+				refCp := *v.RefSpec
+				cp.RefSpec = &refCp
+			}
+			if v.RefResolved != nil {
+				refCp := *v.RefResolved
+				cp.RefResolved = &refCp
 			}
 			ret[k] = &cp
 		}

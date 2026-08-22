@@ -55,8 +55,8 @@ type AssetDependency struct {
 type AssetDependencyType string
 
 const (
-	AssetDependencySource AssetDependencyType = "source"
-	AssetDependencyResult AssetDependencyType = "result"
+	AssetDependencySource  AssetDependencyType = "source"
+	AssetDependencyProduct AssetDependencyType = "product"
 )
 
 type AssetTag struct {

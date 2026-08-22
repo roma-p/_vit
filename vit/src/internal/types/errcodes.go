@@ -26,6 +26,10 @@ const (
 	ErrAssetObjectNotFound      = "AssetObjectNotFound"
 	ErrAssetObjectAlreadyExists = "AssetObjectAlreadyExists"
 
+	ErrDependencyNotFound      = "DependencyNotFound"
+	ErrDependencyAlreadyExists = "DependencyAlreadyExists"
+	ErrCircularDependency      = "CircularDependency"
+
 	ErrTransactionConflict = "TransactionConflict"
 	ErrTransactionFailed   = "TransactionFailed"
 

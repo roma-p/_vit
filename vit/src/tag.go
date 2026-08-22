@@ -29,7 +29,7 @@ func (c *Client) Tag(ctx context.Context, path, tagfamily, message string) (*typ
 		opctx *opcontext.OperationContext,
 		path string, // path is internal here.
 	) error {
-		ref, err := workspace.ResolveRefFromPath(ctx, opctx.JSONPool, opctx.RepoPath(), path)
+		ref, err := workspace.ResolveRefFromPath(ctx, opctx, path)
 		if err != nil {
 			return err
 		}

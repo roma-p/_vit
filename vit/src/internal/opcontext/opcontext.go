@@ -19,12 +19,15 @@ type OperationContext struct {
 	TimeStamp   time.Time
 	JSONPool    *fsutil.JSONHandlerPool
 	CurrRepoUID string
-	RefConfigs  map[string]config.RepoConfig // repo uid -> config of that repo.
+
+	RefConfigs      map[string]config.RepoConfig // repo uid -> config of that repo.
+	RefConfigsIndex map[string]string            // repo path -> repo uid
 }
 
 func NewOperationContext(ctx context.Context, fullAssetPath string) (*OperationContext, string, error) {
 	opctx := &OperationContext{
-		RefConfigs: make(map[string]config.RepoConfig),
+		RefConfigs:      make(map[string]config.RepoConfig),
+		RefConfigsIndex: make(map[string]string),
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -81,7 +84,21 @@ func (o *OperationContext) AddRepoConfig(repoPath string) (string, error) {
 		return "", err
 	}
 	o.RefConfigs[rConfig.RepoUID] = *rConfig
+	o.RefConfigsIndex[repoPath] = rConfig.RepoUID
 	return rConfig.RepoUID, nil
+}
+
+func (o *OperationContext) ResolveRepoUIDFromPath(repoPath string) (string, error) {
+	rUID, ok := o.RefConfigsIndex[repoPath]
+	if ok {
+		return rUID, nil
+	} else {
+		rUID, err := o.AddRepoConfig(repoPath)
+		if err != nil {
+			return "", err
+		}
+		return rUID, nil
+	}
 }
 
 // WithOperationContext create a context manager around operation context.
