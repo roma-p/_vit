@@ -2,6 +2,18 @@ package types
 
 import "strings"
 
+type DepGraphPool struct {
+	GraphPerAsset DepGraphPerAsset
+}
+
+func NewDepGraphPool() *DepGraphPool {
+	return &DepGraphPool{
+		GraphPerAsset: make(DepGraphPerAsset),
+	}
+}
+
+type DepGraphPerAsset map[string]*DepGraph // <ref.ObjectPath()> -> graph UID
+
 type DepGraph struct {
 	Edges []DependencyGraphEdge                                 `json:"edges"`
 	Nodes map[RepoUID]map[AssetPath]map[ObjectPath]DepGraphNode `json:"nodes,omitempty"`

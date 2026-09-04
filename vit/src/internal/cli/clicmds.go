@@ -49,6 +49,19 @@ var cmdDefinition = clicore.CmdTree{
 			ArgParser:   buildTagArgParser(),
 			ResultType:  types.StringResult{},
 		},
+		"source": {
+			Name:        "Souce",
+			Description: "Manage sources",
+			SubCommands: map[string]*clicore.CmdTree{
+				"add": {
+					Name:        "Add source",
+					Description: "Add a new source to asset",
+					Run:         runSourceAdd,
+					ArgParser:   buildSourceAddArgParser(),
+					ResultType:  types.StringResult{},
+				},
+			},
+		},
 		"dev": {
 			Name:        "Dev",
 			Description: "Developer and internal commands",

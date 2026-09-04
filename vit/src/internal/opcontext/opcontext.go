@@ -22,6 +22,8 @@ type OperationContext struct {
 
 	RefConfigs      map[string]config.RepoConfig // repo uid -> config of that repo.
 	RefConfigsIndex map[string]string            // repo path -> repo uid
+
+	DepGraphPool types.DepGraphPool
 }
 
 func NewOperationContext(ctx context.Context, fullAssetPath string) (*OperationContext, string, error) {
