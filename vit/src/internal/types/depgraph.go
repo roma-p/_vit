@@ -1,18 +1,9 @@
 package types
 
-import "strings"
-
-type DepGraphPool struct {
-	GraphPerAsset DepGraphPerAsset
-}
-
-func NewDepGraphPool() *DepGraphPool {
-	return &DepGraphPool{
-		GraphPerAsset: make(DepGraphPerAsset),
-	}
-}
-
-type DepGraphPerAsset map[string]*DepGraph // <ref.ObjectPath()> -> graph UID
+import (
+	"strings"
+	"time"
+)
 
 type DepGraph struct {
 	Edges []DependencyGraphEdge                                 `json:"edges"`
@@ -20,9 +11,10 @@ type DepGraph struct {
 }
 
 type DepGraphNode struct {
-	PayloadFile string `json:"payload_file,omitempty"`
-	CommitID    string `json:"commit_id,omitempty"`
-	// edges here?
+	// PayloadFile content root hash, empty for branches.
+	PayloadFile string    `json:"payload_file,omitempty"`
+	Author      string    `json:"author,omitempty"`
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 type (
@@ -32,11 +24,11 @@ type (
 )
 
 type DependencyGraphEdge struct {
-	From    *Ref                `json:"from"`
-	To      *Ref                `json:"to"`
-	Name    string              `json:"name"`
-	Type    AssetDependencyType `json:"type"`
-	RefSpec *Ref                `json:"ref_spec"`
+	Consumer *Ref                `json:"consumer"`
+	RefSpec  *Ref                `json:"ref_spec"`
+	Provider *Ref                `json:"provider"`
+	Name     string              `json:"name"`
+	Type     AssetDependencyType `json:"type"`
 }
 
 func NewDepGraph() *DepGraph {
@@ -45,34 +37,30 @@ func NewDepGraph() *DepGraph {
 	}
 }
 
-func (d *DepGraph) AddNode(ref *Ref, commitID, payloadFile string) {
+func (d *DepGraph) AddNode(ref *Ref, node DepGraphNode) {
 	if _, ok := d.Nodes[ref.RepoUID]; !ok {
 		d.Nodes[ref.RepoUID] = make(map[AssetPath]map[ObjectPath]DepGraphNode)
 	}
 	if _, ok := d.Nodes[ref.RepoUID][ref.AssetPath]; !ok {
 		d.Nodes[ref.RepoUID][ref.AssetPath] = make(map[ObjectPath]DepGraphNode)
 	}
-	d.Nodes[ref.RepoUID][ref.AssetPath][ref.ObjectPath()] = DepGraphNode{
-		PayloadFile: payloadFile,
-		CommitID:    commitID,
-	}
+	d.Nodes[ref.RepoUID][ref.AssetPath][ref.ObjectPath()] = node
 }
 
-// Connect : refA has a dependancy to refB based on refSpec.
-func (d *DepGraph) Connect(refA, refB, refSpec *Ref, name string, edgeType AssetDependencyType) error {
+func (d *DepGraph) Connect(consumer, provider, refSpec *Ref, name string, edgeType AssetDependencyType) error {
 	if edgeType == AssetDependencySource {
-		if path := d.cyclePath(refB, refA); path != nil {
+		if path := d.cyclePath(provider, consumer); path != nil {
 			return newCircularDependencyError(path)
 		}
 	}
 	d.Edges = append(
 		d.Edges,
 		DependencyGraphEdge{
-			From:    refA,
-			To:      refB,
-			Name:    name,
-			Type:    edgeType,
-			RefSpec: refSpec,
+			Consumer: consumer,
+			Provider: provider,
+			Name:     name,
+			Type:     edgeType,
+			RefSpec:  refSpec,
 		},
 	)
 	return nil
@@ -81,11 +69,15 @@ func (d *DepGraph) Connect(refA, refB, refSpec *Ref, name string, edgeType Asset
 // -- FILE LOCAL -------------------------------------------------------------
 
 func (d *DepGraph) cyclePath(start, target *Ref) []*Ref {
+	// forbid cycle in asset sourcing. A-> B -> A
+	sameAsset := func(a, b *Ref) bool {
+		return a.RepoUID == b.RepoUID && a.AssetPath == b.AssetPath
+	}
 	visited := map[Ref]bool{}
 	var search func(n *Ref, path []*Ref) []*Ref
 	search = func(n *Ref, path []*Ref) []*Ref {
 		path = append(path, n)
-		if *n == *target {
+		if sameAsset(n, target) {
 			return append([]*Ref(nil), path...)
 		}
 		if visited[*n] {
@@ -95,8 +87,8 @@ func (d *DepGraph) cyclePath(start, target *Ref) []*Ref {
 		for i := range d.Edges {
 			e := d.Edges[i]
 			// TODO: maybe product also?
-			if e.Type == AssetDependencySource && *e.From == *n {
-				if hit := search(e.To, path); hit != nil {
+			if e.Type == AssetDependencySource && sameAsset(e.Consumer, n) {
+				if hit := search(e.Provider, path); hit != nil {
 					return hit
 				}
 			}
