@@ -2,6 +2,7 @@ package vit
 
 import (
 	"context"
+	"os"
 
 	"vit/internal/blob"
 	"vit/internal/db"
@@ -75,8 +76,7 @@ func resolveChangeRecord(
 		request.BranchRef.RepoPath,
 		workspace.RefToWorkspacePath(request.BranchRef),
 	)
-	workspaceDirStat, err := fsutil.NewDirStatFromDir(ctx, workspacePath)
-	if err != nil {
+	if _, err := os.Stat(workspacePath); err != nil {
 		return nil, workspace.NewErrUntrackedFile(request.BranchRef.RelativePath())
 	}
 
@@ -96,6 +96,17 @@ func resolveChangeRecord(
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	// excluding sources from status evaluation.
+	// TODO: exclude results as some point!
+	sourcePaths := make([]string, 0, len(commitBranch.Dependencies))
+	for name := range commitBranch.Dependencies {
+		sourcePaths = append(sourcePaths, name)
+	}
+	workspaceDirStat, err := fsutil.NewDirStatFromDir(ctx, workspacePath, sourcePaths...)
+	if err != nil {
+		return nil, workspace.NewErrUntrackedFile(request.BranchRef.RelativePath())
 	}
 
 	baseline := commitBranch.Timestamp

@@ -4,13 +4,17 @@ import (
 	"context"
 	"io/fs"
 	"path/filepath"
+	"slices"
 
 	"vit/internal/types"
 )
 
 // NewDirStatFromDir walk given dir to build a DirStat object from it.
 // DirStat only tracks files, not dir (like git)
-func NewDirStatFromDir(ctx context.Context, path string) (*types.DirStat, error) {
+//
+// skipRootDirs names direct children of path to skip entirely
+// (to not track dependencies)
+func NewDirStatFromDir(ctx context.Context, path string, skipRootDirs ...string) (*types.DirStat, error) {
 	ret := types.NewDirStat(path)
 
 	path = PathOS(path)
@@ -20,8 +24,12 @@ func NewDirStatFromDir(ctx context.Context, path string) (*types.DirStat, error)
 			return err
 		}
 
-		// vit does not track dir (so no empty dir), only files, like git.
 		if d.IsDir() {
+			if len(skipRootDirs) > 0 {
+				if rel, rerr := RelInternal(path, p); rerr == nil && slices.Contains(skipRootDirs, rel) {
+					return filepath.SkipDir
+				}
+			}
 			return nil
 		}
 
