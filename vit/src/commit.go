@@ -172,6 +172,7 @@ func (o *operationCommit) DBUpdate(
 func (o *operationCommit) Finish(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
 	logger *slog.Logger,
 	p workspace.Presenter,
 ) {

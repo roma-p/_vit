@@ -97,7 +97,7 @@ func run(
 			}
 
 			// 5. Best effort finish.
-			r.Operation.Finish(ctx, r.Opctx, r.Logger, r.Presenter)
+			r.Operation.Finish(ctx, r.Opctx, r.DBClient, r.Logger, r.Presenter)
 
 			return nil
 		},

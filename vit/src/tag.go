@@ -249,11 +249,12 @@ func (o *operationTag) DBUpdate(
 func (o *operationTag) Finish(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
 	logger *slog.Logger,
 	p workspace.Presenter,
 ) {
 	if o.doCommit {
-		o.oc.Finish(ctx, opctx, logger, p)
+		o.oc.Finish(ctx, opctx, dbClient, logger, p)
 	}
 
 	var err error

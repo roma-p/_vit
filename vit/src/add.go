@@ -192,6 +192,7 @@ func (o *operationAdd) DBUpdate(
 func (o *operationAdd) Finish(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
+	_ *db.Client,
 	logger *slog.Logger,
 	p workspace.Presenter,
 ) {
