@@ -64,6 +64,11 @@ func ResolveRefFromPath(
 			return nil, err
 		}
 		ref.RepoUID = uid
+		// a tag ref with no explicit @site= defaults to the ref's repo current site
+		// (the site `vit tag` stored it under) — so `asset@tag=approved` resolves.
+		if ref.RefType == types.RefTypeTag && ref.Site == "" {
+			ref.Site = opctx.RepoRefFor(uid).Site
+		}
 		return ref, nil
 	}
 
