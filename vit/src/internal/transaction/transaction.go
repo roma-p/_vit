@@ -83,8 +83,12 @@ func run(
 			if err != nil {
 				return err
 			}
-			if err := blob.UpdateBlob(ctx, r.Progress, plan); err != nil {
-				return err
+			// skip the blob-update phase (and its progress bar) when there is
+			// nothing to copy/write
+			if !plan.IsEmpty() {
+				if err := blob.UpdateBlob(ctx, r.Progress, plan); err != nil {
+					return err
+				}
 			}
 
 			// 4. run the function responsible for updating the data, and write all of them on disk.

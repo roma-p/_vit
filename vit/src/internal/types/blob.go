@@ -11,6 +11,11 @@ type BlobUpdatePlan struct {
 	Manifests    []ManifestWrite
 }
 
+func (p *BlobUpdatePlan) IsEmpty() bool {
+	return p == nil ||
+		(len(p.CopyRequests) == 0 && len(p.ContentRoots) == 0 && len(p.Manifests) == 0)
+}
+
 type ContentRootWrite struct {
 	ContentRootPath string
 	Root            *ContentNode
