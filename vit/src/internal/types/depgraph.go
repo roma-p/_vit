@@ -11,7 +11,7 @@ type DepGraph struct {
 }
 
 type DepGraphNode struct {
-	// PayloadFile content root hash, empty for branches.
+	// PayloadFile: content root hash, empty for branches.
 	PayloadFile string    `json:"payload_file,omitempty"`
 	Author      string    `json:"author,omitempty"`
 	Timestamp   time.Time `json:"timestamp"`
@@ -47,7 +47,10 @@ func (d *DepGraph) AddNode(ref *Ref, node DepGraphNode) {
 	d.Nodes[ref.RepoUID][ref.AssetPath][ref.ObjectPath()] = node
 }
 
-func (d *DepGraph) Connect(consumer, provider, refSpec *Ref, name string, edgeType AssetDependencyType) error {
+func (d *DepGraph) Connect(
+	consumer, provider, refSpec *Ref,
+	name string, edgeType AssetDependencyType,
+) error {
 	if edgeType == AssetDependencySource {
 		if path := d.cyclePath(provider, consumer); path != nil {
 			return newCircularDependencyError(path)
@@ -66,7 +69,49 @@ func (d *DepGraph) Connect(consumer, provider, refSpec *Ref, name string, edgeTy
 	return nil
 }
 
+func (d *DepGraph) Merge(other *DepGraph) {
+	if other == nil {
+		return
+	}
+	for ru, byAsset := range other.Nodes {
+		for ap, byObj := range byAsset {
+			for op, n := range byObj {
+				if d.Nodes[ru] == nil {
+					d.Nodes[ru] = make(map[AssetPath]map[ObjectPath]DepGraphNode)
+				}
+				if d.Nodes[ru][ap] == nil {
+					d.Nodes[ru][ap] = make(map[ObjectPath]DepGraphNode)
+				}
+				d.Nodes[ru][ap][op] = n
+			}
+		}
+	}
+	have := make(map[string]bool, len(d.Edges))
+	for _, e := range d.Edges {
+		have[edgeKey(e)] = true
+	}
+	for _, e := range other.Edges {
+		if !have[edgeKey(e)] {
+			d.Edges = append(d.Edges, e)
+			have[edgeKey(e)] = true
+		}
+	}
+}
+
+func edgeKey(e DependencyGraphEdge) string {
+	return e.Consumer.RelativePath() + "\x00" + e.Provider.RelativePath() + "\x00" +
+		e.Name + "\x00" + string(e.Type)
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
+
+// CheckAddSourceCycle checks taht adding new branch does not create cycle.
+func (d *DepGraph) CheckAddSourceCycle(consumer, target *Ref) error {
+	if path := d.cyclePath(target, consumer); path != nil {
+		return newCircularDependencyError(path)
+	}
+	return nil
+}
 
 func (d *DepGraph) cyclePath(start, target *Ref) []*Ref {
 	// forbid cycle in asset sourcing. A-> B -> A
