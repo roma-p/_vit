@@ -44,10 +44,10 @@ func newGraphCache() *GraphCache {
 	}
 }
 
-// GetDepGraph returns the dependency closure for ref's object. It is a pure READ:
+// GetDependencies returns the dependency closure for ref's object. It is a pure READ:
 // /!\ it will refreseh the cash if needed but won't write on disk.
-// to update and write a dep graph cache, use: BuildAndCacheClosure
-func GetDepGraph(
+// to update and write a dep graph cache, use: CacheDependencies
+func GetDependencies(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
@@ -71,18 +71,18 @@ func GetDepGraph(
 	}
 	// MISS (or not-yet-an-asset) — build from truth IN MEMORY, do not persist
 	// (only the owning asset's Finish writes the cache, under its own lock).
-	return buildClosure(ctx, opctx, dbClient, ref)
+	return buildDependencies(ctx, opctx, dbClient, ref)
 }
 
-// BuildAndCacheClosure refresh/build ref's closure from the source of truth and
+// CacheDependencies refresh/build ref's closure from the source of truth and
 // writes it into the asset's cache file
-func BuildAndCacheClosure(
+func CacheDependencies(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
 	ref *types.Ref,
 ) (*types.DepGraph, error) {
-	g, err := buildClosure(ctx, opctx, dbClient, ref)
+	g, err := buildDependencies(ctx, opctx, dbClient, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -113,14 +113,14 @@ func BuildAndCacheClosure(
 
 // CheckSourceAddNoCycle checks that adding a source won't create a cycle.
 // /!\ it will refreseh the cash if needed but won't write on disk.
-// to update and write a dep graph cache, use: BuildAndCacheClosure
+// to update and write a dep graph cache, use: CacheDependencies
 func CheckSourceAddNoCycle(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
 	consumer, target *types.Ref,
 ) error {
-	g, err := GetDepGraph(ctx, opctx, dbClient, target)
+	g, err := GetDependencies(ctx, opctx, dbClient, target)
 	if err != nil {
 		return err
 	}
@@ -129,9 +129,9 @@ func CheckSourceAddNoCycle(
 
 // -- FILE LOCAL -------------------------------------------------------------
 
-// buildClosure assembles ONE object's closure by walking its direct (pinned)
+// buildDependencies assembles ONE object's closure by walking its direct (pinned)
 // source edges down to the leaves. /!\ Reads from truth (the asset JSONs).
-func buildClosure(
+func buildDependencies(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
@@ -139,14 +139,14 @@ func buildClosure(
 ) (*types.DepGraph, error) {
 	g := types.NewDepGraph()
 	visited := map[types.Ref]bool{}
-	if err := walkClosure(ctx, opctx, dbClient, g, visited, root); err != nil {
+	if err := walkDependencies(ctx, opctx, dbClient, g, visited, root); err != nil {
 		return nil, err
 	}
 	return g, nil
 }
 
-// walkClosure recursively adds ref and its transitive source edges into g.
-func walkClosure(
+// walkDependencies recursively adds ref and its transitive source edges into g.
+func walkDependencies(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
@@ -180,7 +180,7 @@ func walkClosure(
 		if err := g.Connect(ref, child, dep.RefSpec, name, dep.Type); err != nil {
 			return err // if cycle detected return err.
 		}
-		if err := walkClosure(ctx, opctx, dbClient, g, visited, child); err != nil {
+		if err := walkDependencies(ctx, opctx, dbClient, g, visited, child); err != nil {
 			return err
 		}
 	}

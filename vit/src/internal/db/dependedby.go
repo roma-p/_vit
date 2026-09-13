@@ -10,21 +10,21 @@ import (
 	"vit/internal/types"
 )
 
-// DependedByEntry is the reverse dependency index ("who depends on me").
+// DependentEntry is the reverse dependency index ("who depends on me").
 // It is a directory-as-set: one file per (consumer object) writer inside the
 // target asset's depended_by dir. Distinct filenames per writer mean concurrent
 // adds never collide, so writing a reverse edge needs NO lock on the target
 // (same idiom as .vit/transaction/).
-type DependedByEntry struct {
+type DependentEntry struct {
 	Consumer     *types.Ref `json:"consumer"`
 	Name         string     `json:"name"`
 	RefSpec      *types.Ref `json:"ref_spec"`
 	TargetCommit string     `json:"target_commit"`
 }
 
-// AddDependedBy records that consumer depends (under dependency name) on the
+// AddDependent records that consumer depends (under dependency name) on the
 // target asset's OBJECT, write on disk
-func AddDependedBy(
+func AddDependent(
 	repoPath, targetAssetUID, targetObjectPath, name string,
 	consumer *types.Ref,
 	refSpec *types.Ref,
@@ -32,7 +32,7 @@ func AddDependedBy(
 ) error {
 	dir := pathDependedByDir(repoPath, targetAssetUID, targetObjectPath)
 	file := fsutil.PathOS(dir, dependedByFileName(consumer))
-	entry := DependedByEntry{
+	entry := DependentEntry{
 		Consumer:     consumer,
 		Name:         name,
 		RefSpec:      refSpec,
@@ -44,9 +44,9 @@ func AddDependedBy(
 	return nil
 }
 
-// ListDependedBy returns every consumer of a specific target OBJECT. A missing
+// ListDependents returns every consumer of a specific target OBJECT. A missing
 // directory means nobody depends on that object (not an error).
-func ListDependedBy(repoPath, targetAssetUID, targetObjectPath string) ([]DependedByEntry, error) {
+func ListDependents(repoPath, targetAssetUID, targetObjectPath string) ([]DependentEntry, error) {
 	dir := pathDependedByDir(repoPath, targetAssetUID, targetObjectPath)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -55,12 +55,12 @@ func ListDependedBy(repoPath, targetAssetUID, targetObjectPath string) ([]Depend
 		}
 		return nil, newErrDBInternal(err, "could not read depended_by dir")
 	}
-	ret := make([]DependedByEntry, 0, len(entries))
+	ret := make([]DependentEntry, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		h := fsutil.NewJSONHandlerFromPath(fsutil.PathOS(dir, e.Name()), &DependedByEntry{})
+		h := fsutil.NewJSONHandlerFromPath(fsutil.PathOS(dir, e.Name()), &DependentEntry{})
 		if err := h.Read(); err != nil {
 			return nil, newErrDBInternal(err, "could not read depended_by entry")
 		}
@@ -69,16 +69,16 @@ func ListDependedBy(repoPath, targetAssetUID, targetObjectPath string) ([]Depend
 	return ret, nil
 }
 
-// MarkReverseStale drops a per-OBJECT reverse-stale marker on every object whose
+// MarkDependentsStale drops a per-OBJECT reverse-stale marker on every object whose
 // reverse changed when a source edge into targetB was added: targetB and every
 // object in its forward closure.
-func MarkReverseStale(
+func MarkDependentsStale(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
 	targetB *types.Ref,
 ) error {
-	gB, err := GetDepGraph(ctx, opctx, dbClient, targetB)
+	gB, err := GetDependencies(ctx, opctx, dbClient, targetB)
 	if err != nil {
 		return err
 	}
@@ -104,9 +104,9 @@ func MarkReverseStale(
 	return nil
 }
 
-// GetReverse returns the reverse closure of ref's OBJECT — every object that
+// GetDependents returns the reverse closure of ref's OBJECT — every object that
 // transitively depends on it.
-func GetReverse(
+func GetDependents(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
@@ -137,7 +137,7 @@ func GetReverse(
 		}
 	}
 
-	// 2. in other case, refresh cache using by recc comparing DependedByEntry
+	// 2. in other case, refresh cache using by recc comparing DependentEntry
 	// with stale markers.
 	g := types.NewDepGraph()
 	if _, rootNode, derr := dependenciesForRef(asset.Data, resolved); derr == nil {
@@ -146,7 +146,7 @@ func GetReverse(
 		return nil, derr
 	}
 
-	entries, err := ListDependedBy(ref.RepoPath, uid, objPath)
+	entries, err := ListDependents(ref.RepoPath, uid, objPath)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func GetReverse(
 			RefSpec:  e.RefSpec,
 		})
 
-		childG, err := GetReverse(ctx, opctx, dbClient, cons)
+		childG, err := GetDependents(ctx, opctx, dbClient, cons)
 		if err != nil {
 			return nil, err
 		}
@@ -198,10 +198,10 @@ func GetReverse(
 	return g, nil
 }
 
-// RecordReverseEdgesForCommit records, for each source dep of a freshly-created
+// RecordDependentsForCommit records, for each source dep of a freshly-created
 // commit object, a reverse edge on the target keyed at the target's object, with
 // the consumer = THIS COMMIT
-func RecordReverseEdgesForCommit(
+func RecordDependentsForCommit(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
@@ -229,7 +229,7 @@ func RecordReverseEdgesForCommit(
 		if err != nil {
 			return err
 		}
-		if err := AddDependedBy(
+		if err := AddDependent(
 			target.RepoPath,
 			targetUID,
 			target.ObjectPath(),
@@ -240,7 +240,7 @@ func RecordReverseEdgesForCommit(
 		); err != nil {
 			return err
 		}
-		if err := MarkReverseStale(ctx, opctx, dbClient, target); err != nil {
+		if err := MarkDependentsStale(ctx, opctx, dbClient, target); err != nil {
 			return err
 		}
 	}
