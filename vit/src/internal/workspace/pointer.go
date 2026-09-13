@@ -55,25 +55,17 @@ func ResolveRefFromPath(
 	path string,
 ) (*types.Ref, error) {
 	repoPath := opctx.RepoPath()
-
-	// ref-string branch: NewRefFromPath fills RepoPath but NOT RepoUID — resolve the
-	// UID from the repo the path lives in (get-or-load, local = current repo).
 	if ref, err := types.NewRefFromPath(repoPath, path); err == nil {
 		uid, err := opctx.ResolveRepoUIDFromPath(repoPath)
 		if err != nil {
 			return nil, err
 		}
 		ref.RepoUID = uid
-		// a tag ref with no explicit @site= defaults to the ref's repo current site
-		// (the site `vit tag` stored it under) — so `asset@tag=approved` resolves.
 		if ref.RefType == types.RefTypeTag && ref.Site == "" {
 			ref.Site = opctx.RepoRefFor(uid).Site
 		}
 		return ref, nil
 	}
-
-	// path is already repo-relative (WithOperationContext normalized it, same as
-	// NewRefFromPath expects) — walk it up to the nearest pointer.
 	for cur := fsutil.PathInternal(path); cur != "." && cur != "/" && cur != ""; cur = fsutil.DirInternal(cur) {
 		pp := pointerPath(repoPath, cur)
 		if _, err := os.Stat(pp); err != nil {
@@ -83,8 +75,6 @@ func ResolveRefFromPath(
 		if err != nil {
 			return nil, NewErrUntrackedFile(path)
 		}
-		// the persisted ref carries RepoUID (json); RepoPath is derived, so fill it
-		// FROM the ref's own UID (may be foreign), not from the current repoPath.
 		ref := h.Data.Ref
 		ref.RepoPath = opctx.RepoRefFor(ref.RepoUID).Path
 		return &ref, nil
