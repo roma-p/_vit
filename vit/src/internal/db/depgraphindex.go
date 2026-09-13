@@ -111,6 +111,66 @@ func CacheDependencies(
 	return g, nil
 }
 
+// -- OPERATION FACADE: update the dep graph after a operation ---------------
+
+// UpdateDepGraphForCommit materializes the new commit's forward closure, refreshes
+// the branch head's, and records the commit's reverse edges.
+func UpdateDepGraphForCommit(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *Client,
+	commitRef, branchRef *types.Ref,
+) error {
+	if _, err := CacheDependencies(ctx, opctx, dbClient, commitRef); err != nil {
+		return err
+	}
+	if _, err := CacheDependencies(ctx, opctx, dbClient, branchRef); err != nil {
+		return err
+	}
+	return RecordDependentsForCommit(ctx, opctx, dbClient, commitRef)
+}
+
+// UpdateDepGraphForTag materializes the new tag's forward closure.
+func UpdateDepGraphForTag(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *Client,
+	tagRef *types.Ref,
+) error {
+	_, err := CacheDependencies(ctx, opctx, dbClient, tagRef)
+	return err
+}
+
+// UpdateDepGraphForSource materializes the consumer's forward closure and records
+// the reverse edge on the target (+ marks its dependents stale). It returns the
+// consumer's closure so the caller can present it into the workspace.
+func UpdateDepGraphForSource(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *Client,
+	consumer, target, spec *types.Ref,
+	name, commit string,
+) (*types.DepGraph, error) {
+	g, err := CacheDependencies(ctx, opctx, dbClient, consumer)
+	if err != nil {
+		return nil, err
+	}
+	targetAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, target, false)
+	if err != nil {
+		return g, err
+	}
+	if err := AddDependent(
+		target.RepoPath, targetAsset.Data.AssetUID, target.ObjectPath(),
+		name, consumer, spec, commit,
+	); err != nil {
+		return g, err
+	}
+	if err := MarkDependentsStale(ctx, opctx, dbClient, target); err != nil {
+		return g, err
+	}
+	return g, nil
+}
+
 // CheckSourceAddNoCycle checks that adding a source won't create a cycle.
 // /!\ it will refreseh the cash if needed but won't write on disk.
 // to update and write a dep graph cache, use: CacheDependencies
