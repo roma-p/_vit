@@ -52,6 +52,7 @@ func CommitBranch(r CommitBranchRequest) (string, error) {
 		Message:   r.Message,
 		Parent:    branchCommit.Parent,
 		Timestamp: r.TimeStamp,
+		Dependencies: *deepCopyDependencies(&branchCommit.Dependencies),
 	}
 
 	newCommitID, err := addCommit(r.Asset, ret)
