@@ -176,11 +176,13 @@ func (o *operationCommit) Finish(
 	logger *slog.Logger,
 	p workspace.Presenter,
 ) {
+	commitRef := types.NewRefCommit(o.Ref.RepoRef(), o.Ref.AssetPath, o.NewCommitID)
+
 	var err error
 	o.CommitPath, err = workspace.PresentCommit(
 		ctx,
 		opctx.JSONPool,
-		types.NewRefCommit(o.Ref.RepoRef(), o.Ref.AssetPath, o.NewCommitID),
+		commitRef,
 		o.Ref.BranchName,
 		opctx.User,
 		types.FormatTimestampLocal(opctx.TimeStamp),
@@ -189,6 +191,10 @@ func (o *operationCommit) Finish(
 	)
 	if err != nil {
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
+	}
+
+	if err := db.UpdateDepGraphForCommit(ctx, opctx, dbClient, commitRef, o.Ref); err != nil {
+		logger.Log(ctx, slog.LevelError, "commit: dep graph update failed", "err", err)
 	}
 }
 

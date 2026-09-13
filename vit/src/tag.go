@@ -270,4 +270,8 @@ func (o *operationTag) Finish(
 	if err != nil {
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
 	}
+
+	if err := db.UpdateDepGraphForTag(ctx, opctx, dbClient, o.outputRef); err != nil {
+		logger.Log(ctx, slog.LevelError, "tag: dep graph update failed", "err", err)
+	}
 }
