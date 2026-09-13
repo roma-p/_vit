@@ -65,15 +65,23 @@ func (p *HardlinkPresenter) Present(
 	return nil
 }
 
-func (p *HardlinkPresenter) PresentFinish(
-	ctx context.Context,
-	workspacePath string,
-	readOnly bool,
-) error {
-	if !readOnly {
-		return nil
+func (p *HardlinkPresenter) Seal(ctx context.Context, root string) error {
+	return sealDirsPostOrder(root)
+}
+
+func sealDirsPostOrder(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
 	}
-	return fsutil.MakeDirectoryReadOnly(workspacePath)
+	for _, e := range entries {
+		if e.IsDir() {
+			if err := sealDirsPostOrder(fsutil.PathOS(dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return fsutil.MakeDirectoryReadOnly(dir)
 }
 
 func (p *HardlinkPresenter) Unpresent(workspacePath string) error {

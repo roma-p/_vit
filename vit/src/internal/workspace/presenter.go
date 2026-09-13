@@ -15,11 +15,9 @@ type Presenter interface {
 	// Unpresent removes a file from the workspace.
 	Unpresent(workspacePath string) error
 
-	// Present links/creates one entry. Directories are made writable so files can
-	// be linked in; PresentFinish seals them afterwards.
+	// Present links/creates one entry.
 	Present(ctx context.Context, blobPath, workspacePath string, isDir, readOnly bool) error
 
-	// PresentFinish finalizes a directory once all its files and subdirs are
-	// presented (post-order). Seals it read-only for immutable presentations.
-	PresentFinish(ctx context.Context, workspacePath string, readOnly bool) error
+	// Seal finalizes an immutable presentation: make every files / dir readOnly
+	Seal(ctx context.Context, root string) error
 }

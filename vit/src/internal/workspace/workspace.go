@@ -70,6 +70,12 @@ func PresentCommit(
 			fmt.Sprintf("failed to present commit to workspace: %s", ref.AssetPath),
 		)
 	}
+	if err := p.Seal(ctx, ret); err != nil {
+		return "", newErrWorkspaceInternal(
+			err,
+			fmt.Sprintf("failed to seal commit presentation: %s", ref.AssetPath),
+		)
+	}
 	if err := writePointer(ctx, pool, ref.RepoPath, ret, ref); err != nil {
 		return "", err
 	}
@@ -97,6 +103,12 @@ func PresentTag(
 		return "", newErrWorkspaceInternal(
 			err,
 			fmt.Sprintf("failed to present tag to workspace: %s", ref.RelativePath()),
+		)
+	}
+	if err := p.Seal(ctx, ret); err != nil {
+		return "", newErrWorkspaceInternal(
+			err,
+			fmt.Sprintf("failed to seal tag presentation: %s", ref.RelativePath()),
 		)
 	}
 	if err := writePointer(ctx, pool, repoPath, ret, ref); err != nil {
@@ -142,7 +154,7 @@ func presentFromContentNode(
 		}
 	}
 
-	return p.PresentFinish(ctx, wsPath, readOnly)
+	return nil
 }
 
 func presentFromBlobDir(
@@ -174,7 +186,7 @@ func presentFromBlobDir(
 		}
 	}
 
-	return p.PresentFinish(ctx, wsPath, readOnly)
+	return nil
 }
 
 func newErrWorkspaceInternal(nested error, msg string) error {
