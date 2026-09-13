@@ -16,8 +16,9 @@ type TreeIndex struct {
 }
 
 type TreeIndexEntry struct {
-	Data string       `json:"data"`
-	Type TreeNodeType `json:"type"`
+	Data     string       `json:"data"`
+	Type     TreeNodeType `json:"type"`
+	AssetUID string       `json:"asset_uid,omitempty"` // empty for dir.
 }
 
 func NewTreeIndex() *TreeIndex {
@@ -197,8 +198,16 @@ func buildTreeIndexAndCache(
 			continue
 		}
 
-		treeIndex.IDToPath[id] = TreeIndexEntry{Data: path, Type: treenode.Type}
-		treeIndex.PathToID[path] = TreeIndexEntry{Data: id, Type: treenode.Type}
+		treeIndex.IDToPath[id] = TreeIndexEntry{
+			Data:     path,
+			Type:     treenode.Type,
+			AssetUID: treenode.AssetID,
+		}
+		treeIndex.PathToID[path] = TreeIndexEntry{
+			Data:     id,
+			Type:     treenode.Type,
+			AssetUID: treenode.AssetID,
+		}
 	}
 
 	// 4. Building treeCache (asset list) from resolved paths
@@ -251,8 +260,8 @@ func reccBuildIDToPath(
 		return "", err
 	}
 
-	treeIndex.IDToPath[uid] = TreeIndexEntry{Data: parentPath, Type: treeNode.Type}
-	treeIndex.PathToID[parentPath] = TreeIndexEntry{Data: uid, Type: treeNode.Type}
+	treeIndex.IDToPath[uid] = TreeIndexEntry{Data: parentPath, Type: treeNode.Type, AssetUID: treeNode.AssetID}
+	treeIndex.PathToID[parentPath] = TreeIndexEntry{Data: uid, Type: treeNode.Type, AssetUID: treeNode.AssetID}
 	return fsutil.PathInternal(parentPath, path), nil
 }
 

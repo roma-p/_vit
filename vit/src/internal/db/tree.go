@@ -46,6 +46,24 @@ func (c *Client) GetJSONAssetFromRef(
 	return assetNode, nil
 }
 
+// assetUIDFromIndex returns an asset's UID from tree index rather than reading
+// tree leaf source of truth.
+func (c *Client) assetUIDFromIndex(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	idx *TreeIndex,
+	ref *types.Ref,
+) (string, error) {
+	if e, ok := idx.PathToID[ref.AssetPath]; ok && e.Type == TreeNodeTypeAsset && e.AssetUID != "" {
+		return e.AssetUID, nil
+	}
+	asset, err := c.GetJSONAssetFromRef(ctx, opctx, ref, false)
+	if err != nil {
+		return "", err
+	}
+	return asset.Data.AssetUID, nil
+}
+
 type AddAssetToTreeRequest struct {
 	RepoRef           *types.RepoRef
 	TreePath          string
