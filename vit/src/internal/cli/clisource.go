@@ -19,8 +19,8 @@ func runSourceAdd(
 ) (types.Result, error) {
 	return client.SourceAdd(
 		ctx,
-		argParser.Arg("dstPath"),
-		argParser.Arg("srcPath"),
-		argParser.Arg("srcName"),
+		argParser.GetArg("dstPath"),
+		argParser.GetArg("srcPath"),
+		argParser.GetArg("srcName"),
 	)
 }

@@ -58,7 +58,7 @@ class VitClient:
 
     # Generated methods
 {{range .Methods}}
-    def {{.PythonName}}(self{{range .Params}}, {{.Name}}: {{.Type}}{{if .Optional}} = {{.Default}}{{end}}{{end}}) -> Iterator[{{if .ResultType}}{{.ResultType.TypeName}}{{else}}GenericResult{{end}}]:
+    def {{.PythonName}}(self{{range .Params}}{{if .IsVariadic}}, *{{.Name}}: {{.Type}}{{else}}, {{.Name}}: {{.Type}}{{if .Optional}} = {{.Default}}{{end}}{{end}}{{end}}) -> Iterator[{{if .ResultType}}{{.ResultType.TypeName}}{{else}}GenericResult{{end}}]:
         """{{.Description}}{{if .Params}}
 
         Args:
@@ -94,6 +94,8 @@ class VitClient:
         args = [{{range .CmdParts}}"{{.}}", {{end}}]
         {{range .Params}}{{if .IsPositional}}{{if .Optional}}if {{.Name}}:
             {{end}}args.append({{.Name}})
+        {{end}}{{end}}
+        {{range .Params}}{{if .IsVariadic}}args.extend({{.Name}})
         {{end}}{{end}}
         {{range .Params}}{{if .IsFlag}}if {{.Name}}:
             args.append("-{{.FlagName}}")

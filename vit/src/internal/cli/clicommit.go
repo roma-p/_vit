@@ -18,5 +18,5 @@ func runCommit(
 	client *vit.Client,
 	argParser *clicore.CmdParser,
 ) (types.Result, error) {
-	return client.Commit(ctx, argParser.Arg("branchPath"), argParser.Arg("message"))
+	return client.Commit(ctx, argParser.GetArg("branchPath"), argParser.GetArg("message"))
 }

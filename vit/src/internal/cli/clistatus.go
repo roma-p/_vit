@@ -14,5 +14,5 @@ func buildStatusArgParser() *clicore.CmdParser {
 }
 
 func runStatus(ctx context.Context, client *vit.Client, argParser *clicore.CmdParser) (types.Result, error) {
-	return client.Status(ctx, argParser.Arg("branchPath"))
+	return client.Status(ctx, argParser.GetArg("branchPath"))
 }

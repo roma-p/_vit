@@ -27,6 +27,7 @@ type pythonParam struct {
 	Optional     bool
 	IsPositional bool
 	IsFlag       bool
+	IsVariadic   bool   // Python *args (trailing list of positionals)
 	FlagName     string // Flag name (without -)
 	ParamDoc     string
 }
@@ -179,6 +180,21 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 			IsPositional: true,
 			IsFlag:       false,
 			ParamDoc:     "Optional positional argument",
+		})
+	}
+
+	// Add the variadic parameter (Python *args). Must come after the required
+	// positionals and before flags (which become keyword-only after *args).
+	// A variadic forbids optionals, so there are none between them.
+	if c.ArgParser.variadicDefined {
+		method.Params = append(method.Params, pythonParam{
+			Name:         c.ArgParser.variadicDef.name,
+			Type:         "str",
+			Optional:     false,
+			IsPositional: false,
+			IsFlag:       false,
+			IsVariadic:   true,
+			ParamDoc:     c.ArgParser.variadicDef.usage,
 		})
 	}
 

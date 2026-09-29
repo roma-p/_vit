@@ -43,9 +43,9 @@ func Main() int {
 	usageErr := subcmdparser.Parse(findRet.Args)
 
 	output := clicore.NewOutput(clicore.OutputOpt{
-		JSON:    *subcmdparser.Flag("json").(*bool),
-		Debug:   *subcmdparser.Flag("debug").(*bool),
-		Verbose: *subcmdparser.Flag("v").(*bool),
+		JSON:    *subcmdparser.GetFlag("json").(*bool),
+		Debug:   *subcmdparser.GetFlag("debug").(*bool),
+		Verbose: *subcmdparser.GetFlag("v").(*bool),
 	})
 
 	if usageErr != nil {

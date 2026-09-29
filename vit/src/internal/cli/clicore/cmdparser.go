@@ -14,18 +14,33 @@ type flagDef struct {
 	usage      string
 }
 
-type CmdParser struct {
-	Name            string
-	FlagSet         *flag.FlagSet
-	PosArgs         []string
-	OptionalPosArgs []string
-	FlagArgs        map[string]any
-	flagDefs        map[string]flagDef // Store flag definitions for resetting
-	ArgsMap         map[string]string
-	Usage           []string
+type variadicDef struct {
+	usage string
+	name  string
 }
 
-func (a *CmdParser) Bool(name string, value bool, usage string) error {
+type CmdParser struct {
+	// cmd def
+	Name  string
+	Usage []string
+
+	// args
+	PosArgs         []string
+	OptionalPosArgs []string
+	ArgsMap         map[string]string
+
+	// flags
+	flagDefs map[string]flagDef // Store flag definitions for resetting
+	FlagSet  *flag.FlagSet
+	FlagArgs map[string]any
+
+	// variadic
+	Variadic        []string
+	variadicDefined bool
+	variadicDef     *variadicDef
+}
+
+func (a *CmdParser) AddFlag(name string, value bool, usage string) error {
 	if _, ok := a.FlagArgs[name]; ok {
 		return fmt.Errorf("already a flag '%s' in parser '%s'", name, a.Name)
 	}
@@ -34,8 +49,7 @@ func (a *CmdParser) Bool(name string, value bool, usage string) error {
 	return nil
 }
 
-// TODO: does not work.
-func (a *CmdParser) String(name string, value string, usage string) error {
+func (a *CmdParser) AddArgString(name string, value string, usage string) error {
 	if _, ok := a.FlagArgs[name]; ok {
 		return fmt.Errorf("already a flag '%s' in parser '%s'", name, a.Name)
 	}
@@ -44,12 +58,38 @@ func (a *CmdParser) String(name string, value string, usage string) error {
 	return nil
 }
 
-func (a *CmdParser) Flag(name string) any {
+func (a *CmdParser) AddVariadic(name string, usage string) error {
+	if len(a.OptionalPosArgs) > 0 {
+		return fmt.Errorf(
+			"optionnal pos arg already defined for parser '%s' can't have variadic + optionnal",
+			a.Name,
+		)
+	}
+	if a.variadicDefined {
+		return fmt.Errorf(
+			"variadic arg '%s' already defined for parser '%s'",
+			a.variadicDef.name,
+			a.Name,
+		)
+	}
+	a.variadicDefined = true
+	a.variadicDef = &variadicDef{
+		name:  name,
+		usage: usage,
+	}
+	return nil
+}
+
+func (a *CmdParser) GetFlag(name string) any {
 	return a.FlagArgs[name]
 }
 
-func (a *CmdParser) Arg(name string) string {
+func (a *CmdParser) GetArg(name string) string {
 	return a.ArgsMap[name]
+}
+
+func (a *CmdParser) GetVariadic(name string) []string {
+	return a.Variadic
 }
 
 func NewArgParser(name string, posArgs []string, optArgs []string) *CmdParser {
@@ -62,10 +102,11 @@ func NewArgParser(name string, posArgs []string, optArgs []string) *CmdParser {
 		flagDefs:        make(map[string]flagDef),
 	}
 
-	_ = ret.Bool("json", false, "Enable JSON output format")
-	_ = ret.Bool("debug", false, "Enable debug logging")
-	_ = ret.Bool("v", false, "Enable verbose logging")
-	_ = ret.Bool("h", false, "help")
+	_ = ret.AddFlag("json", false, "Enable JSON output format")
+	_ = ret.AddFlag("debug", false, "Enable debug logging")
+	_ = ret.AddFlag("v", false, "Enable verbose logging")
+	_ = ret.AddFlag("h", false, "help")
+
 	// ignoring err: only way to have err is to have duplicated flag.
 	// which we know that's not the case here.
 
@@ -95,24 +136,30 @@ func (a *CmdParser) Parse(args []string) *UsageError {
 		return NewUsageError(a.Name, args, errInvalidFlags, err)
 	}
 
-	// Calculate total possible positional args (required + optional)
-	totalPosArgs := len(a.PosArgs) + len(a.OptionalPosArgs)
-
-	// Validate positional args
+	// The required minimum ALWAYS applies (even with a variadic).
 	if len(posArgs) < len(a.PosArgs) {
 		return NewUsageError(a.Name, args, errNotEnoughPositionalArgs, nil)
-	} else if len(posArgs) > totalPosArgs {
+	}
+	// The upper bound only applies when there is no variadic to absorb extras.
+	totalPosArgs := len(a.PosArgs) + len(a.OptionalPosArgs)
+	if !a.variadicDefined && len(posArgs) > totalPosArgs {
 		return NewUsageError(a.Name, args, errTooMuchPositionalArgs, nil)
 	}
 
-	// Map positional args (required + optional)
+	// Map the named positionals (required + optional)
 	a.ArgsMap = make(map[string]string)
 	allPosArgNames := slices.Concat(a.PosArgs, a.OptionalPosArgs)
-	for i, argName := range allPosArgNames {
-		if i < len(posArgs) {
-			a.ArgsMap[argName] = posArgs[i]
-		}
+	named := min(len(allPosArgNames), len(posArgs))
+	for i := range named {
+		a.ArgsMap[allPosArgNames[i]] = posArgs[i]
 	}
+
+	// The variadic captures everything after the named positionals.
+	// Safe becasue variadic forbids optionals
+	if a.variadicDefined {
+		a.Variadic = posArgs[len(allPosArgNames):]
+	}
+
 	return nil
 }
 
@@ -134,6 +181,10 @@ func (a *CmdParser) buildUsage() {
 	for _, arg := range a.OptionalPosArgs {
 		usageFirstLine += fmt.Sprintf(" [%s]", arg)
 	}
+	if a.variadicDefined {
+		usageFirstLine += fmt.Sprintf(" <%s> ...", a.variadicDef.name)
+	}
+
 	usageFirstLine += " [flags]\n"
 	u = append(u, usageFirstLine)
 	u = append(u, "Flags:")

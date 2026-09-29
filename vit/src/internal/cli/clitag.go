@@ -18,5 +18,5 @@ func runTag(
 	client *vit.Client,
 	argParser *clicore.CmdParser,
 ) (types.Result, error) {
-	return client.Tag(ctx, argParser.Arg("path"), argParser.Arg("family"), argParser.Arg("message"))
+	return client.Tag(ctx, argParser.GetArg("path"), argParser.GetArg("family"), argParser.GetArg("message"))
 }

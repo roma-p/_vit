@@ -9,5 +9,5 @@ import (
 )
 
 func runInit(ctx context.Context, client *vit.Client, argParser *clicore.CmdParser) (types.Result, error) {
-	return client.InitRepo(ctx, argParser.Arg("path"))
+	return client.InitRepo(ctx, argParser.GetArg("path"))
 }

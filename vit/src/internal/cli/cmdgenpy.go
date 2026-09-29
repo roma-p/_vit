@@ -12,7 +12,7 @@ import (
 var rootCmd *clicore.CmdTree
 
 func runGenPy(ctx context.Context, client *vit.Client, argParser *clicore.CmdParser) (types.Result, error) {
-	outputPath := argParser.Arg("output")
+	outputPath := argParser.GetArg("output")
 
 	err := rootCmd.GenPythonAPI(outputPath)
 	if err != nil {
