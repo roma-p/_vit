@@ -86,3 +86,28 @@ func (c *StatusResult) ToStringSlice() []string {
 
 	return ret
 }
+
+// Source Update Result ------------------------------------------------------
+
+type SourceUpdateResult struct {
+	Consumer *Ref
+	Updates  []SourceUpdate
+}
+
+func (r *SourceUpdateResult) ToStringSlice() []string {
+	if len(r.Updates) == 0 {
+		return []string{"No source update done on : %s", r.Consumer.RelativePath()}
+	}
+
+	var ret []string
+	ret = append(ret, "source updates on : %s", r.Consumer.RelativePath())
+	for _, u := range r.Updates {
+		ret = append(
+			ret, " - %s\t: \t%s -> \t%s",
+			u.Name,
+			u.OldTarget.RelativePath(),
+			u.NewTarget.RelativePath(),
+		)
+	}
+	return ret
+}
