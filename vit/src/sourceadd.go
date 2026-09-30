@@ -16,28 +16,21 @@ import (
 
 func (c *Client) SourceAdd(
 	ctx context.Context,
-	pathObjectWithNewSource, pathObjectSource, sourceName string,
+	pathObjectConsumer, pathObjectProvider, sourceName string,
 ) (*types.StringResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, types.NewCancelledError(err)
 	}
 
 	sourceName = fsutil.PathInternal(sourceName)
-	if sourceName == "" || sourceName == "." ||
-		strings.HasPrefix(sourceName, "/") ||
-		strings.HasPrefix(sourceName, "..") {
-		return nil, types.NewVitError(
-			types.ErrInvalidInut,
-			[]string{fmt.Sprintf("invalid source name, must be a relative path: %q",
-				sourceName)},
-			nil,
-		)
+	if err := validateSourceName(sourceName); err != nil {
+		return nil, err
 	}
 
 	c.logger.Info(
 		"SourceAdd",
-		"pathObjectSource", pathObjectSource,
-		"pathObjectWithNewSource", pathObjectWithNewSource,
+		"provider", pathObjectProvider,
+		"consumer", pathObjectConsumer,
 		"sourceName", sourceName,
 	)
 
@@ -48,10 +41,9 @@ func (c *Client) SourceAdd(
 
 	err = opcontext.WithOperationContext(
 		ctx,
-		pathObjectWithNewSource,
-		func(opctx *opcontext.OperationContext, pathConsumer string) error {
-			// consumer (object with new source) has to be a branch
-			refConsumer, err := workspace.ResolveRefFromPath(ctx, opctx, pathConsumer)
+		pathObjectConsumer,
+		func(opctx *opcontext.OperationContext, pathObjectConsumer string) error {
+			refConsumer, err := workspace.ResolveRefFromPath(ctx, opctx, pathObjectConsumer)
 			if err != nil {
 				return err
 			}
@@ -59,7 +51,7 @@ func (c *Client) SourceAdd(
 				return err
 			}
 
-			srcPath := pathObjectSource
+			srcPath := pathObjectProvider
 			if rp := opctx.RepoPath(); strings.HasPrefix(srcPath, rp) {
 				if rel, rerr := fsutil.RelInternal(rp, srcPath); rerr == nil {
 					srcPath = rel
@@ -104,6 +96,7 @@ func (c *Client) SourceAdd(
 		return nil, err
 	}
 
+	// TODO change eturn tye.
 	return &types.StringResult{}, nil
 }
 
@@ -123,9 +116,7 @@ func (o *operationSourceAdd) Validate(
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
 ) error {
-	// TODO : release all write at end of validate in trasaction
-	// TODO: resolve all graph and check name conflict.
-
+	// TODO: resolve graph and "collapse it" to check for cross asset source name clash.
 	// 1. checking ref with new dep.
 	assetJSON, err := dbClient.GetJSONAssetFromRef(ctx, opctx, o.RefWithNewDep, false)
 	if err != nil {
@@ -141,7 +132,6 @@ func (o *operationSourceAdd) Validate(
 	if err := db.CheckDependencyNameAvailable(o.RefWithNewDep, c, o.NewDepedencyName); err != nil {
 		return err
 	}
-	// TODO: resolve graph and "collapse it" to check for naming clash.
 
 	// 2. checking target ref
 	assetJSON, err = dbClient.GetJSONAssetFromRef(ctx, opctx, o.RefDepSpec, false)
@@ -155,7 +145,6 @@ func (o *operationSourceAdd) Validate(
 		return err
 	}
 
-	// reject a cyclic dependency now, before the transaction writes anything.
 	return db.CheckSourceAddNoCycle(
 		ctx, opctx, dbClient,
 		o.RefWithNewDep, o.RefDepResolved,
@@ -197,8 +186,16 @@ func (o *operationSourceAdd) Finish(
 	p workspace.Presenter,
 ) {
 	g, err := db.UpdateDepGraphForSource(
-		ctx, opctx, dbClient,
-		o.RefWithNewDep, o.RefDepResolved, o.RefDepSpec, o.NewDepedencyName, o.DepCommitID,
+		ctx,
+		opctx,
+		dbClient,
+		db.UpdateDepGraphForSourceRequest{
+			Consumer: o.RefWithNewDep,
+			Target:   o.RefDepResolved,
+			Spec:     o.RefDepSpec,
+			Name:     o.NewDepedencyName,
+			Commit:   o.DepCommitID,
+		},
 	)
 	if err != nil {
 		logger.Log(ctx, slog.LevelError, "source add: dep graph update failed", "err", err)
@@ -207,11 +204,21 @@ func (o *operationSourceAdd) Finish(
 
 	// present the closure into the consumer workspace (recursive hardlinks under
 	// the dependency name path).
-	consumerWs := fsutil.PathOS(
-		o.RefWithNewDep.RepoPath,
-		workspace.RefToWorkspacePath(o.RefWithNewDep),
-	)
-	if err := workspace.PresentSources(ctx, o.RefWithNewDep.RepoPath, consumerWs, g, o.RefWithNewDep, p); err != nil {
+	if err := workspace.PresentSources(ctx, g, o.RefWithNewDep, p); err != nil {
 		logger.Log(ctx, slog.LevelError, "source add: present sources failed", "err", err)
 	}
+}
+
+func validateSourceName(sourceName string) error {
+	if sourceName == "" || sourceName == "." ||
+		strings.HasPrefix(sourceName, "/") ||
+		strings.HasPrefix(sourceName, "..") {
+		return types.NewVitError(
+			types.ErrInvalidInut,
+			[]string{fmt.Sprintf("invalid source name, must be a relative path: %q",
+				sourceName)},
+			nil,
+		)
+	}
+	return nil
 }

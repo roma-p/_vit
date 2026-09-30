@@ -10,14 +10,16 @@ import (
 )
 
 // PresentSources materializes an object's dependency closure into its workspace.
-// Sources are readonly
+// Sources are readonly. The consumer's workspace path is derived from root.
 func PresentSources(
 	ctx context.Context,
-	repoPath, consumerWorkspacePath string,
 	g *types.DepGraph,
 	root *types.Ref,
 	p Presenter,
 ) error {
+	repoPath := root.RepoPath
+	consumerWorkspacePath := fsutil.PathOS(repoPath, RefToWorkspacePath(root))
+
 	if err := presentSourcesRecc(ctx, repoPath, consumerWorkspacePath, g, root, p); err != nil {
 		return err
 	}

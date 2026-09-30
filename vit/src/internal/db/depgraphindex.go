@@ -11,10 +11,10 @@ import (
 
 // GraphCache is the per-asset dep-graph cache file.
 // derived from asset json files. contains complete closure for every object,
-// not just the direct dependancies. (meaning A->B->C->D etc... not just A->B)
+// not just the direct dependancies. (meaning:: A->B->C->D etc... not just A->B)
 // cache is split in two half:
 //
-//   - forward: on who, a vit object depends.
+//   - forward: "on who, a vit object depends."
 //
 //     for this part of the cache, we have a complete reccusrive graph.
 //
@@ -30,9 +30,9 @@ import (
 //     (object) -> A -> B -> C
 //     but not
 //     (object) -> A --> B -> C
-//     D /
+//     ................. D /
 //
-//     reverse is build by code at dependedby.go
+//     reverse is build in code at dependedby.go
 type GraphCache struct {
 	Forward map[string]*types.DepGraph `json:"forward"`
 	Reverse map[string]*types.DepGraph `json:"reverse,omitempty"`
@@ -69,7 +69,7 @@ func GetDependencies(
 			}
 		}
 	}
-	// MISS (or not-yet-an-asset) — build from truth IN MEMORY, do not persist
+	// MISS build from truth IN MEMORY, do not persist
 	// (only the owning asset's Finish writes the cache, under its own lock).
 	return buildDependencies(ctx, opctx, dbClient, ref)
 }
@@ -111,7 +111,7 @@ func CacheDependencies(
 	return g, nil
 }
 
-// -- OPERATION FACADE: update the dep graph after a operation ---------------
+// -- OPERATION API : update the dep graph after a operation -----------------
 
 // UpdateDepGraphForCommit materializes the new commit's forward closure, refreshes
 // the branch head's, and records the commit's reverse edges.
@@ -148,27 +148,34 @@ func UpdateDepGraphForSource(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
-	consumer, target, spec *types.Ref,
-	name, commit string,
+	r UpdateDepGraphForSourceRequest,
 ) (*types.DepGraph, error) {
-	g, err := CacheDependencies(ctx, opctx, dbClient, consumer)
+	g, err := CacheDependencies(ctx, opctx, dbClient, r.Consumer)
 	if err != nil {
 		return nil, err
 	}
-	targetAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, target, false)
+	targetAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, r.Target, false)
 	if err != nil {
 		return g, err
 	}
 	if err := AddDependent(
-		target.RepoPath, targetAsset.Data.AssetUID, target.ObjectPath(),
-		name, consumer, spec, commit,
+		r.Target.RepoPath, targetAsset.Data.AssetUID, r.Target.ObjectPath(),
+		r.Name, r.Consumer, r.Spec, r.Commit,
 	); err != nil {
 		return g, err
 	}
-	if err := MarkDependentsStale(ctx, opctx, dbClient, target); err != nil {
+	if err := MarkDependentsStale(ctx, opctx, dbClient, r.Target); err != nil {
 		return g, err
 	}
 	return g, nil
+}
+
+type UpdateDepGraphForSourceRequest struct {
+	Consumer *types.Ref
+	Target   *types.Ref
+	Spec     *types.Ref
+	Name     string
+	Commit   string // consumer underlying commit id
 }
 
 // CheckSourceAddNoCycle checks that adding a source won't create a cycle.
