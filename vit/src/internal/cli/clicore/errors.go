@@ -29,6 +29,7 @@ const (
 	errNotEnoughPositionalArgs UsageErrorType = "PosArgsNotEnough"
 	errTooMuchPositionalArgs   UsageErrorType = "PosArgsTooMuch"
 	errInvalidFlags            UsageErrorType = "InvalidFlags"
+	ErrInvalidCommand          UsageErrorType = "InvalidCommand"
 )
 
 type UsageError struct {

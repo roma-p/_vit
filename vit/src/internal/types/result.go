@@ -96,18 +96,17 @@ type SourceUpdateResult struct {
 
 func (r *SourceUpdateResult) ToStringSlice() []string {
 	if len(r.Updates) == 0 {
-		return []string{"No source update done on : %s", r.Consumer.RelativePath()}
+		return []string{fmt.Sprintf("No source update done on: %s", r.Consumer.RelativePath())}
 	}
 
-	var ret []string
-	ret = append(ret, "source updates on : %s", r.Consumer.RelativePath())
+	ret := []string{fmt.Sprintf("source updates on: %s", r.Consumer.RelativePath())}
 	for _, u := range r.Updates {
-		ret = append(
-			ret, " - %s\t: \t%s -> \t%s",
+		ret = append(ret, fmt.Sprintf(
+			" - %s\t: %s -> %s",
 			u.Name,
 			u.OldTarget.RelativePath(),
 			u.NewTarget.RelativePath(),
-		)
+		))
 	}
 	return ret
 }

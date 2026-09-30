@@ -47,7 +47,7 @@ var cmdDefinition = clicore.CmdTree{
 			Description: "Tag a given ref",
 			Run:         runTag,
 			ArgParser:   buildTagArgParser(),
-			ResultType:  types.StringResult{},
+			ResultType:  types.SourceUpdateResult{},
 		},
 		"source": {
 			Name:        "Souce",
@@ -59,6 +59,13 @@ var cmdDefinition = clicore.CmdTree{
 					Run:         runSourceAdd,
 					ArgParser:   buildSourceAddArgParser(),
 					ResultType:  types.StringResult{},
+				},
+				"pull": {
+					Name:        "Pull sources",
+					Description: "Update an asset's sources to their latest pinned version",
+					Run:         runSourcePull,
+					ArgParser:   buildSourcePullArgParser(),
+					ResultType:  types.StringListResult{},
 				},
 			},
 		},
