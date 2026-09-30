@@ -44,9 +44,28 @@ func AddDependent(
 	return nil
 }
 
+// RemoveDependent deletes the reverse-index entry recording that consumer depended
+// on the target asset's OBJECT — the inverse of AddDependent.
+func RemoveDependent(
+	repoPath, targetAssetUID, targetObjectPath string,
+	consumer *types.Ref,
+) error {
+	dir := pathDependedByDir(repoPath, targetAssetUID, targetObjectPath)
+	file := fsutil.PathOS(dir, dependedByFileName(consumer))
+	if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+		return newErrDBInternal(err, "could not remove depended_by entry")
+	}
+	return nil
+}
+
 // ListDependents returns every consumer of a specific target OBJECT. A missing
-// directory means nobody depends on that object (not an error).
-func ListDependents(repoPath, targetAssetUID, targetObjectPath string) ([]DependentEntry, error) {
+// directory means nobody depends on that object (not an error). The entry Refs'
+// RepoPath (json:"-") is rehydrated here — at this deserialization boundary — from
+// each Ref's RepoUID, so callers get complete Refs (mirrors the asset-load path).
+func ListDependents(
+	opctx *opcontext.OperationContext,
+	repoPath, targetAssetUID, targetObjectPath string,
+) ([]DependentEntry, error) {
 	dir := pathDependedByDir(repoPath, targetAssetUID, targetObjectPath)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -54,6 +73,11 @@ func ListDependents(repoPath, targetAssetUID, targetObjectPath string) ([]Depend
 			return nil, nil
 		}
 		return nil, newErrDBInternal(err, "could not read depended_by dir")
+	}
+	fillRepoPath := func(ref *types.Ref) {
+		if ref != nil {
+			ref.RepoPath = opctx.RepoRefFor(ref.RepoUID).Path
+		}
 	}
 	ret := make([]DependentEntry, 0, len(entries))
 	for _, e := range entries {
@@ -64,6 +88,8 @@ func ListDependents(repoPath, targetAssetUID, targetObjectPath string) ([]Depend
 		if err := h.Read(); err != nil {
 			return nil, newErrDBInternal(err, "could not read depended_by entry")
 		}
+		fillRepoPath(h.Data.Consumer)
+		fillRepoPath(h.Data.RefSpec)
 		ret = append(ret, *h.Data)
 	}
 	return ret, nil
@@ -146,13 +172,12 @@ func GetDependents(
 		return nil, derr
 	}
 
-	entries, err := ListDependents(ref.RepoPath, uid, objPath)
+	entries, err := ListDependents(opctx, ref.RepoPath, uid, objPath)
 	if err != nil {
 		return nil, err
 	}
 	for _, e := range entries {
 		cons := e.Consumer
-		cons.RepoPath = opctx.RepoRefFor(cons.RepoUID).Path
 
 		cAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, cons, false)
 		if err != nil {
@@ -224,7 +249,6 @@ func RecordDependentsForCommit(
 			continue
 		}
 		target := dep.RefResolved
-		target.RepoPath = opctx.RepoRefFor(target.RepoUID).Path
 		targetUID, err := dbClient.assetUIDFromIndex(ctx, opctx, idx, target)
 		if err != nil {
 			return err

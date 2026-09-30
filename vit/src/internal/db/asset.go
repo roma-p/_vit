@@ -46,12 +46,12 @@ func CommitBranch(r CommitBranchRequest) (string, error) {
 	}
 
 	ret := &types.AssetCommit{
-		Content:   r.RootcontentNodeUID,
-		Author:    r.Author,
-		Site:      r.Site,
-		Message:   r.Message,
-		Parent:    branchCommit.Parent,
-		Timestamp: r.TimeStamp,
+		Content:      r.RootcontentNodeUID,
+		Author:       r.Author,
+		Site:         r.Site,
+		Message:      r.Message,
+		Parent:       branchCommit.Parent,
+		Timestamp:    r.TimeStamp,
 		Dependencies: *deepCopyDependencies(&branchCommit.Dependencies),
 	}
 
@@ -279,7 +279,27 @@ func resolveJSONAsset(
 	ret.Data.RepoUID = repoRef.UID
 	ret.Data.Site = repoRef.Site
 
+	// same for every ref in dependencies.
+	fillDependencyRepoPaths(opctx, ret.Data)
+
 	return ret, true, nil
+}
+
+func fillDependencyRepoPaths(opctx *opcontext.OperationContext, asset *types.Asset) {
+	// repopath is not filled in the json, so we need to feed it from site uid / opctx
+	fill := func(ref *types.Ref) {
+		if ref != nil {
+			ref.RepoPath = opctx.RepoRefFor(ref.RepoUID).Path
+		}
+	}
+	for _, commits := range []map[string]*types.AssetCommit{asset.Commits, asset.Branches} {
+		for _, c := range commits {
+			for _, dep := range c.Dependencies {
+				fill(dep.RefSpec)
+				fill(dep.RefResolved)
+			}
+		}
+	}
 }
 
 func initAsset(

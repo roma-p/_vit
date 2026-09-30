@@ -241,8 +241,6 @@ func walkDependencies(
 			continue
 		}
 		child := dep.RefResolved
-		// RepoPath is not persisted (json:"-") — fill it from the ref's UID.
-		child.RepoPath = opctx.RepoRefFor(child.RepoUID).Path
 
 		if err := g.Connect(ref, child, dep.RefSpec, name, dep.Type); err != nil {
 			return err // if cycle detected return err.
