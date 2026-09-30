@@ -71,20 +71,13 @@ func (c *StatusResult) ToStringSlice() []string {
 	}
 
 	ret = append(ret, "* added:")
-	for _, f := range added {
-		ret = append(ret, f)
-	}
+	ret = append(ret, added...)
 	ret = append(ret, "")
 	ret = append(ret, "* removed:")
-	for _, f := range removed {
-		ret = append(ret, f)
-	}
+	ret = append(ret, removed...)
 	ret = append(ret, "")
 	ret = append(ret, "* edited:")
-	for _, f := range edited {
-		ret = append(ret, f)
-	}
-
+	ret = append(ret, edited...)
 	ret = append(ret, "")
 	ret = append(ret, fmt.Sprintf("+ %d  - %d", sizeAdded, sizeRemoved))
 
