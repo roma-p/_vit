@@ -9,4 +9,5 @@ const (
 	CommandTag        VitCommand = "tag"
 	CommandSourceAdd  VitCommand = "source-add"
 	CommandSourcePull VitCommand = "source-pull"
+	CommandSourcePush VitCommand = "source-push"
 )

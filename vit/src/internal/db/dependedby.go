@@ -183,6 +183,7 @@ func GetDependents(
 		return nil, err
 	}
 	for _, e := range entries {
+		cons := e.Consumer
 
 		cAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, cons, false)
 		if err != nil {

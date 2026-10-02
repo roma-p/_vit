@@ -47,7 +47,7 @@ var cmdDefinition = clicore.CmdTree{
 			Description: "Tag a given ref",
 			Run:         runTag,
 			ArgParser:   buildTagArgParser(),
-			ResultType:  types.SourceUpdateResult{},
+			ResultType:  types.SourcePullResult{},
 		},
 		"source": {
 			Name:        "Souce",
@@ -66,6 +66,13 @@ var cmdDefinition = clicore.CmdTree{
 					Run:         runSourcePull,
 					ArgParser:   buildSourcePullArgParser(),
 					ResultType:  types.StringListResult{},
+				},
+				"push": {
+					Name:        "Push source",
+					Description: "Re-pin every live consumer of a floating tag family or branch",
+					Run:         runSourcePush,
+					ArgParser:   buildSourcePushArgParser(),
+					ResultType:  types.SourcePushResult{},
 				},
 			},
 		},

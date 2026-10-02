@@ -58,3 +58,15 @@ func runSourcePull(
 
 	return client.SourcePull(ctx, argParser.GetArg("path"), sources)
 }
+
+func buildSourcePushArgParser() *clicore.CmdParser {
+	return clicore.NewArgParser("source push", []string{"path"}, []string{})
+}
+
+func runSourcePush(
+	ctx context.Context,
+	client *vit.Client,
+	argParser *clicore.CmdParser,
+) (types.Result, error) {
+	return client.SourcePush(ctx, argParser.GetArg("path"), nil)
+}
