@@ -30,16 +30,29 @@ func AddDependent(
 	refSpec *types.Ref,
 	targetCommit string,
 ) error {
-	dir := pathDependedByDir(repoPath, targetAssetUID, targetObjectPath)
-	file := fsutil.PathOS(dir, dependedByFileName(consumer))
 	entry := DependentEntry{
 		Consumer:     consumer,
 		Name:         name,
 		RefSpec:      refSpec,
 		TargetCommit: targetCommit,
 	}
-	if err := fsutil.NewJSONHandlerFromPath(file, &entry).Write(); err != nil {
-		return newErrDBInternal(err, "could not write depended_by entry")
+	write := func(objPath string) error {
+		dir := pathDependedByDir(repoPath, targetAssetUID, objPath)
+		file := fsutil.PathOS(dir, dependedByFileName(consumer))
+		if err := fsutil.NewJSONHandlerFromPath(file, &entry).Write(); err != nil {
+			return newErrDBInternal(err, "could not write depended_by entry")
+		}
+		return nil
+	}
+
+	if err := write(targetObjectPath); err != nil {
+		return err
+	}
+	if consumer.RefType == types.RefTypeBranch && refSpec.IsMutable() &&
+		refSpec.ObjectPath() != targetObjectPath {
+		if err := write(refSpec.ObjectPath()); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -114,16 +127,14 @@ func MarkDependentsStale(
 	}
 	for repoUID, byAsset := range gB.Nodes {
 		repoPath := opctx.RepoRefFor(repoUID).Path
-		for assetPath, objs := range byAsset {
+		for assetPath := range byAsset {
 			y := &types.Ref{RepoUID: repoUID, RepoPath: repoPath, AssetPath: assetPath}
 			uid, err := dbClient.assetUIDFromIndex(ctx, opctx, idx, y)
 			if err != nil {
 				return err
 			}
-			for objPath := range objs {
-				if err := touchMarker(pathReverseStale(repoPath, uid, objPath)); err != nil {
-					return err
-				}
+			if err := touchMarker(pathReverseStale(repoPath, uid)); err != nil {
+				return err
 			}
 		}
 	}
@@ -143,31 +154,26 @@ func GetDependents(
 		return nil, err
 	}
 	uid := asset.Data.AssetUID
-	resolved, _, err := ResolveCommitForDependency(asset.Data, ref)
-	if err != nil {
-		return nil, err
-	}
-	resolved.RepoPath = ref.RepoPath
-	objPath := resolved.ObjectPath()
+	objPath := ref.ObjectPath()
 	cachePath := pathDepGraph(ref.RepoPath, uid)
-	markerPath := pathReverseStale(ref.RepoPath, uid, objPath)
+	markerPath := pathReverseStale(ref.RepoPath, uid)
 
-	// 1. try to get from cache.
+	// 1. cache: fresh hit if present and the asset isn't marked stale.
 	cache, err := readGraphCache(cachePath)
 	if err != nil {
 		return nil, err
 	}
-	if cache != nil && !markerExists(markerPath) {
+	stale := cache != nil && markerExists(markerPath)
+	if cache != nil && !stale {
 		if g, ok := cache.Reverse[objPath]; ok {
 			return g, nil
 		}
 	}
 
-	// 2. in other case, refresh cache using by recc comparing DependentEntry
-	// with stale markers.
+	// 2. rebuild from the reverse index (direct dependents) + recursion into each
 	g := types.NewDepGraph()
-	if _, rootNode, derr := dependenciesForRef(asset.Data, resolved); derr == nil {
-		g.AddNode(resolved, rootNode)
+	if _, rootNode, derr := dependenciesForRef(asset.Data, ref); derr == nil {
+		g.AddNode(ref, rootNode)
 	} else {
 		return nil, derr
 	}
@@ -177,26 +183,20 @@ func GetDependents(
 		return nil, err
 	}
 	for _, e := range entries {
-		cons := e.Consumer
 
 		cAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, cons, false)
 		if err != nil {
 			return nil, err
 		}
-		cResolved, _, err := ResolveCommitForDependency(cAsset.Data, cons)
-		if err != nil {
-			return nil, err
-		}
-		cResolved.RepoPath = cons.RepoPath
-		if _, cNode, derr := dependenciesForRef(cAsset.Data, cResolved); derr == nil {
-			g.AddNode(cResolved, cNode)
+		if _, cNode, derr := dependenciesForRef(cAsset.Data, cons); derr == nil {
+			g.AddNode(cons, cNode)
 		} else {
 			return nil, derr
 		}
 
 		g.Edges = append(g.Edges, types.DependencyGraphEdge{
-			Consumer: cResolved,
-			Provider: resolved,
+			Consumer: cons,
+			Provider: ref,
 			Name:     e.Name,
 			Type:     types.AssetDependencySource,
 			RefSpec:  e.RefSpec,
@@ -212,6 +212,8 @@ func GetDependents(
 	if cache == nil {
 		cache = newGraphCache()
 	}
+	if stale {
+	}
 	if cache.Reverse == nil {
 		cache.Reverse = make(map[string]*types.DepGraph)
 	}
@@ -219,7 +221,8 @@ func GetDependents(
 	if err := fsutil.NewJSONHandlerFromPath(cachePath, cache).Write(); err != nil {
 		return nil, newErrDBInternal(err, "could not write reverse graph to dep cache")
 	}
-	_ = os.Remove(markerPath) // best-effort clear
+	if stale {
+	}
 	return g, nil
 }
 
@@ -285,12 +288,11 @@ func markerExists(path string) bool {
 	return err == nil
 }
 
-func pathReverseStale(repoPath, assetUID, objectPath string) string {
+func pathReverseStale(repoPath, assetUID string) string {
 	return fsutil.PathOS(
 		repoPath,
 		".vit", "cache", "depgraph",
 		assetUID[:2], assetUID[2:]+".reverse_stale",
-		url.QueryEscape(objectPath),
 	)
 }
 

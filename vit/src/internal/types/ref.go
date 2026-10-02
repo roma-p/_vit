@@ -171,6 +171,10 @@ func NewRefEmpty(repoPath, assetPath string) *Ref {
 	}
 }
 
+func (r *Ref) IsMutable() bool {
+	return r.RefType == RefTypeBranch || (r.RefType == RefTypeTag && r.TagName == "")
+}
+
 func (r *Ref) ObjectPath() string {
 	var refPath string
 
