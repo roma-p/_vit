@@ -46,7 +46,7 @@ func TestSourceAdd_transitiveClosureNested(t *testing.T) {
 
 	must(env.SourceAdd(ctx, env.branchRef("assets/anim"), env.branchRef("assets/rig"), "rig"))
 	env.editFile(filepath.Join(animBranch, "anim.ma"), "ANIM-v2")
-	must(env.Commit(ctx, env.branchRef("assets/anim"), "publish anim with rig"))
+	must(env.Snapshot(ctx, env.branchRef("assets/anim"), "publish anim with rig"))
 	must(env.SourceAdd(ctx, env.branchRef("assets/lgt"), env.branchRef("assets/anim"), "anim"))
 
 	testutils.AssertEqual(t, env.read(filepath.Join(lgt, "anim", "anim.ma")), "ANIM-v2")
@@ -79,7 +79,7 @@ func TestSourceAdd_cycleRejected(t *testing.T) {
 
 	must(env.SourceAdd(ctx, env.branchRef("assets/a"), env.branchRef("assets/b"), "b"))
 	env.editFile(filepath.Join(aBranch, "a.ma"), "A-v2")
-	must(env.Commit(ctx, env.branchRef("assets/a"), "publish a->b"))
+	must(env.Snapshot(ctx, env.branchRef("assets/a"), "publish a->b"))
 
 	_, err := env.SourceAdd(ctx, env.branchRef("assets/b"), env.branchRef("assets/a"), "a")
 	assertErrCode(t, err, types.ErrCircularDependency)

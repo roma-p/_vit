@@ -16,7 +16,7 @@ func TestSourcePull_updatesPinAfterHeadMoves(t *testing.T) {
 	testutils.AssertEqual(t, env.read(filepath.Join(lgt, "model", "m.ma")), "M1")
 
 	env.editFile(filepath.Join(modelB, "m.ma"), "M2")
-	must(env.Commit(ctx, env.branchRef("assets/model"), "model v2"))
+	must(env.Snapshot(ctx, env.branchRef("assets/model"), "model v2"))
 
 	testutils.AssertEqual(t, env.read(filepath.Join(lgt, "model", "m.ma")), "M1")
 

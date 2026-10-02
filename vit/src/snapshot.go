@@ -13,11 +13,11 @@ import (
 	"vit/internal/workspace"
 )
 
-func (c *Client) Commit(ctx context.Context, path, message string) (*types.StringResult, error) {
+func (c *Client) Snapshot(ctx context.Context, path, message string) (*types.StringResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, types.NewCancelledError(err)
 	}
-	c.logger.Info("Commit", "path", path, "message", message) // maybe user?
+	c.logger.Info("Snapshot", "path", path, "message", message) // maybe user?
 
 	presenter, err := workspace.ResolvePresenter(ctx, c.logger)
 	if err != nil {
@@ -205,7 +205,7 @@ func (o *operationCommit) Finish(
 func newNothingToCommitErr(ref *types.Ref) error {
 	return types.NewVitError(
 		types.ErrNoChangeToCommit,
-		[]string{fmt.Sprintf("no change to commit at: %s", ref.RelativePath())},
+		[]string{fmt.Sprintf("no change to snapshot at: %s", ref.RelativePath())},
 		[]any{"ref", ref},
 	)
 }

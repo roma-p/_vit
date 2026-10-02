@@ -31,8 +31,8 @@ func genWorkspacePathForBranch(assetPath, branch string) string {
 func genWorkspacePathForCommit(assetPath, date, srcBranchName, user string) string {
 	return fsutil.PathInternal(
 		assetPath,
-		"commits",
-		"commit-"+srcBranchName+"-"+date+"-"+user+"-"+fsutil.GenerateUID(2),
+		"snapshots",
+		"snapshot-"+srcBranchName+"-"+date+"-"+user+"-"+fsutil.GenerateUID(2),
 	)
 }
 

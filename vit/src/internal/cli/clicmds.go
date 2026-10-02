@@ -35,11 +35,11 @@ var cmdDefinition = clicore.CmdTree{
 			ArgParser:   buildStatusArgParser(),
 			ResultType:  types.StatusResult{},
 		},
-		"commit": {
-			Name:        "Commit",
-			Description: "Commit a given branch if there is change to commit",
-			Run:         runCommit,
-			ArgParser:   buildCommitArgParser(),
+		"snapshot": {
+			Name:        "Snapshot",
+			Description: "Snapshot a given branch if there is change to snapshot",
+			Run:         runSnapshot,
+			ArgParser:   buildSnapshotArgParser(),
 			ResultType:  types.StringResult{},
 		},
 		"tag": {

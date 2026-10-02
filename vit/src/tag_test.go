@@ -65,7 +65,7 @@ func TestTag_commitSourceByWorkspacePath(t *testing.T) {
 	env := newVitEnv(t)
 	branchPath := must(env.Add(ctx, env.abs("props/table"), env.fileSrc("a.txt", "AAA"))).String
 	env.editFile(filepath.Join(branchPath, "a.txt"), "WWW")
-	commitPath := must(env.Commit(ctx, branchPath, "edit")).String
+	commitPath := must(env.Snapshot(ctx, branchPath, "edit")).String
 
 	tagPath := must(env.Tag(ctx, commitPath, "review", "from commit")).String
 	testutils.AssertEqual(t, filepath.Base(tagPath), "review-001")

@@ -23,7 +23,7 @@ func TestSourcePush_updatesAllLiveConsumers(t *testing.T) {
 	}
 
 	env.editFile(filepath.Join(rigB, "rig.ma"), "rig v2")
-	must(env.Commit(ctx, env.branchRef("asset/rig"), "rig v2"))
+	must(env.Snapshot(ctx, env.branchRef("asset/rig"), "rig v2"))
 	must(env.Tag(ctx, env.branchRef("asset/rig"), "approved", "rig v2 approved"))
 
 	testutils.AssertEqual(t, env.read(filepath.Join(animB["shot0010"], "rig", "rig.ma")), "rig v1")
