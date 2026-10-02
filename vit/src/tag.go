@@ -257,7 +257,13 @@ func (o *operationTag) Finish(
 		o.oc.Finish(ctx, opctx, dbClient, logger, p)
 	}
 
-	var err error
+	if err := db.UpdateDepGraphForTag(ctx, opctx, dbClient, o.outputRef); err != nil {
+		logger.Log(ctx, slog.LevelError, "tag: dep graph update failed", "err", err)
+	}
+	g, err := db.GetDependencies(ctx, opctx, dbClient, o.outputRef)
+	if err != nil {
+		logger.Log(ctx, slog.LevelError, "tag: dep graph read failed", "err", err)
+	}
 
 	o.TagWorkspacePath, err = workspace.PresentTag(
 		ctx,
@@ -266,12 +272,9 @@ func (o *operationTag) Finish(
 		o.outputRef,
 		p,
 		o.contentNode,
+		g,
 	)
 	if err != nil {
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
-	}
-
-	if err := db.UpdateDepGraphForTag(ctx, opctx, dbClient, o.outputRef); err != nil {
-		logger.Log(ctx, slog.LevelError, "tag: dep graph update failed", "err", err)
 	}
 }

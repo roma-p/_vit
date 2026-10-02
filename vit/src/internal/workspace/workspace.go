@@ -52,6 +52,7 @@ func PresentCommit(
 	srcBranchName, user, commitDate string,
 	p Presenter,
 	rootContentNode *types.ContentNode,
+	sourceGraph *types.DepGraph,
 ) (string, error) {
 	ref.AssertTypeOfRef(types.RefTypeCommit)
 	ret := fsutil.PathOS(
@@ -69,6 +70,15 @@ func PresentCommit(
 			err,
 			fmt.Sprintf("failed to present commit to workspace: %s", ref.AssetPath),
 		)
+	}
+
+	if sourceGraph != nil {
+		if err := presentSourcesRecc(ctx, ref.RepoPath, ret, sourceGraph, ref, p); err != nil {
+			return "", newErrWorkspaceInternal(
+				err,
+				fmt.Sprintf("failed to present commit sources: %s", ref.AssetPath),
+			)
+		}
 	}
 	if err := p.Seal(ctx, ret); err != nil {
 		return "", newErrWorkspaceInternal(
@@ -89,6 +99,7 @@ func PresentTag(
 	ref *types.Ref,
 	p Presenter,
 	rootContentNode *types.ContentNode,
+	sourceGraph *types.DepGraph,
 ) (string, error) {
 	ref.AssertTypeOfRef(types.RefTypeTag)
 	ret := fsutil.PathOS(repoPath, RefToWorkspacePath(ref))
@@ -104,6 +115,15 @@ func PresentTag(
 			err,
 			fmt.Sprintf("failed to present tag to workspace: %s", ref.RelativePath()),
 		)
+	}
+
+	if sourceGraph != nil {
+		if err := presentSourcesRecc(ctx, repoPath, ret, sourceGraph, ref, p); err != nil {
+			return "", newErrWorkspaceInternal(
+				err,
+				fmt.Sprintf("failed to present tag sources: %s", ref.RelativePath()),
+			)
+		}
 	}
 	if err := p.Seal(ctx, ret); err != nil {
 		return "", newErrWorkspaceInternal(

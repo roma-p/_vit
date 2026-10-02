@@ -20,7 +20,7 @@ func (c *Client) SourcePull(
 	ctx context.Context,
 	path string,
 	sourceNames []string,
-) (*types.SourceUpdateResult, error) {
+) (*types.SourcePullResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, types.NewCancelledError(err)
 	}
@@ -74,7 +74,7 @@ func (c *Client) SourcePull(
 		return nil, err
 	}
 
-	return &types.SourceUpdateResult{
+	return &types.SourcePullResult{
 		Consumer: op.RefConsumer,
 		Updates:  op.Updates,
 	}, nil

@@ -89,12 +89,12 @@ func (c *StatusResult) ToStringSlice() []string {
 
 // Source Update Result ------------------------------------------------------
 
-type SourceUpdateResult struct {
+type SourcePullResult struct {
 	Consumer *Ref
 	Updates  []SourceUpdate
 }
 
-func (r *SourceUpdateResult) ToStringSlice() []string {
+func (r *SourcePullResult) ToStringSlice() []string {
 	if len(r.Updates) == 0 {
 		return []string{fmt.Sprintf("No source update done on: %s", r.Consumer.RelativePath())}
 	}
@@ -107,6 +107,28 @@ func (r *SourceUpdateResult) ToStringSlice() []string {
 			u.OldTarget.RelativePath(),
 			u.NewTarget.RelativePath(),
 		))
+	}
+	return ret
+}
+
+type SourcePushResult struct {
+	Producer  *Ref
+	Consumers []SourcePullResult
+}
+
+func (r *SourcePushResult) ToStringSlice() []string {
+	var moved int
+	for _, c := range r.Consumers {
+		if len(c.Updates) > 0 {
+			moved++
+		}
+	}
+	if moved == 0 {
+		return []string{fmt.Sprintf("push %s: no consumer updated", r.Producer.RelativePath())}
+	}
+	ret := []string{fmt.Sprintf("push %s -> %d consumer(s) updated:", r.Producer.RelativePath(), moved)}
+	for _, c := range r.Consumers {
+		ret = append(ret, c.ToStringSlice()...)
 	}
 	return ret
 }

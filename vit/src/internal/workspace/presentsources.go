@@ -9,8 +9,8 @@ import (
 	"vit/internal/types"
 )
 
-// PresentSources materializes an object's dependency closure into its workspace.
-// Sources are readonly. The consumer's workspace path is derived from root.
+// PresentSources materializes an object's dependency closure into its workspace reccursively
+// Sources are made readonly. The consumer's workspace path is derived from root.
 func PresentSources(
 	ctx context.Context,
 	g *types.DepGraph,
@@ -25,7 +25,7 @@ func PresentSources(
 	}
 	for i := range g.Edges {
 		e := g.Edges[i]
-		if e.Type != types.AssetDependencySource || *e.Consumer != *root {
+		if e.Type != types.AssetDependencySource || !sameObject(e.Consumer, root) {
 			continue
 		}
 		if err := p.Seal(ctx, fsutil.PathOS(consumerWorkspacePath, e.Name)); err != nil {
@@ -33,6 +33,10 @@ func PresentSources(
 		}
 	}
 	return nil
+}
+
+func sameObject(a, b *types.Ref) bool {
+	return a.RepoUID == b.RepoUID && a.AssetPath == b.AssetPath && a.ObjectPath() == b.ObjectPath()
 }
 
 // -- FILE LOCAL -------------------------------------------------------------
@@ -46,7 +50,8 @@ func presentSourcesRecc(
 ) error {
 	for i := range g.Edges {
 		e := g.Edges[i]
-		if e.Type != types.AssetDependencySource || *e.Consumer != *current {
+
+		if e.Type != types.AssetDependencySource || !sameObject(e.Consumer, current) {
 			continue
 		}
 

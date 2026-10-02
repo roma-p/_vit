@@ -218,6 +218,7 @@ func (o *operationAdd) Finish(
 		types.FormatTimestampLocal(opctx.TimeStamp),
 		p,
 		o.contentNode,
+		nil,
 	); err != nil {
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
 	}
