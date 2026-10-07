@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"vit/internal/blob"
@@ -9,8 +10,6 @@ import (
 	"vit/internal/types"
 )
 
-// PresentSources materializes an object's dependency closure into its workspace reccursively
-// Sources are made readonly. The consumer's workspace path is derived from root.
 func PresentSources(
 	ctx context.Context,
 	g *types.DepGraph,
@@ -18,7 +17,17 @@ func PresentSources(
 	p Presenter,
 ) error {
 	repoPath := root.RepoPath
-	consumerWorkspacePath := fsutil.PathOS(repoPath, RefToWorkspacePath(root))
+	rel, ok, err := ResolveWorkspacePathFromRef(repoPath, root)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return newErrWorkspaceInternal(
+			fmt.Errorf("consumer not presented: %s", root.RelativePath()),
+			"present sources: consumer has no pointer",
+		)
+	}
+	consumerWorkspacePath := fsutil.PathOS(repoPath, rel)
 
 	if err := presentSourcesRecc(ctx, repoPath, consumerWorkspacePath, g, root, p); err != nil {
 		return err

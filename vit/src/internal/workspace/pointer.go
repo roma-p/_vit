@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"vit/internal/fsutil"
 	"vit/internal/opcontext"
@@ -80,6 +81,55 @@ func ResolveRefFromPath(
 		return &ref, nil
 	}
 	return nil, NewErrUntrackedFile(path)
+}
+
+// ResolveWorkspacePathFromRef finds where a ref is materialized by scanning its
+// asset's pointer files and matching the recorded ref.
+func ResolveWorkspacePathFromRef(repoPath string, ref *types.Ref) (string, bool, error) {
+	var kind string
+	switch ref.RefType {
+	case types.RefTypeBranch:
+		kind = "branches"
+	case types.RefTypeCommit:
+		kind = "snapshots"
+	case types.RefTypeTag:
+		kind = "tags"
+	default:
+		return "", false, nil
+	}
+	base := fsutil.PathOS(repoPath, ".vit", "workspace", "pointers",
+		fsutil.PathInternal(ref.AssetPath, kind))
+	return scanPointersForRef(base, ref)
+}
+
+func scanPointersForRef(dir string, ref *types.Ref) (string, bool, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, newErrWorkspaceInternal(err, "pointer: scan failed for "+dir)
+	}
+	for _, e := range entries {
+		full := fsutil.PathOS(dir, e.Name())
+		if e.IsDir() { // tags nest by family
+			if p, ok, err := scanPointersForRef(full, ref); err != nil || ok {
+				return p, ok, err
+			}
+			continue
+		}
+		if !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		h, err := fsutil.NewJSONHandlerFromFile[Pointer](full)
+		if err != nil {
+			continue // tolerate a corrupt/partial pointer
+		}
+		if sameObject(&h.Data.Ref, ref) {
+			return h.Data.WorkspacePath, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 func RemovePointer(repoPath, wsPath string) error {

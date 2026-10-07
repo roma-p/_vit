@@ -2,7 +2,6 @@ package vit
 
 import (
 	"context"
-	"os"
 
 	"vit/internal/blob"
 	"vit/internal/db"
@@ -72,13 +71,14 @@ func resolveChangeRecord(
 	ctx context.Context,
 	request resolveChangeRecordRequest,
 ) (*resolveChangeRecordResult, error) {
-	workspacePath := fsutil.PathOS(
-		request.BranchRef.RepoPath,
-		workspace.RefToWorkspacePath(request.BranchRef),
-	)
-	if _, err := os.Stat(workspacePath); err != nil {
+	rel, ok, err := workspace.ResolveWorkspacePathFromRef(request.BranchRef.RepoPath, request.BranchRef)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, workspace.NewErrUntrackedFile(request.BranchRef.RelativePath())
 	}
+	workspacePath := fsutil.PathOS(request.BranchRef.RepoPath, rel)
 
 	jsonAsset, err := request.DBClient.GetJSONAssetFromRef(
 		ctx,
