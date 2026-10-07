@@ -53,6 +53,7 @@ func CommitBranch(r CommitBranchRequest) (string, error) {
 		Parent:       branchCommit.Parent,
 		Timestamp:    r.TimeStamp,
 		Dependencies: *deepCopyDependencies(&branchCommit.Dependencies),
+		IsSnapshot:   r.IsSnapshot,
 	}
 
 	newCommitID, err := addCommit(r.Asset, ret)
@@ -72,6 +73,7 @@ type CommitBranchRequest struct {
 	Site               string
 	Message            string
 	TimeStamp          time.Time
+	IsSnapshot         bool
 	// TODO dependancies
 }
 
@@ -171,8 +173,16 @@ func ResolveCommitForDependency(a *types.Asset, ref *types.Ref) (*types.Ref, str
 	switch ref.RefType {
 	// if ref is commit: just check commit exists and returns its input.
 	case types.RefTypeCommit:
-		commitID = ref.CommitID
-		outRef = types.NewRefCommit(ref.RepoRef(), ref.AssetPath, ref.CommitID)
+		if ref.CommitID == "" && ref.SnapshotKey != "" {
+			id, err := resolveSnapshotKey(a, ref.SnapshotKey)
+			if err != nil {
+				return nil, "", err
+			}
+			commitID = id
+		} else {
+			commitID = ref.CommitID
+		}
+		outRef = types.NewRefCommit(ref.RepoRef(), ref.AssetPath, commitID)
 
 	// if ref is tag: outRef is the non floating tag ref, commitID is the underlying commit.
 	case types.RefTypeTag:
@@ -309,12 +319,13 @@ func initAsset(
 	baselineTimeStamp time.Time,
 ) error {
 	commitFirst := types.AssetCommit{
-		Site:      opctx.RepoRefFor(asset.RepoUID).Site,
-		Author:    opctx.User,
-		Message:   "Asset creation",
-		Timestamp: opctx.TimeStamp,
-		Parent:    "",
-		Content:   contentRootHash,
+		Site:       opctx.RepoRefFor(asset.RepoUID).Site,
+		Author:     opctx.User,
+		Message:    "Asset creation",
+		Timestamp:  opctx.TimeStamp,
+		Parent:     "",
+		Content:    contentRootHash,
+		IsSnapshot: true, // the add baseline is the asset's first snapshot
 	}
 
 	commitID, err := addCommit(asset, &commitFirst)
@@ -335,6 +346,31 @@ func initAsset(
 	}
 
 	return nil
+}
+
+func resolveSnapshotKey(a *types.Asset, key string) (string, error) {
+	var matches []string
+	for id, c := range a.Commits {
+		if c.IsSnapshot && c.SnapshotKey(id) == key {
+			matches = append(matches, id)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", types.NewVitError(
+			types.ErrInvalidRef,
+			[]string{"no snapshot matches: " + key},
+			[]any{"snapshot", key},
+		)
+	default:
+		return "", types.NewVitError(
+			types.ErrInvalidRef,
+			[]string{"ambiguous snapshot (more than one at that timestamp): " + key},
+			[]any{"snapshot", key, "count", len(matches)},
+		)
+	}
 }
 
 // -- FILE LOCAL -------------------------------------------------------------

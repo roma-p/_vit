@@ -28,11 +28,11 @@ func genWorkspacePathForBranch(assetPath, branch string) string {
 	)
 }
 
-func genWorkspacePathForCommit(assetPath, date, srcBranchName, user string) string {
+func genWorkspacePathForCommit(assetPath, date, srcBranchName, user, commitID string) string {
 	return fsutil.PathInternal(
 		assetPath,
 		"snapshots",
-		"snapshot-"+srcBranchName+"-"+date+"-"+user+"-"+fsutil.GenerateUID(2),
+		"snapshot-"+srcBranchName+"-"+types.SnapshotKeyFrom(date, user, commitID),
 	)
 }
 

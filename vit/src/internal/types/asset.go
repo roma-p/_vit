@@ -41,6 +41,25 @@ type AssetCommit struct {
 	Message      string            `json:"message"`
 	Parent       string            `json:"parent"`
 	Dependencies AssetDependencies `json:"dependencies,omitempty"`
+
+	// IsSnapshot marks a user snapshot:
+	//	- the `add` baseline (first snapshot)
+	//  - every `vit snapshot`.
+	IsSnapshot bool `json:"is_snapshot,omitempty"`
+}
+
+const snapshotIDLen = 4
+
+func (c *AssetCommit) SnapshotKey(commitID string) string {
+	return SnapshotKeyFrom(FormatTimestampLocal(c.Timestamp), c.Author, commitID)
+}
+
+func SnapshotKeyFrom(dateStr, author, commitID string) string {
+	id := commitID
+	if len(id) > snapshotIDLen {
+		id = id[:snapshotIDLen]
+	}
+	return dateStr + "-" + author + "-" + id
 }
 
 type AssetDependencies = map[string]*AssetDependency

@@ -45,8 +45,9 @@ func (c *Client) Snapshot(ctx context.Context, path, message string) (*types.Str
 		defer dbClient.Close()
 
 		op := &operationCommit{
-			Ref:     ref,
-			Message: message,
+			Ref:        ref,
+			Message:    message,
+			IsSnapshot: true, // explicit `vit snapshot` → a user snapshot
 		}
 
 		if err := transaction.RunEdit(
@@ -80,8 +81,9 @@ func (c *Client) Snapshot(ctx context.Context, path, message string) (*types.Str
 
 type operationCommit struct {
 	// input given at init
-	Ref     *types.Ref
-	Message string
+	Ref        *types.Ref
+	Message    string
+	IsSnapshot bool // true via Client.Snapshot; false when reused by Tag
 
 	// filled at validate
 	changeRecord     *types.ChangeRecord
@@ -164,6 +166,7 @@ func (o *operationCommit) DBUpdate(
 			Site:               opctx.RepoRefFor(o.Ref.RepoUID).Site,
 			Message:            o.Message,
 			TimeStamp:          opctx.TimeStamp,
+			IsSnapshot:         o.IsSnapshot,
 		},
 	)
 	return err

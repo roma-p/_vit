@@ -13,6 +13,9 @@ import (
 // or a tag (named release marker, optionally floating if only tagFamily
 // is defined and not tagName).
 //
+// A commit ref cn be epxressed through a "snapshot" path, meant for users to
+// find commit more easily than having to know a commit id.
+//
 // The Ref also always include the root path of its vit repository
 // Vit shall support cross repository linking, so the repo path might differs
 // from one another.
@@ -31,6 +34,7 @@ import (
 //	                         /path/repo/assets/mod  @tag=release
 //	                         /path/repo/assets/mod  @tag=release@name=12
 //	                         /path/repo/assets/mod  @commit=ad12b8
+//	                         /path/repo/assets/mod  @snapshot=2026-10-05T11-18-15-user1-e11a
 //
 // a ref can be stringified using either:
 //   - Absolute path: <repo path>/<asset path>@<object path>
@@ -55,6 +59,9 @@ type Ref struct {
 
 	// Commit Data
 	CommitID string `json:"commit_id,omitempty"`
+	// HR form of a commit which is was snapshot (@snapshot=<ts>-<user>),
+	// format is : @snapshot=<ts>-<user>-<four first charac of commit id>
+	SnapshotKey string `json:"-"`
 }
 
 type RefType string
@@ -128,8 +135,12 @@ func NewRefFromPath(repoPath, refPath string) (*Ref, error) {
 	if !found {
 		return nil, newErrInvalidRef(refPath)
 	}
-
+	snapshot := refTypeStr == "snapshot"
 	refType := RefType(refTypeStr)
+	if snapshot {
+		refType = RefTypeCommit
+	}
+
 	switch refType {
 	case RefTypeBranch, RefTypeTag, RefTypeCommit:
 	default:
@@ -146,10 +157,13 @@ func NewRefFromPath(repoPath, refPath string) (*Ref, error) {
 	case RefTypeBranch:
 		ret.BranchName = tmp
 	case RefTypeCommit:
-		ret.CommitID = tmp
+		if snapshot {
+			ret.SnapshotKey = tmp
+		} else {
+			ret.CommitID = tmp
+		}
 	case RefTypeTag:
-		// TODO(site): does NOT parse @site= yet (canonical form:
-		// @tag=family@site=X@name=NNN).
+		// TODO(site): does NOT parse @site= yet
 		tagfamily, tmp2, found := strings.Cut(tmp, "@")
 		if !found {
 			ret.TagFamily = tmp
@@ -193,6 +207,13 @@ func (r *Ref) ObjectPath() string {
 		}
 	}
 	return refPath
+}
+
+func (r *Ref) SnapshotPath() string {
+	if r.SnapshotKey != "" {
+		return r.AssetPath + "@snapshot=" + r.SnapshotKey
+	}
+	return r.RelativePath()
 }
 
 func (r *Ref) RepoRef() *RepoRef {

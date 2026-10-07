@@ -57,7 +57,7 @@ func PresentCommit(
 	ref.AssertTypeOfRef(types.RefTypeCommit)
 	ret := fsutil.PathOS(
 		ref.RepoPath,
-		genWorkspacePathForCommit(ref.AssetPath, commitDate, srcBranchName, user))
+		genWorkspacePathForCommit(ref.AssetPath, commitDate, srcBranchName, user, ref.CommitID))
 	if err := presentFromContentNode(
 		ctx,
 		rootContentNode,
