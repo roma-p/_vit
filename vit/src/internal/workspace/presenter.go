@@ -18,6 +18,8 @@ type Presenter interface {
 	// Present links/creates one entry.
 	Present(ctx context.Context, blobPath, workspacePath string, isDir, readOnly bool) error
 
+	Alias(ctx context.Context, targetWorkspacePath, linkWorkspacePath string) error
+
 	// Seal finalizes an immutable presentation: make every files / dir readOnly
 	Seal(ctx context.Context, root string) error
 }

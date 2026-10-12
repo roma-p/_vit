@@ -24,12 +24,16 @@ func NewDirStatFromDir(ctx context.Context, path string, skipRootDirs ...string)
 			return err
 		}
 
-		if d.IsDir() {
-			if len(skipRootDirs) > 0 {
-				if rel, rerr := RelInternal(path, p); rerr == nil && slices.Contains(skipRootDirs, rel) {
+		if len(skipRootDirs) > 0 {
+			if rel, rerr := RelInternal(path, p); rerr == nil && slices.Contains(skipRootDirs, rel) {
+				if d.IsDir() {
 					return filepath.SkipDir
 				}
+				return nil
 			}
+		}
+
+		if d.IsDir() {
 			return nil
 		}
 

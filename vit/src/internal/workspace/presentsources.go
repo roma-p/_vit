@@ -3,9 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
-	"os"
 
-	"vit/internal/blob"
 	"vit/internal/fsutil"
 	"vit/internal/types"
 )
@@ -27,21 +25,7 @@ func PresentSources(
 			"present sources: consumer has no pointer",
 		)
 	}
-	consumerWorkspacePath := fsutil.PathOS(repoPath, rel)
-
-	if err := presentSourcesRecc(ctx, repoPath, consumerWorkspacePath, g, root, p); err != nil {
-		return err
-	}
-	for i := range g.Edges {
-		e := g.Edges[i]
-		if e.Type != types.AssetDependencySource || !sameObject(e.Consumer, root) {
-			continue
-		}
-		if err := p.Seal(ctx, fsutil.PathOS(consumerWorkspacePath, e.Name)); err != nil {
-			return err
-		}
-	}
-	return nil
+	return aliasSources(ctx, repoPath, fsutil.PathOS(repoPath, rel), g, root, p)
 }
 
 func sameObject(a, b *types.Ref) bool {
@@ -50,7 +34,7 @@ func sameObject(a, b *types.Ref) bool {
 
 // -- FILE LOCAL -------------------------------------------------------------
 
-func presentSourcesRecc(
+func aliasSources(
 	ctx context.Context,
 	repoPath, currentWorkspacePath string,
 	g *types.DepGraph,
@@ -59,74 +43,31 @@ func presentSourcesRecc(
 ) error {
 	for i := range g.Edges {
 		e := g.Edges[i]
-
 		if e.Type != types.AssetDependencySource || !sameObject(e.Consumer, current) {
 			continue
 		}
 
 		target := e.Provider
-		node, ok := lookupNode(g, target)
-		if !ok {
-			continue
+		sourceWorkspacePath := fsutil.PathOS(currentWorkspacePath, e.Name)
+
+		if err := p.Unpresent(sourceWorkspacePath); err != nil {
+			return err
 		}
 
-		targetRepo := target.RepoPath
-		if targetRepo == "" {
-			targetRepo = repoPath // local fallback
-		}
-		contentNode, err := blob.LoadContentTree(targetRepo, target.AssetPath, node.PayloadFile)
+		rel, ok, err := ResolveWorkspacePathFromRef(repoPath, target)
 		if err != nil {
 			return err
 		}
-
-		sourceWorkspacePath := fsutil.PathOS(currentWorkspacePath, e.Name)
-		if _, err := os.Lstat(sourceWorkspacePath); err == nil {
-			_ = makeTreeWritable(sourceWorkspacePath)
-			_ = os.RemoveAll(sourceWorkspacePath)
+		if !ok {
+			// TODO: later.
+			return newErrWorkspaceInternal(
+				fmt.Errorf("source provider not presented: %s", target.RelativePath()),
+				"present sources: cannot alias a provider that has no presentation",
+			)
 		}
-
-		if err := presentFromContentNode(
-			ctx, contentNode, targetRepo, sourceWorkspacePath, true, p,
-		); err != nil {
-			return err
-		}
-
-		if err := presentSourcesRecc(
-			ctx, repoPath, sourceWorkspacePath, g, target, p,
-		); err != nil {
+		if err := p.Alias(ctx, fsutil.PathOS(repoPath, rel), sourceWorkspacePath); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func makeTreeWritable(dir string) error {
-	if err := fsutil.MakeDirectoryWritable(dir); err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			if err := makeTreeWritable(fsutil.PathOS(dir, e.Name())); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func lookupNode(g *types.DepGraph, ref *types.Ref) (types.DepGraphNode, bool) {
-	byAsset, ok := g.Nodes[ref.RepoUID]
-	if !ok {
-		return types.DepGraphNode{}, false
-	}
-	byObject, ok := byAsset[ref.AssetPath]
-	if !ok {
-		return types.DepGraphNode{}, false
-	}
-	n, ok := byObject[ref.ObjectPath()]
-	return n, ok
 }

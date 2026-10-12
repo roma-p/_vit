@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"os"
+	"path/filepath"
 
 	"vit/internal/fsutil"
 )
@@ -11,6 +12,7 @@ import (
 // Creates hardlinks from workspace to blobs, providing zero-copy presentation.
 // As we can't hardlinks directories, directories are created by the HardlinkPresenter
 // and make them readonly.
+// Sources and products are simlinked to their workspace target
 //
 // Requirements:
 // - Workspace and .vit/blob/ must be on the same filesystem
@@ -65,7 +67,25 @@ func (p *HardlinkPresenter) Present(
 	return nil
 }
 
+func (p *HardlinkPresenter) Alias(ctx context.Context, target, link string) error {
+	if err := os.MkdirAll(fsutil.DirOS(link), 0o755); err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(fsutil.DirOS(link), target)
+	if err != nil {
+		return err
+	}
+	return os.Symlink(rel, link)
+}
+
 func (p *HardlinkPresenter) Seal(ctx context.Context, root string) error {
+	fi, err := os.Lstat(root)
+	if err != nil {
+		return err
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return nil
+	}
 	return sealDirsPostOrder(root)
 }
 
@@ -75,6 +95,9 @@ func sealDirsPostOrder(dir string) error {
 		return err
 	}
 	for _, e := range entries {
+		if e.Type()&os.ModeSymlink != 0 {
+			continue
+		}
 		if e.IsDir() {
 			if err := sealDirsPostOrder(fsutil.PathOS(dir, e.Name())); err != nil {
 				return err
@@ -84,10 +107,43 @@ func sealDirsPostOrder(dir string) error {
 	return fsutil.MakeDirectoryReadOnly(dir)
 }
 
+// Unpresent removes whatever is presented at workspacePath — a file, an alias
+// (symlink), or a whole hardlink subtree — making it writable first. A symlink is
+// removed as a link, never followed.
 func (p *HardlinkPresenter) Unpresent(workspacePath string) error {
 	parent := fsutil.DirOS(workspacePath)
-	if err := fsutil.MakeDirectoryWritable(parent); err != nil {
+	if err := fsutil.MakeDirectoryWritable(parent); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return os.Remove(workspacePath)
+	fi, err := os.Lstat(workspacePath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if fi.Mode()&os.ModeSymlink == 0 && fi.IsDir() {
+		if err := makeTreeWritable(workspacePath); err != nil {
+			return err
+		}
+	}
+	return os.RemoveAll(workspacePath)
+}
+
+func makeTreeWritable(dir string) error {
+	if err := fsutil.MakeDirectoryWritable(dir); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			if err := makeTreeWritable(fsutil.PathOS(dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

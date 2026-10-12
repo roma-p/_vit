@@ -73,7 +73,7 @@ func PresentCommit(
 	}
 
 	if sourceGraph != nil {
-		if err := presentSourcesRecc(ctx, ref.RepoPath, ret, sourceGraph, ref, p); err != nil {
+		if err := aliasSources(ctx, ref.RepoPath, ret, sourceGraph, ref, p); err != nil {
 			return "", newErrWorkspaceInternal(
 				err,
 				fmt.Sprintf("failed to present commit sources: %s", ref.AssetPath),
@@ -118,7 +118,7 @@ func PresentTag(
 	}
 
 	if sourceGraph != nil {
-		if err := presentSourcesRecc(ctx, repoPath, ret, sourceGraph, ref, p); err != nil {
+		if err := aliasSources(ctx, repoPath, ret, sourceGraph, ref, p); err != nil {
 			return "", newErrWorkspaceInternal(
 				err,
 				fmt.Sprintf("failed to present tag sources: %s", ref.RelativePath()),
