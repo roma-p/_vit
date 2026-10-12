@@ -35,6 +35,13 @@ var cmdDefinition = clicore.CmdTree{
 			ArgParser:   buildStatusArgParser(),
 			ResultType:  types.StatusResult{},
 		},
+		"ls": {
+			Name:        "Ls",
+			Description: "List a directory's children, an asset's branches/tags, or an object's details + sources",
+			Run:         runLs,
+			ArgParser:   buildLsArgParser(),
+			ResultType:  types.LsResult{},
+		},
 		"snapshot": {
 			Name:        "Snapshot",
 			Description: "Snapshot a given branch if there is change to snapshot",
