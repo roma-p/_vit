@@ -2,7 +2,9 @@ package vit
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"vit/internal/db"
 	"vit/internal/opcontext"
@@ -93,6 +95,7 @@ func (c *Client) SourcePush(
 					User:      opctx.User,
 					RepoPath:  opctx.RepoPath(),
 					Timestamp: opctx.TimeStamp,
+					Ref:       producer, // history subject = the producer, not a consumer
 				},
 				refs, transaction.TransactionBranch,
 			)
@@ -115,6 +118,21 @@ func (c *Client) SourcePush(
 type operationSourcePush struct {
 	Producer *types.Ref
 	subOps   []*operationSourcePull
+}
+
+// HistorySummary: "N update(s) → M consumer(s): <consumer refs>".
+func (o *operationSourcePush) HistorySummary() string {
+	if len(o.subOps) == 0 {
+		return "no live consumers"
+	}
+	names := make([]string, 0, len(o.subOps))
+	updates := 0
+	for _, s := range o.subOps {
+		names = append(names, s.RefConsumer.RelativePath())
+		updates += len(s.Updates)
+	}
+	return fmt.Sprintf("%d update(s) → %d consumer(s): %s",
+		updates, len(o.subOps), strings.Join(names, ", "))
 }
 
 func (o *operationSourcePush) Validate(

@@ -71,6 +71,7 @@ func (c *Client) Tag(ctx context.Context, path, tagfamily, message string) (*typ
 				User:      opctx.User,
 				RepoPath:  opctx.RepoPath(),
 				Timestamp: opctx.TimeStamp,
+				Message:   message,
 			},
 			[]*types.Ref{ref}, tt,
 		); err != nil {

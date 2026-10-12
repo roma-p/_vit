@@ -9,6 +9,7 @@ import (
 	"vit/internal/blob"
 	"vit/internal/db"
 	"vit/internal/fsutil"
+	"vit/internal/history"
 	"vit/internal/opcontext"
 	"vit/internal/types"
 	"vit/internal/workspace"
@@ -55,6 +56,9 @@ type Request struct {
 	User      string
 	RepoPath  string
 	Timestamp time.Time
+
+	Ref     *types.Ref
+	Message string
 }
 
 // -- FILE LOCAL -------------------------------------------------------------
@@ -65,7 +69,7 @@ func run(
 	extraValidate func() error,
 	tids []TransactionID,
 ) error {
-	return withTransaction(ctx, r.RepoPath, tids, r.Command, r.User, r.Timestamp,
+	err := withTransaction(ctx, r.RepoPath, tids, r.Command, r.User, r.Timestamp,
 		func() error {
 			// 1. domain validate (conflict scan) first, then operation validate.
 			if err := extraValidate(); err != nil {
@@ -106,6 +110,43 @@ func run(
 			return nil
 		},
 	)
+	if err != nil {
+		return err
+	}
+
+	// 6. Record the operation in the activity log — after a successful flush,
+	//    outside the repo transaction lock, best-effort
+	recordHistory(ctx, r, tids)
+	return nil
+}
+
+// historyDescriber is optionally implemented by operations that want to add a
+// command-specific summary to their activity-log entry.
+type historyDescriber interface {
+	HistorySummary() string
+}
+
+func recordHistory(ctx context.Context, r Request, tids []TransactionID) {
+	subject := r.Ref
+	if subject == nil && len(tids) > 0 {
+		subject = tids[0].Ref
+	}
+	e := types.HistoryEntry{
+		Command:   r.Command,
+		Message:   r.Message,
+		User:      r.User,
+		Timestamp: r.Timestamp,
+	}
+	if subject != nil {
+		e.Ref = subject
+		e.AssetPath = subject.AssetPath
+	}
+	if d, ok := r.Operation.(historyDescriber); ok {
+		e.Details = d.HistorySummary()
+	}
+	if err := history.Record(ctx, r.RepoPath, r.Opctx.Site(), e); err != nil {
+		r.Logger.Warn("history: failed to record entry", "command", r.Command, "err", err)
+	}
 }
 
 // withTransaction run a vit operation() within a transaction lock.

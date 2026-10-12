@@ -56,6 +56,44 @@ func WriteFileAtomic(filename string, mode os.FileMode, write func(f *os.File) e
 	return nil
 }
 
+// AppendLine durably appends b + '\n' to an append-only stream (e.g. a JSONL
+// activity log):
+// not entrely atomic on nfs...
+func AppendLine(path string, b []byte) error {
+	path = PathOS(path)
+	dir := DirOS(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("append: failed to create directory: %w", err)
+	}
+
+	_, statErr := os.Stat(path)
+	created := os.IsNotExist(statErr)
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("append: failed to open: %w", err)
+	}
+
+	line := make([]byte, 0, len(b)+1) // one write ⇒ the record isn't torn mid-line
+	line = append(line, b...)
+	line = append(line, '\n')
+	if _, err := f.Write(line); err != nil {
+		f.Close()
+		return fmt.Errorf("append: failed to write: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("append: failed to sync: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("append: failed to close: %w", err)
+	}
+	if created {
+		_ = syncDir(dir) // flush the new dirent so NFS clients see the file
+	}
+	return nil
+}
+
 // RemoveFileAtomic removes a file by first renaming it to a temp name,
 // then deleting.
 func RemoveFileAtomic(filename string) error {

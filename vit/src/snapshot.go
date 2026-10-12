@@ -63,6 +63,7 @@ func (c *Client) Snapshot(ctx context.Context, path, message string) (*types.Str
 				User:      opctx.User,
 				RepoPath:  opctx.RepoPath(),
 				Timestamp: opctx.TimeStamp,
+				Message:   message,
 			},
 			[]*types.Ref{ref}, transaction.TransactionBranch,
 		); err != nil {

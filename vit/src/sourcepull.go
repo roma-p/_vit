@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"vit/internal/db"
 	"vit/internal/opcontext"
@@ -87,6 +88,26 @@ type operationSourcePull struct {
 
 	// filled at Validate
 	Updates []types.SourceUpdate
+}
+
+// HistorySummary: "<name> <spec>: <oldCommit>→<newCommit>" per updated source.
+func (o *operationSourcePull) HistorySummary() string {
+	if len(o.Updates) == 0 {
+		return "no source updates"
+	}
+	parts := make([]string, 0, len(o.Updates))
+	for _, u := range o.Updates {
+		parts = append(parts, fmt.Sprintf("%s %s: %s→%s",
+			u.Name, u.RefSpec.ObjectPath(), shortID(u.OldCommit), shortID(u.NewCommit)))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func (o *operationSourcePull) Validate(

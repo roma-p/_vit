@@ -48,6 +48,8 @@ import (
 //	| errors   | stderr | stdout |
 //	| logs     | stderr | stderr |
 //	| progress | stderr | stdout |
+//
+// output can be redirected to a paget by setting: Paged = True
 type Output struct {
 	Stdout   io.Writer
 	Stderr   io.Writer

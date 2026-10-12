@@ -178,6 +178,15 @@ func (o *operationSourceAdd) DBUpdate(
 	})
 }
 
+// HistorySummary: "<name> ← <requested spec> (→ <resolved product>)".
+func (o *operationSourceAdd) HistorySummary() string {
+	return fmt.Sprintf("%s ← %s (→ %s)",
+		o.NewDepedencyName,
+		o.RefDepSpec.RelativePath(),
+		o.RefDepResolved.RelativePath(),
+	)
+}
+
 func (o *operationSourceAdd) Finish(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
