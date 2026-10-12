@@ -38,6 +38,8 @@ type CmdParser struct {
 	Variadic        []string
 	variadicDefined bool
 	variadicDef     *variadicDef
+
+	UsePager bool
 }
 
 func (a *CmdParser) AddFlag(name string, value bool, usage string) error {

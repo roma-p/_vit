@@ -7,7 +7,10 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
+	"runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"vit/internal/types"
@@ -50,6 +53,7 @@ type Output struct {
 	Stderr   io.Writer
 	Logger   *slog.Logger
 	Option   OutputOpt
+	Paged    bool
 	progress *progressBar
 }
 
@@ -137,10 +141,62 @@ func (o *Output) processResult(cliResult types.Result) int {
 			},
 			false,
 		)
+	} else if o.Paged {
+		o.pageOrPrint(cliResult.ToStringSlice())
 	} else {
 		o.HumanReadableToStd(cliResult.ToStringSlice(), false)
 	}
 	return ExitSuccess
+}
+
+// pageOrPrint routes lines through a pager if possible, otherwise print them
+// to stdout
+func (o *Output) pageOrPrint(lines []string) {
+	if o.Option.Debug || o.Option.JSON {
+		return
+	}
+	f, isFile := o.Stdout.(*os.File)
+	tty := isFile && func() bool {
+		st, err := f.Stat()
+		return err == nil && st.Mode()&os.ModeCharDevice != 0
+	}()
+	if !tty || runtime.GOOS == "windows" {
+		// TODO: pager supp for windwos.
+		o.HumanReadableToStd(lines, false)
+		return
+	}
+
+	pager := firstNonEmpty(os.Getenv("PAGER"), "less -FRX")
+	parts := strings.Fields(pager)
+	cmd := exec.Command(parts[0], parts[1:]...)
+	cmd.Stdout = o.Stdout
+	cmd.Stderr = o.Stderr
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		o.HumanReadableToStd(lines, false)
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		stdin.Close()
+		o.HumanReadableToStd(lines, false)
+		return
+	}
+	for _, line := range lines {
+		if _, werr := io.WriteString(stdin, line+"\n"); werr != nil {
+			break
+		}
+	}
+	stdin.Close()
+	_ = cmd.Wait()
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (o *Output) processError(err error) int {
