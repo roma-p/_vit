@@ -39,6 +39,32 @@ func (r *StringListResult) ToStringSlice() []string {
 	return r.StringList
 }
 
+// HistoryLogResult is the project-wide activity log (newest first) ----------
+type HistoryLogResult struct {
+	Entries []HistoryEntry `json:"entries"`
+}
+
+func (r *HistoryLogResult) ToStringSlice() []string {
+	out := make([]string, 0, len(r.Entries))
+	for i := range r.Entries {
+		e := r.Entries[i]
+		line := fmt.Sprintf(
+			"%s  %-12s %-12s %s",
+			e.Timestamp.Local().Format("2006-01-02 15:04"),
+			e.User,
+			e.Command,
+			e.AssetPath,
+		)
+		if e.Details != "" {
+			line += "  " + e.Details
+		}
+		if e.Message != "" {
+			line += fmt.Sprintf("  %q", e.Message)
+		}
+		out = append(out, line)
+	}
+	return out
+}
 
 // LsResult ------------------------------------------------------------------
 type LsResult struct {

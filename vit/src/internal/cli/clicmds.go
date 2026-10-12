@@ -35,6 +35,13 @@ var cmdDefinition = clicore.CmdTree{
 			ArgParser:   buildStatusArgParser(),
 			ResultType:  types.StatusResult{},
 		},
+		"log": {
+			Name:        "Log",
+			Description: "Show the project-wide activity log (newest first)",
+			Run:         runLog,
+			ArgParser:   buildLogArgParser(),
+			ResultType:  types.HistoryLogResult{},
+		},
 		"ls": {
 			Name:        "Ls",
 			Description: "List a directory's children, an asset's branches/tags, or an object's details + sources",
