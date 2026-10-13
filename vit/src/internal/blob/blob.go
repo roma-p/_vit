@@ -30,7 +30,7 @@ func PlanCommitBranch(
 	return &types.BlobUpdatePlan{
 		CopyRequests: []types.CopyFilesRequest{
 			{
-				Src:     topCopy,
+				Src:     []*types.DirStat{topCopy},
 				DstRoot: commitPath,
 			},
 		},
@@ -105,8 +105,8 @@ func PlanInitAsset(
 
 	// Copy source → commit blob (immutable), then commit → branch blob.
 	copyRequests := []types.CopyFilesRequest{
-		{DstRoot: commitPath, Src: srcDirStat},
-		{DstRoot: branchPath, Src: srcDirStat.WithRoot(commitPath)},
+		{DstRoot: commitPath, Src: []*types.DirStat{srcDirStat}},
+		{DstRoot: branchPath, Src: []*types.DirStat{srcDirStat.WithRoot(commitPath)}},
 	}
 
 	// Build the content tree in memory

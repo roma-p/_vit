@@ -333,7 +333,7 @@ func initAsset(
 		return err
 	}
 
-	err = addBranch(
+	err = AddBranch(
 		asset,
 		commitID,
 		types.DefaultBranchName,
@@ -384,7 +384,9 @@ func addCommit(a *types.Asset, commit *types.AssetCommit) (string, error) {
 	return commitID, nil
 }
 
-func addBranch(
+// AddBranch creates a new branch entry on an existing asset, rooted at commitID
+// Errors if branchName already exists.
+func AddBranch(
 	a *types.Asset,
 	commitID, branchName, author, payloadfile string,
 	baselineTimeStamp time.Time,

@@ -20,16 +20,18 @@ func CopyFiles(ctx context.Context, progress *CopyProgress, requests []types.Cop
 	var totalItems int
 	var totalBytes int64
 	for _, req := range requests {
-		for _, stat := range req.Src.Data {
-			totalItems++
-			totalBytes += stat.Size
+		for _, src := range req.Src {
+			for _, stat := range src.Data {
+				totalItems++
+				totalBytes += stat.Size
+			}
 		}
 	}
 	progress.init("Copying", totalItems, totalBytes)
 	defer func() { progress.close(err == nil) }()
 
 	for _, req := range requests {
-		if err = copyOneRequest(ctx, req.DstRoot, req.Src, progress); err != nil {
+		if err = copyOneRequest(ctx, req.DstRoot, req.Src, req.Writable, progress); err != nil {
 			return err
 		}
 	}
@@ -88,7 +90,8 @@ func (p *CopyProgress) close(success bool) {
 func copyOneRequest(
 	ctx context.Context,
 	dstRoot string,
-	src *types.DirStat,
+	srcs []*types.DirStat,
+	writable bool,
 	progress *CopyProgress,
 ) error {
 	dstRoot = PathOS(dstRoot)
@@ -109,25 +112,27 @@ func copyOneRequest(
 	}
 	cleanup := func() { os.RemoveAll(tmpDir) }
 
-	srcRoot := PathOS(src.RootAbsPath)
-	for rel, stat := range src.Data {
-		if err := ctx.Err(); err != nil {
-			cleanup()
-			return err
-		}
-		srcPath := PathOS(srcRoot, rel)
-		dstPath := PathOS(tmpDir, rel)
-		if err := os.MkdirAll(DirOS(dstPath), 0o755); err != nil {
-			cleanup()
-			return err
-		}
-		progress.updateFile(BaseOS(srcPath), int(stat.Size))
-		if err := copyFileDirect(ctx, srcPath, dstPath, progress); err != nil {
-			cleanup()
-			return err
-		}
-		if stat.Size == 0 {
-			progress.finishFile() // zero-byte files never trigger updateBytes
+	for _, src := range srcs {
+		srcRoot := PathOS(src.RootAbsPath)
+		for rel, stat := range src.Data {
+			if err := ctx.Err(); err != nil {
+				cleanup()
+				return err
+			}
+			srcPath := PathOS(srcRoot, rel)
+			dstPath := PathOS(tmpDir, rel)
+			if err := os.MkdirAll(DirOS(dstPath), 0o755); err != nil {
+				cleanup()
+				return err
+			}
+			progress.updateFile(BaseOS(srcPath), int(stat.Size))
+			if err := copyFileDirect(ctx, srcPath, dstPath, writable, progress); err != nil {
+				cleanup()
+				return err
+			}
+			if stat.Size == 0 {
+				progress.finishFile() // zero-byte files never trigger updateBytes
+			}
 		}
 	}
 
@@ -144,7 +149,7 @@ func copyOneRequest(
 	return nil
 }
 
-func copyFileDirect(ctx context.Context, src, dst string, progress *CopyProgress) error {
+func copyFileDirect(ctx context.Context, src, dst string, writable bool, progress *CopyProgress) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
@@ -156,7 +161,11 @@ func copyFileDirect(ctx context.Context, src, dst string, progress *CopyProgress
 		return err
 	}
 
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode())
+	mode := srcInfo.Mode()
+	if writable {
+		mode = 0o644 // seed a writable working copy from a read-only/sealed source
+	}
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}

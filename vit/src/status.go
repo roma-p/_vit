@@ -124,7 +124,7 @@ func resolveChangeRecord(
 	if err != nil {
 		return nil, err
 	}
-	lastCommitStat := contentRoot.ToDirStat("") // TODO: do we need root path?
+	lastCommitStat := blob.ContentNodeToDirStat(contentRoot, "") // TODO: do we need root path?
 
 	changes := workspaceDirStat.Diff(lastCommitStat, baseline)
 

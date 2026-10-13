@@ -72,6 +72,63 @@ func loadContentTree(contentRootPath, hash string) (*types.ContentNode, error) {
 	return node, nil
 }
 
+// PlanBranchFromContentNode plans copying a commit's content  into a new,
+// writable branch working dir.
+func PlanBranchFromContentNode(
+	repoPath, assetPath, branchName string,
+	node *types.ContentNode,
+) (*types.BlobUpdatePlan, error) {
+	return &types.BlobUpdatePlan{
+		CopyRequests: []types.CopyFilesRequest{{
+			DstRoot:  branchBlobPath(repoPath, assetPath, branchName),
+			Src:      ContentNodeToDirStatSlice(node, fsutil.PathOS(repoPath, ".vit", "blob")),
+			Writable: true,
+		}},
+	}, nil
+}
+
+// ContentNodeToDirStat flattens a content node into ONE DirStat keyed by
+// tree-relative path, rooted at fullPath.
+func ContentNodeToDirStat(n *types.ContentNode, fullPath string) *types.DirStat {
+	ret := types.NewDirStat(fullPath)
+	walkContentFiles(n, "", func(treeRel string, f *types.ContentNodeFile) {
+		ret.Data[treeRel] = types.FileStat{Size: f.Size, MTime: f.MTime}
+	})
+	return ret
+}
+
+// ContentNodeToDirStatSlice groups a content node's files by the SOURCE ROOT their
+// content lives under (one DirStat per root, keyed by tree path), relative to
+// blobRoot.
+func ContentNodeToDirStatSlice(n *types.ContentNode, blobRoot string) []*types.DirStat {
+	byRoot := map[string]*types.DirStat{}
+	walkContentFiles(n, "", func(treeRel string, f *types.ContentNodeFile) {
+		rootRel := strings.TrimSuffix(f.BlobTarget, treeRel) // BlobTarget == <root>/<treeRel>
+		rootAbs := fsutil.PathOS(blobRoot, rootRel)
+		ds := byRoot[rootAbs]
+		if ds == nil {
+			ds = types.NewDirStat(rootAbs)
+			byRoot[rootAbs] = ds
+		}
+		ds.Data[treeRel] = types.FileStat{Size: f.Size, MTime: f.MTime}
+	})
+
+	out := make([]*types.DirStat, 0, len(byRoot))
+	for _, ds := range byRoot {
+		out = append(out, ds)
+	}
+	return out
+}
+
+func walkContentFiles(n *types.ContentNode, prefix string, fn func(string, *types.ContentNodeFile)) {
+	for _, f := range n.Files {
+		fn(fsutil.PathInternal(prefix, f.Name), f)
+	}
+	for _, c := range n.Children {
+		walkContentFiles(c, fsutil.PathInternal(prefix, c.Name), fn)
+	}
+}
+
 // buildContentTreeFromDirStat: build a tree of content nodes from a dir stat object,
 // return the root node.
 func buildContentTreeFromDirStat(srcDirStat *types.DirStat, commitDir, blobRootDir string) (*types.ContentNode, error) {
