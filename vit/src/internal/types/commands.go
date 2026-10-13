@@ -6,6 +6,7 @@ const (
 	CommandInit       VitCommand = "init"
 	CommandAdd        VitCommand = "add"
 	CommandCommit     VitCommand = "commit"
+	CommandBranch     VitCommand = "branch"
 	CommandTag        VitCommand = "tag"
 	CommandSourceAdd  VitCommand = "source-add"
 	CommandSourcePull VitCommand = "source-pull"
