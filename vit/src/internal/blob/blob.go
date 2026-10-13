@@ -182,6 +182,9 @@ func UpdateBlob(ctx context.Context, progress types.ProgressWriter, plan *types.
 }
 
 func sourceToDirStat(ctx context.Context, src string) (*types.DirStat, error) {
+	if src == "" {
+		return types.NewDirStat(""), nil
+	}
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		return nil, err

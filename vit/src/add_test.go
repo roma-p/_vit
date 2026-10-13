@@ -57,12 +57,11 @@ func TestAdd_missingSrc(t *testing.T) {
 	assertErrCode(t, err, types.ErrFileNotFound)
 }
 
-func TestAdd_emptySrc(t *testing.T) {
+func TestAdd_emptySrc_createsEmptyAsset(t *testing.T) {
 	env := newVitEnv(t)
-	_, err := env.Add(ctx, env.abs("chars/hero"), "")
-	if err == nil {
-		t.Fatal("expected an error for empty src, got nil")
-	}
+	branchPath := must(env.Add(ctx, env.abs("chars/hero"), "")).String
+	testutils.AssertExists(t, branchPath)
+	assertClean(t, must(env.Status(ctx, env.branchRef("chars/hero"))))
 }
 
 func TestAdd_pathAlreadyTaken(t *testing.T) {
