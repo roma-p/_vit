@@ -10,37 +10,23 @@ import (
 	"vit/internal/types"
 )
 
-// DependentEntry is the reverse dependency index ("who depends on me").
-// It is a directory-as-set: one file per (consumer object) writer inside the
-// target asset's depended_by dir. Distinct filenames per writer mean concurrent
-// adds never collide, so writing a reverse edge needs NO lock on the target
-// (same idiom as .vit/transaction/).
-type DependentEntry struct {
-	Consumer     *types.Ref `json:"consumer"`
-	Name         string     `json:"name"`
-	RefSpec      *types.Ref `json:"ref_spec"`
-	TargetCommit string     `json:"target_commit"`
+type ReverseEntry struct {
+	Type    types.AssetDependencyType `json:"type"`
+	Peer    *types.Ref                `json:"peer"` // the consumer (source) or origin (product)
+	Name    string                    `json:"name"`
+	RefSpec *types.Ref                `json:"ref_spec"`
+	Commit  string                    `json:"commit,omitempty"` // pinned target commit (source edges; product pins none yet)
 }
 
-// AddDependent records that consumer depends (under dependency name) on the
-// target asset's OBJECT, write on disk
-func AddDependent(
-	repoPath, targetAssetUID, targetObjectPath, name string,
-	consumer *types.Ref,
-	refSpec *types.Ref,
-	targetCommit string,
+func AddReverseEdge(
+	repoPath, targetAssetUID, targetObjectPath string,
+	e ReverseEntry,
 ) error {
-	entry := DependentEntry{
-		Consumer:     consumer,
-		Name:         name,
-		RefSpec:      refSpec,
-		TargetCommit: targetCommit,
-	}
 	write := func(objPath string) error {
-		dir := pathDependedByDir(repoPath, targetAssetUID, objPath)
-		file := fsutil.PathOS(dir, dependedByFileName(consumer))
-		if err := fsutil.NewJSONHandlerFromPath(file, &entry).Write(); err != nil {
-			return newErrDBInternal(err, "could not write depended_by entry")
+		dir := pathReverseDir(repoPath, targetAssetUID, objPath)
+		file := fsutil.PathOS(dir, reverseEdgeFileName(e.Type, e.Peer))
+		if err := fsutil.NewJSONHandlerFromPath(file, &e).Write(); err != nil {
+			return newErrDBInternal(err, "could not write reverse-dep entry")
 		}
 		return nil
 	}
@@ -48,60 +34,64 @@ func AddDependent(
 	if err := write(targetObjectPath); err != nil {
 		return err
 	}
-	if consumer.RefType == types.RefTypeBranch && refSpec.IsMutable() &&
-		refSpec.ObjectPath() != targetObjectPath {
-		if err := write(refSpec.ObjectPath()); err != nil {
+	if e.Type == types.AssetDependencySource &&
+		e.Peer.RefType == types.RefTypeBranch && e.RefSpec.IsMutable() &&
+		e.RefSpec.ObjectPath() != targetObjectPath {
+		if err := write(e.RefSpec.ObjectPath()); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// RemoveDependent deletes the reverse-index entry recording that consumer depended
-// on the target asset's OBJECT — the inverse of AddDependent.
-func RemoveDependent(
+// RemoveReverseEdge deletes a typed reverse edge — the inverse of AddReverseEdge.
+func RemoveReverseEdge(
 	repoPath, targetAssetUID, targetObjectPath string,
-	consumer *types.Ref,
+	t types.AssetDependencyType,
+	peer *types.Ref,
 ) error {
-	dir := pathDependedByDir(repoPath, targetAssetUID, targetObjectPath)
-	file := fsutil.PathOS(dir, dependedByFileName(consumer))
+	dir := pathReverseDir(repoPath, targetAssetUID, targetObjectPath)
+	file := fsutil.PathOS(dir, reverseEdgeFileName(t, peer))
 	if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
-		return newErrDBInternal(err, "could not remove depended_by entry")
+		return newErrDBInternal(err, "could not remove reverse-dep entry")
 	}
 	return nil
 }
 
-// ListDependents returns every consumer of a specific target OBJECT. A missing
-// directory means nobody depends on that object (not an error). The entry Refs'
-// RepoPath (json:"-") is rehydrated here — at this deserialization boundary — from
-// each Ref's RepoUID, so callers get complete Refs (mirrors the asset-load path).
-func ListDependents(
+// ListReverseEdges returns a target object's reverse edges, filtered by type (pass
+// "" for all). A missing directory means none (not an error). Entry Refs' RepoPath
+// (json:"-") is rehydrated here from each Ref's RepoUID.
+func ListReverseEdges(
 	opctx *opcontext.OperationContext,
 	repoPath, targetAssetUID, targetObjectPath string,
-) ([]DependentEntry, error) {
-	dir := pathDependedByDir(repoPath, targetAssetUID, targetObjectPath)
+	filter types.AssetDependencyType,
+) ([]ReverseEntry, error) {
+	dir := pathReverseDir(repoPath, targetAssetUID, targetObjectPath)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, newErrDBInternal(err, "could not read depended_by dir")
+		return nil, newErrDBInternal(err, "could not read reverse-dep dir")
 	}
 	fillRepoPath := func(ref *types.Ref) {
 		if ref != nil {
 			ref.RepoPath = opctx.RepoRefFor(ref.RepoUID).Path
 		}
 	}
-	ret := make([]DependentEntry, 0, len(entries))
+	ret := make([]ReverseEntry, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		h := fsutil.NewJSONHandlerFromPath(fsutil.PathOS(dir, e.Name()), &DependentEntry{})
+		h := fsutil.NewJSONHandlerFromPath(fsutil.PathOS(dir, e.Name()), &ReverseEntry{})
 		if err := h.Read(); err != nil {
-			return nil, newErrDBInternal(err, "could not read depended_by entry")
+			return nil, newErrDBInternal(err, "could not read reverse-dep entry")
 		}
-		fillRepoPath(h.Data.Consumer)
+		if filter != "" && h.Data.Type != filter {
+			continue
+		}
+		fillRepoPath(h.Data.Peer)
 		fillRepoPath(h.Data.RefSpec)
 		ret = append(ret, *h.Data)
 	}
@@ -141,8 +131,9 @@ func MarkDependentsStale(
 	return nil
 }
 
-// GetDependents returns the reverse closure of ref's OBJECT — every object that
-// transitively depends on it.
+// GetDependents returns the reverse SOURCE closure of ref's OBJECT — every object
+// that transitively CONSUMES it. It reads only source-typed reverse edges (never
+// producers), so impact ops like source push never pick up producers.
 func GetDependents(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
@@ -170,7 +161,7 @@ func GetDependents(
 		}
 	}
 
-	// 2. rebuild from the reverse index (direct dependents) + recursion into each
+	// 2. rebuild from the reverse index (direct consumers) + recursion into each
 	g := types.NewDepGraph()
 	if _, rootNode, derr := dependenciesForRef(asset.Data, ref); derr == nil {
 		g.AddNode(ref, rootNode)
@@ -178,12 +169,12 @@ func GetDependents(
 		return nil, derr
 	}
 
-	entries, err := ListDependents(opctx, ref.RepoPath, uid, objPath)
+	entries, err := ListReverseEdges(opctx, ref.RepoPath, uid, objPath, types.AssetDependencySource)
 	if err != nil {
 		return nil, err
 	}
 	for _, e := range entries {
-		cons := e.Consumer
+		cons := e.Peer
 
 		cAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, cons, false)
 		if err != nil {
@@ -213,8 +204,6 @@ func GetDependents(
 	if cache == nil {
 		cache = newGraphCache()
 	}
-	if stale {
-	}
 	if cache.Reverse == nil {
 		cache.Reverse = make(map[string]*types.DepGraph)
 	}
@@ -222,14 +211,12 @@ func GetDependents(
 	if err := fsutil.NewJSONHandlerFromPath(cachePath, cache).Write(); err != nil {
 		return nil, newErrDBInternal(err, "could not write reverse graph to dep cache")
 	}
-	if stale {
-	}
 	return g, nil
 }
 
 // RecordDependentsForCommit records, for each source dep of a freshly-created
-// commit object, a reverse edge on the target keyed at the target's object, with
-// the consumer = THIS COMMIT
+// commit object, a reverse (source) edge on the target keyed at the target's
+// object, with the consumer = THIS COMMIT.
 func RecordDependentsForCommit(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
@@ -257,14 +244,15 @@ func RecordDependentsForCommit(
 		if err != nil {
 			return err
 		}
-		if err := AddDependent(
-			target.RepoPath,
-			targetUID,
-			target.ObjectPath(),
-			name,
-			commitRef,
-			dep.RefSpec,
-			dep.Commit,
+		if err := AddReverseEdge(
+			target.RepoPath, targetUID, target.ObjectPath(),
+			ReverseEntry{
+				Type:    types.AssetDependencySource,
+				Peer:    commitRef,
+				Name:    name,
+				RefSpec: dep.RefSpec,
+				Commit:  dep.Commit,
+			},
 		); err != nil {
 			return err
 		}
@@ -297,17 +285,17 @@ func pathReverseStale(repoPath, assetUID string) string {
 	)
 }
 
-func pathDependedByDir(repoPath, targetAssetUID, targetObjectPath string) string {
+func pathReverseDir(repoPath, targetAssetUID, targetObjectPath string) string {
 	return fsutil.PathOS(
 		repoPath,
 		".vit", "cache", "depgraph",
-		targetAssetUID[:2], targetAssetUID[2:]+".depended_by",
+		targetAssetUID[:2], targetAssetUID[2:]+".rdeps",
 		url.QueryEscape(targetObjectPath),
 	)
 }
 
-func dependedByFileName(consumer *types.Ref) string {
-	return consumer.RepoUID + "_" +
-		url.QueryEscape(consumer.AssetPath) +
-		url.QueryEscape(consumer.ObjectPath()) + ".json"
+func reverseEdgeFileName(t types.AssetDependencyType, peer *types.Ref) string {
+	return string(t) + "_" + peer.RepoUID + "_" +
+		url.QueryEscape(peer.AssetPath) +
+		url.QueryEscape(peer.ObjectPath()) + ".json"
 }

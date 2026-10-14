@@ -225,10 +225,11 @@ func (o *operationSourcePull) Finish(
 	}
 	var g *types.DepGraph
 	for _, u := range o.Updates {
-		if err := db.RemoveDependent(
+		if err := db.RemoveReverseEdge(
 			u.OldTarget.RepoPath,
 			u.SrcUID,
 			u.OldTarget.ObjectPath(),
+			types.AssetDependencySource,
 			o.RefConsumer,
 		); err != nil {
 			logger.Log(ctx, slog.LevelError, "source pull: reverse prune failed", "err", err)

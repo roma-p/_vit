@@ -44,6 +44,29 @@ func RunEdit(
 	return run(ctx, r, func() error { return validateEdit(r.RepoPath, refs) }, tids)
 }
 
+// RunTreeChangedAndEdit combines RunTreeChanged and RunEdit.
+func RunTreeChangedAndEdit(
+	ctx context.Context,
+	r Request,
+	createPaths []string,
+	editRefs []*types.Ref,
+	editOp TransactionOperation,
+) error {
+	tids := make([]TransactionID, 0, len(createPaths)+len(editRefs))
+	for _, p := range createPaths {
+		tids = append(tids, newTransactionID(TransactionTreeChanged, types.NewRefEmpty(r.RepoPath, p)))
+	}
+	for _, ref := range editRefs {
+		tids = append(tids, newTransactionID(editOp, ref))
+	}
+	return run(ctx, r, func() error {
+		if err := validateTreeChanged(r.RepoPath, createPaths); err != nil {
+			return err
+		}
+		return validateEdit(r.RepoPath, editRefs)
+	}, tids)
+}
+
 type Request struct {
 	Opctx     *opcontext.OperationContext
 	DBClient  *db.Client

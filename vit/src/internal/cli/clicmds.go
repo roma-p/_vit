@@ -76,6 +76,19 @@ var cmdDefinition = clicore.CmdTree{
 			ArgParser:   buildTagArgParser(),
 			ResultType:  types.SourcePullResult{},
 		},
+		"product": {
+			Name:        "Product",
+			Description: "Manage products",
+			SubCommands: map[string]*clicore.CmdTree{
+				"add": {
+					Name:        "Add product",
+					Description: "Attach an origin branch as producer of a target asset (--create to create the target)",
+					Run:         runProductAdd,
+					ArgParser:   buildProductAddArgParser(),
+					ResultType:  types.StringResult{},
+				},
+			},
+		},
 		"source": {
 			Name:        "Souce",
 			Description: "Manage sources",

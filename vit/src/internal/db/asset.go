@@ -239,6 +239,29 @@ type AddSourceRequest = struct {
 	CommitID    string
 }
 
+func AddProduct(r AddProductRequest) error {
+	branchCommit, err := GetBranchCommit(r.Asset, r.BranchName)
+	if err != nil {
+		return err
+	}
+
+	if branchCommit.Dependencies == nil {
+		branchCommit.Dependencies = make(types.AssetDependencies)
+	}
+	branchCommit.Dependencies[r.ProductName] = &types.AssetDependency{
+		Type:    types.AssetDependencyProduct,
+		RefSpec: r.RefSpec,
+	}
+	return nil
+}
+
+type AddProductRequest = struct {
+	Asset       *types.Asset
+	BranchName  string
+	ProductName string
+	RefSpec     *types.Ref
+}
+
 // -- USED ACROSS vit.internal.DB --------------------------------------------
 
 func createNewJSONAsset(

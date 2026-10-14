@@ -31,7 +31,8 @@ const (
 	ErrDependencyNotFound      = "DependencyNotFound"
 	ErrDependencyAlreadyExists = "DependencyAlreadyExists"
 	ErrCircularDependency      = "CircularDependency"
-	ErrSourcePushPartial       = "SourcePushPartial" // `source push` re-pinned some consumers, not all
+	ErrProductTargetNotFound   = "ProductTargetNotFound" // `product add` (attach) onto a missing target
+	ErrSourcePushPartial       = "SourcePushPartial"     // `source push` re-pinned some consumers, not all
 
 	ErrTransactionConflict = "TransactionConflict"
 	ErrTransactionFailed   = "TransactionFailed"

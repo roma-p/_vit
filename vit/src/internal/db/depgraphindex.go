@@ -158,9 +158,15 @@ func UpdateDepGraphForSource(
 	if err != nil {
 		return g, err
 	}
-	if err := AddDependent(
+	if err := AddReverseEdge(
 		r.Target.RepoPath, targetAsset.Data.AssetUID, r.Target.ObjectPath(),
-		r.Name, r.Consumer, r.Spec, r.Commit,
+		ReverseEntry{
+			Type:    types.AssetDependencySource,
+			Peer:    r.Consumer,
+			Name:    r.Name,
+			RefSpec: r.Spec,
+			Commit:  r.Commit,
+		},
 	); err != nil {
 		return g, err
 	}
@@ -176,6 +182,41 @@ type UpdateDepGraphForSourceRequest struct {
 	Spec     *types.Ref
 	Name     string
 	Commit   string // consumer underlying commit id
+}
+
+func UpdateDepGraphForProduct(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *Client,
+	r UpdateDepGraphForProductRequest,
+) (*types.DepGraph, error) {
+	g, err := CacheDependencies(ctx, opctx, dbClient, r.Origin)
+	if err != nil {
+		return nil, err
+	}
+	targetAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, r.Target, false)
+	if err != nil {
+		return g, err
+	}
+	if err := AddReverseEdge(
+		r.Target.RepoPath, targetAsset.Data.AssetUID, r.Target.ObjectPath(),
+		ReverseEntry{
+			Type:    types.AssetDependencyProduct,
+			Peer:    r.Origin,
+			Name:    r.Name,
+			RefSpec: r.Spec,
+		},
+	); err != nil {
+		return g, err
+	}
+	return g, nil
+}
+
+type UpdateDepGraphForProductRequest struct {
+	Origin *types.Ref
+	Target *types.Ref
+	Spec   *types.Ref
+	Name   string
 }
 
 // CheckSourceAddNoCycle checks that adding a source won't create a cycle.
@@ -196,8 +237,6 @@ func CheckSourceAddNoCycle(
 
 // -- FILE LOCAL -------------------------------------------------------------
 
-// buildDependencies assembles ONE object's closure by walking its direct (pinned)
-// source edges down to the leaves. /!\ Reads from truth (the asset JSONs).
 func buildDependencies(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
@@ -205,50 +244,58 @@ func buildDependencies(
 	root *types.Ref,
 ) (*types.DepGraph, error) {
 	g := types.NewDepGraph()
-	visited := map[types.Ref]bool{}
-	if err := walkDependencies(ctx, opctx, dbClient, g, visited, root); err != nil {
+
+	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, root, false)
+	if err != nil {
 		return nil, err
+	}
+	deps, node, err := dependenciesForRef(asset.Data, root)
+	if err != nil {
+		return nil, err
+	}
+	g.AddNode(root, node)
+
+	for name, dep := range deps {
+		switch dep.Type {
+		case types.AssetDependencySource:
+			child := dep.RefResolved
+			if err := g.Connect(root, child, dep.RefSpec, name, dep.Type); err != nil {
+				return nil, err
+			}
+			childG, err := GetDependencies(ctx, opctx, dbClient, child)
+			if err != nil {
+				return nil, err
+			}
+			g.Merge(childG)
+		case types.AssetDependencyProduct:
+			target := dep.RefSpec
+			if err := addProductTargetNode(ctx, opctx, dbClient, g, target); err != nil {
+				return nil, err
+			}
+			if err := g.Connect(root, target, dep.RefSpec, name, dep.Type); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return g, nil
 }
 
-// walkDependencies recursively adds ref and its transitive source edges into g.
-func walkDependencies(
+func addProductTargetNode(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
 	g *types.DepGraph,
-	visited map[types.Ref]bool,
-	ref *types.Ref,
+	target *types.Ref,
 ) error {
-	if visited[*ref] {
-		return nil // already in the closure — dedup by ref.
-	}
-	visited[*ref] = true
-
-	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, ref, false)
+	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, target, false)
 	if err != nil {
 		return err
 	}
-	deps, node, err := dependenciesForRef(asset.Data, ref)
+	_, node, err := dependenciesForRef(asset.Data, target)
 	if err != nil {
 		return err
 	}
-	g.AddNode(ref, node)
-
-	for name, dep := range deps {
-		if dep.Type != types.AssetDependencySource {
-			continue
-		}
-		child := dep.RefResolved
-
-		if err := g.Connect(ref, child, dep.RefSpec, name, dep.Type); err != nil {
-			return err // if cycle detected return err.
-		}
-		if err := walkDependencies(ctx, opctx, dbClient, g, visited, child); err != nil {
-			return err
-		}
-	}
+	g.AddNode(target, node)
 	return nil
 }
 

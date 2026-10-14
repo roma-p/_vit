@@ -92,7 +92,9 @@ type LsObject struct {
 	Author        string    `json:"author"`
 	Timestamp     time.Time `json:"timestamp"`
 	Size          int64     `json:"size"`
-	Sources       *DepGraph `json:"sources,omitempty"`
+	// Dependencies is the object's forward graph: both its sources (inputs it
+	// consumes) and its products (outputs it produces into).
+	Dependencies *DepGraph `json:"dependencies,omitempty"`
 }
 
 func (r *LsResult) ToStringSlice() []string {
@@ -134,13 +136,45 @@ func (r *LsResult) ToStringSlice() []string {
 			fmt.Sprintf("  date   : %s", o.Timestamp.Local().Format("2006-01-02 15:04")),
 			fmt.Sprintf("  size   : %s", humanSize(o.Size)),
 		)
-		if o.Sources != nil && len(o.Sources.Edges) > 0 {
-			out = append(out, "  sources:")
-			appendSourceTree(&out, o.Sources, o.Ref, 1)
+		if o.Dependencies != nil {
+			if hasDepOfType(o.Dependencies, o.Ref, AssetDependencySource) {
+				out = append(out, "  sources:")
+				appendSourceTree(&out, o.Dependencies, o.Ref, 1)
+			}
+			if hasDepOfType(o.Dependencies, o.Ref, AssetDependencyProduct) {
+				out = append(out, "  products:")
+				appendProductList(&out, o.Dependencies, o.Ref)
+			}
 		}
 		return out
 	}
 	return nil
+}
+
+// hasDepOfType reports whether cur has at least one forward edge of the given type.
+func hasDepOfType(g *DepGraph, cur *Ref, t AssetDependencyType) bool {
+	for i := range g.Edges {
+		if g.Edges[i].Type == t && sameRefObject(g.Edges[i].Consumer, cur) {
+			return true
+		}
+	}
+	return false
+}
+
+// appendProductList renders an object's products flat (non-recursive): a product
+// is an output the object produces into, not a tree to descend.
+func appendProductList(out *[]string, g *DepGraph, cur *Ref) {
+	for i := range g.Edges {
+		e := g.Edges[i]
+		if e.Type != AssetDependencyProduct || !sameRefObject(e.Consumer, cur) {
+			continue
+		}
+		target := "?"
+		if e.Provider != nil {
+			target = e.Provider.RelativePath()
+		}
+		*out = append(*out, fmt.Sprintf("    %s\t-> %s", e.Name, target))
+	}
 }
 
 func appendSourceTree(out *[]string, g *DepGraph, cur *Ref, depth int) {

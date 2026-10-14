@@ -28,6 +28,43 @@ func PresentSources(
 	return aliasSources(ctx, repoPath, fsutil.PathOS(repoPath, rel), g, root, p)
 }
 
+func PresentProduct(
+	ctx context.Context,
+	repoPath string,
+	origin *types.Ref,
+	name string,
+	target *types.Ref,
+	p Presenter,
+) error {
+	originRel, ok, err := ResolveWorkspacePathFromRef(repoPath, origin)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return newErrWorkspaceInternal(
+			fmt.Errorf("origin not presented: %s", origin.RelativePath()),
+			"present product: origin has no pointer",
+		)
+	}
+	productWorkspacePath := fsutil.PathOS(repoPath, originRel, name)
+
+	targetRel, ok, err := ResolveWorkspacePathFromRef(repoPath, target)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return newErrWorkspaceInternal(
+			fmt.Errorf("product target not presented: %s", target.RelativePath()),
+			"present product: target branch has no presentation",
+		)
+	}
+
+	if err := p.Unpresent(productWorkspacePath); err != nil {
+		return err
+	}
+	return p.Alias(ctx, fsutil.PathOS(repoPath, targetRel), productWorkspacePath)
+}
+
 func sameObject(a, b *types.Ref) bool {
 	return a.RepoUID == b.RepoUID && a.AssetPath == b.AssetPath && a.ObjectPath() == b.ObjectPath()
 }

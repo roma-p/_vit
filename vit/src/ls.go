@@ -178,7 +178,7 @@ func lsObject(
 			Author:        commit.Author,
 			Timestamp:     commit.Timestamp,
 			Size:          size,
-			Sources:       g,
+			Dependencies:  g,
 		},
 	}, nil
 }

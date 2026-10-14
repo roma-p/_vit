@@ -23,7 +23,7 @@ func (c *Client) SourceAdd(
 	}
 
 	sourceName = fsutil.PathInternal(sourceName)
-	if err := validateSourceName(sourceName); err != nil {
+	if err := validateDependencyName(sourceName); err != nil {
 		return nil, err
 	}
 
@@ -218,14 +218,14 @@ func (o *operationSourceAdd) Finish(
 	}
 }
 
-func validateSourceName(sourceName string) error {
-	if sourceName == "" || sourceName == "." ||
-		strings.HasPrefix(sourceName, "/") ||
-		strings.HasPrefix(sourceName, "..") {
+func validateDependencyName(name string) error {
+	if name == "" || name == "." ||
+		strings.HasPrefix(name, "/") ||
+		strings.HasPrefix(name, "..") {
 		return types.NewVitError(
 			types.ErrInvalidInut,
-			[]string{fmt.Sprintf("invalid source name, must be a relative path: %q",
-				sourceName)},
+			[]string{fmt.Sprintf("invalid dependency name, must be a relative path: %q",
+				name)},
 			nil,
 		)
 	}

@@ -11,4 +11,5 @@ const (
 	CommandSourceAdd  VitCommand = "source-add"
 	CommandSourcePull VitCommand = "source-pull"
 	CommandSourcePush VitCommand = "source-push"
+	CommandProductAdd VitCommand = "product-add"
 )
