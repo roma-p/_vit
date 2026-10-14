@@ -31,6 +31,7 @@ const (
 	ErrDependencyNotFound      = "DependencyNotFound"
 	ErrDependencyAlreadyExists = "DependencyAlreadyExists"
 	ErrCircularDependency      = "CircularDependency"
+	ErrSourcePushPartial       = "SourcePushPartial" // `source push` re-pinned some consumers, not all
 
 	ErrTransactionConflict = "TransactionConflict"
 	ErrTransactionFailed   = "TransactionFailed"

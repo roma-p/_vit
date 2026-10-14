@@ -107,10 +107,16 @@ func (c *Client) SourcePush(
 
 	res := &types.SourcePushResult{Producer: op.Producer}
 	for _, s := range op.subOps {
+		if op.failed[s.RefConsumer.RelativePath()] {
+			continue
+		}
 		res.Consumers = append(res.Consumers, types.SourcePullResult{
 			Consumer: s.RefConsumer,
 			Updates:  s.Updates,
 		})
+	}
+	if len(op.errs) > 0 {
+		return res, newErrSourcePushPartial(op.Producer, res, op.errs)
 	}
 	return res, nil
 }
@@ -118,6 +124,13 @@ func (c *Client) SourcePush(
 type operationSourcePush struct {
 	Producer *types.Ref
 	subOps   []*operationSourcePull
+	failed   map[string]bool // consumer RelativePath -> failed
+	errs     []pushConsumerErr
+}
+
+type pushConsumerErr struct {
+	consumer *types.Ref
+	err      error
 }
 
 // HistorySummary: "N update(s) → M consumer(s): <consumer refs>".
@@ -160,9 +173,11 @@ func (o *operationSourcePush) DBUpdate(
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
 ) error {
+	o.failed = make(map[string]bool)
 	for _, s := range o.subOps {
 		if err := s.DBUpdate(ctx, opctx, dbClient); err != nil {
-			return err
+			o.failed[s.RefConsumer.RelativePath()] = true
+			o.errs = append(o.errs, pushConsumerErr{consumer: s.RefConsumer, err: err})
 		}
 	}
 	return nil
@@ -176,11 +191,44 @@ func (o *operationSourcePush) Finish(
 	p workspace.Presenter,
 ) {
 	for _, s := range o.subOps {
+		if o.failed[s.RefConsumer.RelativePath()] {
+			continue // don't present if dbupdate failed for that consumer.
+		}
 		s.Finish(ctx, opctx, dbClient, logger, p)
 	}
 }
 
 // -- FILE LOCAL -------------------------------------------------------------
+
+func newErrSourcePushPartial(
+	producer *types.Ref,
+	res *types.SourcePushResult,
+	errs []pushConsumerErr,
+) error {
+	msgs := []string{fmt.Sprintf("source push partially failed: %s", producer.RelativePath())}
+
+	updated := make([]string, 0, len(res.Consumers))
+	for _, c := range res.Consumers {
+		if len(c.Updates) > 0 {
+			updated = append(updated, c.Consumer.RelativePath())
+		}
+	}
+	if len(updated) > 0 {
+		msgs = append(msgs, "updated: "+strings.Join(updated, ", "))
+	}
+
+	failed := make([]string, 0, len(errs))
+	for _, e := range errs {
+		msgs = append(msgs, fmt.Sprintf("FAILED: %s — %s", e.consumer.RelativePath(), e.err.Error()))
+		failed = append(failed, e.consumer.RelativePath())
+	}
+
+	return types.NewVitError(
+		types.ErrSourcePushPartial,
+		msgs,
+		[]any{"producer", producer, "updated", updated, "failed", failed},
+	)
+}
 
 func discoverPushConsumers(
 	ctx context.Context,
