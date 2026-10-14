@@ -68,6 +68,7 @@ func ResolveHandler[T any](
 			jsonhandler.Data = fresh
 			existing.forWrite = true
 			existing.lockDir = lockDir
+			pool.order = append(pool.order, path)
 		}
 
 		return jsonhandler, nil
@@ -77,7 +78,8 @@ func ResolveHandler[T any](
 }
 
 // FlushForWrite write all the json handler hold with Write privilege
-// in the order they were gathered  first (escalation don't change order)
+// in the order they acquire the write privilege
+// (either when its resolved with write priv or permission escalated)
 // ideally, the only way to write db is using this.
 func (p *JSONHandlerPool) FlushForWrite() error {
 	for _, path := range p.order {
@@ -157,6 +159,8 @@ func addHandler[T any](
 
 	entry.jsonhandler = handler
 	pool.data[path] = &entry
-	pool.order = append(pool.order, path)
+	if forWrite {
+		pool.order = append(pool.order, path)
+	}
 	return handler, nil
 }
