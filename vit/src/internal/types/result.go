@@ -95,6 +95,12 @@ type LsObject struct {
 	// Dependencies is the object's forward graph: both its sources (inputs it
 	// consumes) and its products (outputs it produces into).
 	Dependencies *DepGraph `json:"dependencies,omitempty"`
+	// UsedBy is the downstream dataflow closure: objects that consume this one,
+	// transitively, crossing products (the consumers of what it produced).
+	UsedBy []*Ref `json:"used_by,omitempty"`
+	// ProducedBy names the origin objects that declare this asset as a product
+	// output (the inverse of a forward product edge); direct, not transitive.
+	ProducedBy []*Ref `json:"produced_by,omitempty"`
 }
 
 func (r *LsResult) ToStringSlice() []string {
@@ -146,6 +152,18 @@ func (r *LsResult) ToStringSlice() []string {
 				appendProductList(&out, o.Dependencies, o.Ref)
 			}
 		}
+		if len(o.ProducedBy) > 0 {
+			out = append(out, "  produced by:")
+			for _, r := range o.ProducedBy {
+				out = append(out, "    "+r.RelativePath())
+			}
+		}
+		if len(o.UsedBy) > 0 {
+			out = append(out, "  used by:")
+			for _, r := range o.UsedBy {
+				out = append(out, "    "+r.RelativePath())
+			}
+		}
 		return out
 	}
 	return nil
@@ -169,9 +187,13 @@ func appendProductList(out *[]string, g *DepGraph, cur *Ref) {
 		if e.Type != AssetDependencyProduct || !sameRefObject(e.Consumer, cur) {
 			continue
 		}
-		target := "?"
+		// Provider = the produced version (a pinned commit, or the live target
+		// branch on a branch head); nil = nothing produced for this version.
+		target := "(not produced)"
 		if e.Provider != nil {
 			target = e.Provider.RelativePath()
+		} else if e.RefSpec != nil {
+			target = e.RefSpec.RelativePath() + " (not produced)"
 		}
 		*out = append(*out, fmt.Sprintf("    %s\t-> %s", e.Name, target))
 	}

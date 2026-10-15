@@ -268,16 +268,34 @@ func buildDependencies(
 			}
 			g.Merge(childG)
 		case types.AssetDependencyProduct:
-			target := dep.RefSpec
-			if err := addProductTargetNode(ctx, opctx, dbClient, g, target); err != nil {
-				return nil, err
+			provider := productProvider(root, dep)
+			if provider != nil && root.RefType == types.RefTypeTag {
+				provider = types.NewRefTagFloating(
+					provider.RepoRef(), provider.AssetPath, root.TagFamily, root.Site,
+				)
 			}
-			if err := g.Connect(root, target, dep.RefSpec, name, dep.Type); err != nil {
+			if provider != nil {
+				if err := addProductTargetNode(ctx, opctx, dbClient, g, provider); err != nil {
+					return nil, err
+				}
+			}
+			if err := g.Connect(root, provider, dep.RefSpec, name, dep.Type); err != nil {
 				return nil, err
 			}
 		}
 	}
 	return g, nil
+}
+
+func productProvider(root *types.Ref, dep *types.AssetDependency) *types.Ref {
+	// if refResolved is nil: no product was produced!!
+	if dep.RefResolved != nil {
+		return dep.RefResolved
+	}
+	if root.RefType == types.RefTypeBranch {
+		return dep.RefSpec
+	}
+	return nil
 }
 
 func addProductTargetNode(

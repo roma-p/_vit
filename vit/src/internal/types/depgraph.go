@@ -99,7 +99,11 @@ func (d *DepGraph) Merge(other *DepGraph) {
 }
 
 func edgeKey(e DependencyGraphEdge) string {
-	return e.Consumer.RelativePath() + "\x00" + e.Provider.RelativePath() + "\x00" +
+	provider := ""
+	if e.Provider != nil {
+		provider = e.Provider.RelativePath()
+	}
+	return e.Consumer.RelativePath() + "\x00" + provider + "\x00" +
 		e.Name + "\x00" + string(e.Type)
 }
 
