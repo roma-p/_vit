@@ -339,7 +339,7 @@ func walkUsedBy(
 		if dep.Type != types.AssetDependencyProduct || dep.RefResolved == nil {
 			continue
 		}
-		prod := *dep.RefResolved // copy; rehydrate RepoPath without mutating the loaded asset
+		prod := *dep.RefResolved
 		if prod.RepoPath == "" {
 			prod.RepoPath = opctx.RepoRefFor(prod.RepoUID).Path
 		}
