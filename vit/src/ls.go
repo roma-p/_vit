@@ -166,6 +166,8 @@ func lsObject(
 	}
 
 	g, _ := db.GetDependencies(ctx, opctx, dbClient, ref)
+	usedBy, _ := db.GetUsedBy(ctx, opctx, dbClient, ref)
+	producedBy, _ := db.GetProducedBy(ctx, opctx, dbClient, ref)
 
 	wsPath, _, _ := workspace.ResolveWorkspacePathFromRef(ref.RepoPath, ref)
 
@@ -179,6 +181,8 @@ func lsObject(
 			Timestamp:     commit.Timestamp,
 			Size:          size,
 			Dependencies:  g,
+			UsedBy:        usedBy,
+			ProducedBy:    producedBy,
 		},
 	}, nil
 }

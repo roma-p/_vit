@@ -218,7 +218,7 @@ func GetDependents(
 	return g, nil
 }
 
-func ListAllReverseEdges(
+func listAllReverseEdges(
 	opctx *opcontext.OperationContext,
 	repoPath, assetUID string,
 ) ([]ReverseEntry, error) {
@@ -266,25 +266,62 @@ func GetProducedBy(
 	if err != nil {
 		return nil, err
 	}
-	all, err := ListAllReverseEdges(opctx, ref.RepoPath, asset.Data.AssetUID)
+
+	objPath := ref.ObjectPath()
+	if ref.RefType == types.RefTypeTag {
+		outRef, _, err := ResolveCommitForDependency(asset.Data, ref) // non-floating tag ref
+		if err != nil {
+			return nil, err
+		}
+		objPath = outRef.ObjectPath()
+	}
+
+	entries, err := ListReverseEdges(
+		opctx, ref.RepoPath, asset.Data.AssetUID, objPath, types.AssetDependencyProduct,
+	)
 	if err != nil {
 		return nil, err
 	}
+
 	seen := map[string]bool{}
 	var out []*types.Ref
-	for i := range all {
-		e := all[i]
-		if e.Type != types.AssetDependencyProduct || e.Peer == nil {
+	for i := range entries {
+		p := entries[i].Peer
+		if p == nil {
 			continue
 		}
-		k := usedByKey(e.Peer)
+		k := usedByKey(p)
 		if seen[k] {
 			continue
 		}
 		seen[k] = true
-		out = append(out, e.Peer)
+		out = append(out, p)
 	}
 	return out, nil
+}
+
+func RecordProducerForProduct(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *Client,
+	producedRef, producerRef *types.Ref,
+	name string,
+	refSpec *types.Ref,
+) error {
+	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, producedRef, false)
+	if err != nil {
+		return err
+	}
+	return AddReverseEdge(
+		producedRef.RepoPath, asset.Data.AssetUID, producedRef.ObjectPath(),
+		ReverseEntry{
+			Type:    types.AssetDependencyProduct,
+			Peer:    producerRef,
+			Name:    name,
+			RefSpec: refSpec,
+			Commit:  producedRef.CommitID,
+		},
+	)
 }
 
 func usedByKey(ref *types.Ref) string {
@@ -313,13 +350,16 @@ func walkUsedBy(
 		return err
 	}
 
-	all, err := ListAllReverseEdges(opctx, ref.RepoPath, asset.Data.AssetUID)
+	all, err := listAllReverseEdges(opctx, ref.RepoPath, asset.Data.AssetUID)
 	if err != nil {
 		return err
 	}
 	for i := range all {
 		e := all[i]
 		if e.Type != types.AssetDependencySource || e.Commit != commitID || e.Peer == nil {
+			continue
+		}
+		if e.Peer.RefType != types.RefTypeBranch {
 			continue
 		}
 		if visited[usedByKey(e.Peer)] {

@@ -36,9 +36,6 @@ type TagObjectRequest struct {
 	SiteUID      string
 }
 
-// CommitBranch appends a new commit and advances the branch to it (parent + baseline
-// timestamp). Returns the new commit's ID (needed e.g. by tag-on-branch, which tags
-// the commit it just created).
 func CommitBranch(r CommitBranchRequest) (string, error) {
 	branchCommit, err := GetBranchCommit(r.Asset, r.BranchName)
 	if err != nil {
@@ -54,6 +51,17 @@ func CommitBranch(r CommitBranchRequest) (string, error) {
 		Timestamp:    r.TimeStamp,
 		Dependencies: *deepCopyDependencies(&branchCommit.Dependencies),
 		IsSnapshot:   r.IsSnapshot,
+	}
+
+	// commits products if they were actually produced (otherwise skip it)
+	// TODO: do we want this beahvior? To test...
+	for name, produced := range r.ProducedProducts {
+		dep, ok := ret.Dependencies[name]
+		if !ok || produced == nil {
+			continue
+		}
+		dep.RefResolved = produced
+		dep.Commit = produced.CommitID
 	}
 
 	newCommitID, err := addCommit(r.Asset, ret)
@@ -74,6 +82,7 @@ type CommitBranchRequest struct {
 	Message            string
 	TimeStamp          time.Time
 	IsSnapshot         bool
+	ProducedProducts   map[string]*types.Ref // *types.Ref -> resolved ref
 	// TODO dependancies
 }
 

@@ -87,6 +87,31 @@ func PlanBranchFromContentNode(
 	}, nil
 }
 
+func PlanEmptyBranch(
+	repoPath, assetPath, branchName string,
+) (*types.BlobUpdatePlan, *types.ContentNode, error) {
+	branchPath := branchBlobPath(repoPath, assetPath, branchName)
+	blobRootDir := fsutil.PathOS(repoPath, ".vit", "blob")
+
+	empty := types.NewDirStat("")
+	node, err := buildContentTreeFromDirStat(empty, branchPath, blobRootDir)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &types.BlobUpdatePlan{
+		CopyRequests: []types.CopyFilesRequest{{
+			DstRoot:  branchPath,
+			Src:      []*types.DirStat{empty},
+			Writable: true,
+		}},
+		ContentRoots: []types.ContentRootWrite{{
+			ContentRootPath: genContentPath(repoPath, assetPath),
+			Root:            node,
+		}},
+	}, node, nil
+}
+
 // ContentNodeToDirStat flattens a content node into ONE DirStat keyed by
 // tree-relative path, rooted at fullPath.
 func ContentNodeToDirStat(n *types.ContentNode, fullPath string) *types.DirStat {

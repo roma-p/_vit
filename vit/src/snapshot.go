@@ -2,8 +2,10 @@ package vit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"vit/internal/blob"
 	"vit/internal/db"
@@ -50,6 +52,21 @@ func (c *Client) Snapshot(ctx context.Context, path, message string) (*types.Str
 			IsSnapshot: true, // explicit `vit snapshot` → a user snapshot
 		}
 
+		products, err := productEdgesForRef(ctx, opctx, dbClient, ref, false)
+		if err != nil {
+			return err
+		}
+		refs := []*types.Ref{ref}
+		for _, p := range products {
+			op.productCommits = append(op.productCommits, &operationCommit{
+				Ref:         p.targetRef,
+				Message:     message,
+				IsSnapshot:  true,
+				ProductName: p.name,
+			})
+			refs = append(refs, p.targetRef)
+		}
+
 		if err := transaction.RunEdit(
 			ctx,
 			transaction.Request{
@@ -64,8 +81,9 @@ func (c *Client) Snapshot(ctx context.Context, path, message string) (*types.Str
 				RepoPath:  opctx.RepoPath(),
 				Timestamp: opctx.TimeStamp,
 				Message:   message,
+				Ref:       ref, // history subject = the origin
 			},
-			[]*types.Ref{ref}, transaction.TransactionBranch,
+			refs, transaction.TransactionBranch,
 		); err != nil {
 			return err
 		}
@@ -82,9 +100,11 @@ func (c *Client) Snapshot(ctx context.Context, path, message string) (*types.Str
 
 type operationCommit struct {
 	// input given at init
-	Ref        *types.Ref
-	Message    string
-	IsSnapshot bool // true via Client.Snapshot; false when reused by Tag
+	Ref            *types.Ref
+	Message        string
+	IsSnapshot     bool // true via Client.Snapshot; false when reused by Tag
+	productCommits []*operationCommit
+	ProductName    string
 
 	// filled at validate
 	changeRecord     *types.ChangeRecord
@@ -120,6 +140,18 @@ func (o *operationCommit) Validate(
 	o.changeRecord = r.ChangeRecord
 	o.contentNode = r.PrevCommitContentNode
 	o.workspaceDirStat = r.WorkspaceDirStat
+
+	kept := o.productCommits[:0]
+	for _, pc := range o.productCommits {
+		if err := pc.Validate(ctx, opctx, dbClient); err != nil {
+			if isNoChangeToCommit(err) {
+				continue
+			}
+			return err
+		}
+		kept = append(kept, pc)
+	}
+	o.productCommits = kept
 	return nil
 }
 
@@ -127,7 +159,17 @@ func (o *operationCommit) PlanBlobUpdate(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 ) (*types.BlobUpdatePlan, error) {
-	plan, err := blob.PlanCommitBranch(
+	plan := &types.BlobUpdatePlan{}
+
+	for _, pc := range o.productCommits {
+		p, err := pc.PlanBlobUpdate(ctx, opctx)
+		if err != nil {
+			return nil, err
+		}
+		appendPlan(plan, p)
+	}
+
+	self, err := blob.PlanCommitBranch(
 		ctx,
 		blob.PlanCommitBranchRequest{
 			RepoRef:          o.Ref.RepoRef(),
@@ -144,7 +186,7 @@ func (o *operationCommit) PlanBlobUpdate(
 	if err != nil {
 		return nil, err
 	}
-	// TODO : things missing here.
+	appendPlan(plan, self)
 	return plan, nil
 }
 
@@ -153,6 +195,20 @@ func (o *operationCommit) DBUpdate(
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
 ) error {
+	// product resolved first so flush first!
+	var produced map[string]*types.Ref
+	if len(o.productCommits) > 0 {
+		produced = make(map[string]*types.Ref, len(o.productCommits))
+		for _, pc := range o.productCommits {
+			if err := pc.DBUpdate(ctx, opctx, dbClient); err != nil {
+				return err
+			}
+			produced[pc.ProductName] = types.NewRefCommit(
+				pc.Ref.RepoRef(), pc.Ref.AssetPath, pc.NewCommitID,
+			)
+		}
+	}
+
 	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, o.Ref, true)
 	if err != nil {
 		return err
@@ -168,6 +224,7 @@ func (o *operationCommit) DBUpdate(
 			Message:            o.Message,
 			TimeStamp:          opctx.TimeStamp,
 			IsSnapshot:         o.IsSnapshot,
+			ProducedProducts:   produced, // pins product deps' RefResolved
 		},
 	)
 	return err
@@ -180,10 +237,23 @@ func (o *operationCommit) Finish(
 	logger *slog.Logger,
 	p workspace.Presenter,
 ) {
+	for _, pc := range o.productCommits {
+		pc.Finish(ctx, opctx, dbClient, logger, p)
+	}
+
 	commitRef := types.NewRefCommit(o.Ref.RepoRef(), o.Ref.AssetPath, o.NewCommitID)
 
 	if err := db.UpdateDepGraphForCommit(ctx, opctx, dbClient, commitRef, o.Ref); err != nil {
 		logger.Log(ctx, slog.LevelError, "commit: dep graph update failed", "err", err)
+	}
+
+	for _, pc := range o.productCommits {
+		produced := types.NewRefCommit(pc.Ref.RepoRef(), pc.Ref.AssetPath, pc.NewCommitID)
+		if err := db.RecordProducerForProduct(
+			ctx, opctx, dbClient, produced, commitRef, pc.ProductName, pc.Ref,
+		); err != nil {
+			logger.Log(ctx, slog.LevelError, "commit: record producer failed", "err", err)
+		}
 	}
 	g, err := db.GetDependencies(ctx, opctx, dbClient, commitRef)
 	if err != nil {
@@ -206,10 +276,102 @@ func (o *operationCommit) Finish(
 	}
 }
 
+func (o *operationCommit) HistorySummary() string {
+	if len(o.productCommits) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(o.productCommits))
+	for _, pc := range o.productCommits {
+		names = append(names, pc.ProductName)
+	}
+	return fmt.Sprintf("captured %d product(s): %s", len(o.productCommits), strings.Join(names, ", "))
+}
+
 func newNothingToCommitErr(ref *types.Ref) error {
 	return types.NewVitError(
 		types.ErrNoChangeToCommit,
 		[]string{fmt.Sprintf("no change to snapshot at: %s", ref.RelativePath())},
 		[]any{"ref", ref},
 	)
+}
+
+// -- SNAPSHOT CASCADE (products) --------------------------------------------
+
+type originProduct struct {
+	name      string
+	targetRef *types.Ref // the product target's branch ref — what we capture
+}
+
+// productEdgesForRef find products of given ref.
+// if ref is branch : returns either branch proeucts or last commit on branch
+func productEdgesForRef(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+	ref *types.Ref,
+	committed bool,
+) ([]originProduct, error) {
+	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, ref, false)
+	if err != nil {
+		return nil, err
+	}
+
+	var deps types.AssetDependencies
+	switch ref.RefType {
+	case types.RefTypeBranch:
+		bc, err := db.GetBranchCommit(asset.Data, ref.BranchName)
+		if err != nil {
+			return nil, err
+		}
+		if committed {
+			c, err := db.GetCommit(asset.Data, bc.Parent)
+			if err != nil {
+				return nil, err
+			}
+			deps = c.Dependencies
+		} else {
+			deps = bc.Dependencies
+		}
+	case types.RefTypeCommit:
+		c, err := db.GetCommit(asset.Data, ref.CommitID)
+		if err != nil {
+			return nil, err
+		}
+		deps = c.Dependencies
+	case types.RefTypeTag:
+		_, commitID, err := db.ResolveCommitForDependency(asset.Data, ref)
+		if err != nil {
+			return nil, err
+		}
+		c, err := db.GetCommit(asset.Data, commitID)
+		if err != nil {
+			return nil, err
+		}
+		deps = c.Dependencies
+	}
+	return collectProductEdges(deps), nil
+}
+
+func collectProductEdges(deps types.AssetDependencies) []originProduct {
+	out := make([]originProduct, 0, len(deps))
+	for name, dep := range deps {
+		if dep.Type == types.AssetDependencyProduct {
+			out = append(out, originProduct{name: name, targetRef: dep.RefSpec})
+		}
+	}
+	return out
+}
+
+func appendPlan(dst, src *types.BlobUpdatePlan) {
+	dst.CopyRequests = append(dst.CopyRequests, src.CopyRequests...)
+	dst.ContentRoots = append(dst.ContentRoots, src.ContentRoots...)
+	dst.Manifests = append(dst.Manifests, src.Manifests...)
+}
+
+func isNoChangeToCommit(err error) bool {
+	var ve *types.VitError
+	if errors.As(err, &ve) {
+		return ve.Name == types.ErrNoChangeToCommit
+	}
+	return false
 }
