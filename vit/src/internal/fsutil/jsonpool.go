@@ -106,6 +106,14 @@ func (p *JSONHandlerPool) Release(path string) {
 	delete(p.data, path)
 }
 
+func (p *JSONHandlerPool) DropReadCache() {
+	for path, entry := range p.data {
+		if !entry.forWrite {
+			delete(p.data, path)
+		}
+	}
+}
+
 // ReleaseAll releases every cached entry. Intended for defer at the
 // top of an operation. Safe to call multiple times.
 func (p *JSONHandlerPool) ReleaseAll() {

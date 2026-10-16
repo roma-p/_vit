@@ -94,6 +94,11 @@ func run(
 ) error {
 	err := withTransaction(ctx, r.RepoPath, tids, r.Command, r.User, r.Timestamp,
 		func() error {
+			// 0. We now hold the scan-lock. Any DB read taken before it (e.g.
+			//    discovery to decide what to lock) may be stale, so evict the
+			//    read cache: Validate must re-parse the source of truth under the
+			//    lock, not reuse a pre-lock parse.
+			r.Opctx.JSONPool.DropReadCache()
 			// 1. domain validate (conflict scan) first, then operation validate.
 			if err := extraValidate(); err != nil {
 				return err
