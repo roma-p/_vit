@@ -122,6 +122,7 @@ type taggedProduct struct {
 	name        string
 	outputRef   *types.Ref
 	refSpec     *types.Ref
+	commit      string
 	contentNode *types.ContentNode
 }
 
@@ -220,7 +221,15 @@ func (o *operationTag) DBUpdate(
 		o.targetCommit = o.oc.NewCommitID
 	}
 
-	// 1. Tag the origin commit.
+	commit, err := db.GetCommit(asset.Data, o.targetCommit)
+	if err != nil {
+		return err
+	}
+
+	if err := o.tagProducts(ctx, opctx, dbClient, commit); err != nil {
+		return err
+	}
+
 	tagName, err := db.TagObject(db.TagObjectRequest{
 		Asset:        asset.Data,
 		Author:       opctx.User,
@@ -229,11 +238,8 @@ func (o *operationTag) DBUpdate(
 		TagFamily:    o.TagFamily,
 		TargetCommit: o.targetCommit,
 		SiteUID:      o.targetSite,
+		Dependencies: o.originTagProductDeps(),
 	})
-	if err != nil {
-		return err
-	}
-	commit, err := db.GetCommit(asset.Data, o.targetCommit)
 	if err != nil {
 		return err
 	}
@@ -244,10 +250,23 @@ func (o *operationTag) DBUpdate(
 	o.outputRef = types.NewRefTag(
 		o.InputRef.RepoRef(), o.InputRef.AssetPath, o.TagFamily, tagName, o.targetSite,
 	)
+	return nil
+}
 
-	// 2. CORE MIRROR: tag the product commits this origin commit PRODUCED — those
-	//    with RefResolved set.
-	return o.tagProducts(ctx, opctx, dbClient, commit)
+func (o *operationTag) originTagProductDeps() types.AssetDependencies {
+	if len(o.productTags) == 0 {
+		return nil
+	}
+	deps := make(types.AssetDependencies, len(o.productTags))
+	for _, pt := range o.productTags {
+		deps[pt.name] = &types.AssetDependency{
+			Type:        types.AssetDependencyProduct,
+			RefSpec:     pt.refSpec,
+			RefResolved: pt.outputRef,
+			Commit:      pt.commit,
+		}
+	}
+	return deps
 }
 
 func (o *operationTag) Finish(
@@ -322,6 +341,7 @@ func (o *operationTag) tagProducts(
 				prodRef.RepoRef(), prodRef.AssetPath, o.TagFamily, tagName, prodSite,
 			),
 			refSpec:     dep.RefSpec,
+			commit:      prodRef.CommitID,
 			contentNode: content,
 		})
 	}

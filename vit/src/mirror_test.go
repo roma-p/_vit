@@ -193,6 +193,9 @@ func TestTagView_productResolvesToTag(t *testing.T) {
 	if e.Provider.RefType != types.RefTypeTag || e.Provider.TagFamily != "approved" {
 		t.Fatalf("expected product resolved to render@tag=approved, got %+v", e.Provider)
 	}
+	if e.Provider.TagName == "" {
+		t.Fatalf("expected a precise named product tag, got floating: %+v", e.Provider)
+	}
 }
 
 // -- BRANCH mirror ----------------------------------------------------------

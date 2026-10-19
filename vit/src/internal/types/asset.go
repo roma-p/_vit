@@ -83,6 +83,11 @@ type AssetTag struct {
 	Author    string    `json:"author"`
 	Commit    string    `json:"commit"`
 	Timestamp time.Time `json:"timestamp"`
+
+	// Dependencies holds the override of the AssetTag object on the commit
+	// dependencies it is pointing on.
+	// it is used to override products dependencies.
+	Dependencies AssetDependencies `json:"dependencies,omitempty"`
 }
 
 func (a *Asset) SetTag(family, site, name string, tag *AssetTag) {
