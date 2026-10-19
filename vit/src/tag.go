@@ -280,15 +280,10 @@ func (o *operationTag) Finish(
 		o.oc.Finish(ctx, opctx, dbClient, logger, p)
 	}
 
-	o.TagWorkspacePath = presentTag(ctx, opctx, dbClient, logger, p, o.outputRef, o.contentNode)
 	for _, pt := range o.productTags {
 		presentTag(ctx, opctx, dbClient, logger, p, pt.outputRef, pt.contentNode)
-		if err := db.RecordProducerForProduct(
-			ctx, opctx, dbClient, pt.outputRef, o.outputRef, pt.name, pt.refSpec,
-		); err != nil {
-			logger.Log(ctx, slog.LevelError, "tag: record producer failed", "err", err)
-		}
 	}
+	o.TagWorkspacePath = presentTag(ctx, opctx, dbClient, logger, p, o.outputRef, o.contentNode)
 }
 
 func (o *operationTag) tagProducts(

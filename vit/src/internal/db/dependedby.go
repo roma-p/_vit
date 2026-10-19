@@ -300,30 +300,6 @@ func GetProducedBy(
 	return out, nil
 }
 
-func RecordProducerForProduct(
-	ctx context.Context,
-	opctx *opcontext.OperationContext,
-	dbClient *Client,
-	producedRef, producerRef *types.Ref,
-	name string,
-	refSpec *types.Ref,
-) error {
-	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, producedRef, false)
-	if err != nil {
-		return err
-	}
-	return AddReverseEdge(
-		producedRef.RepoPath, asset.Data.AssetUID, producedRef.ObjectPath(),
-		ReverseEntry{
-			Type:    types.AssetDependencyProduct,
-			Peer:    producerRef,
-			Name:    name,
-			RefSpec: refSpec,
-			Commit:  producedRef.CommitID,
-		},
-	)
-}
-
 func usedByKey(ref *types.Ref) string {
 	return ref.RepoUID + "\x00" + ref.AssetPath + "\x00" + ref.ObjectPath()
 }
@@ -390,41 +366,35 @@ func walkUsedBy(
 	return nil
 }
 
-// RecordDependentsForCommit records, for each source dep of a freshly-created
-// commit object, a reverse (source) edge on the target keyed at the target's
-// object, with the consumer = THIS COMMIT.
-func RecordDependentsForCommit(
+func recordProducerEdges(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
-	commitRef *types.Ref,
+	objRef *types.Ref,
 ) error {
-	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, commitRef, false)
+	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, objRef, false)
 	if err != nil {
 		return err
 	}
-	commit, err := GetCommit(asset.Data, commitRef.CommitID)
+	deps, _, err := dependenciesForRef(asset.Data, objRef)
 	if err != nil {
 		return err
 	}
-	idx, err := dbClient.GetTreeIndex(ctx, opctx, commitRef.RepoPath)
-	if err != nil {
-		return err
-	}
-	for name, dep := range commit.Dependencies {
-		if dep.Type != types.AssetDependencySource {
+	for name, dep := range deps {
+		if dep.Type != types.AssetDependencyProduct || dep.RefResolved == nil {
 			continue
 		}
 		target := dep.RefResolved
-		targetUID, err := dbClient.assetUIDFromIndex(ctx, opctx, idx, target)
+		// resolve the target's asset UID in ITS OWN repo (deps may be cross-repo).
+		targetAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, target, false)
 		if err != nil {
 			return err
 		}
 		if err := AddReverseEdge(
-			target.RepoPath, targetUID, target.ObjectPath(),
+			target.RepoPath, targetAsset.Data.AssetUID, target.ObjectPath(),
 			ReverseEntry{
-				Type:    types.AssetDependencySource,
-				Peer:    commitRef,
+				Type:    types.AssetDependencyProduct,
+				Peer:    objRef,
 				Name:    name,
 				RefSpec: dep.RefSpec,
 				Commit:  dep.Commit,

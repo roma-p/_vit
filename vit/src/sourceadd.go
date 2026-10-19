@@ -193,16 +193,17 @@ func (o *operationSourceAdd) Finish(
 	logger *slog.Logger,
 	p workspace.Presenter,
 ) {
-	g, err := db.UpdateDepGraphForSource(
+	g, err := db.UpdateDepGraphForDependency(
 		ctx,
 		opctx,
 		dbClient,
-		db.UpdateDepGraphForSourceRequest{
-			Consumer: o.RefWithNewDep,
-			Target:   o.RefDepResolved,
-			Spec:     o.RefDepSpec,
-			Name:     o.NewDepedencyName,
-			Commit:   o.DepCommitID,
+		db.UpdateDepGraphForDependencyRequest{
+			Dependent: o.RefWithNewDep,
+			Target:    o.RefDepResolved,
+			Spec:      o.RefDepSpec,
+			Name:      o.NewDepedencyName,
+			Type:      types.AssetDependencySource,
+			Commit:    o.DepCommitID,
 		},
 	)
 	if err != nil {

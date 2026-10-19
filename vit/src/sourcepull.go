@@ -239,14 +239,15 @@ func (o *operationSourcePull) Finish(
 			logger.Log(ctx, slog.LevelError, "source pull: mark-stale (old pin) failed", "err", err)
 		}
 
-		ng, err := db.UpdateDepGraphForSource(
+		ng, err := db.UpdateDepGraphForDependency(
 			ctx, opctx, dbClient,
-			db.UpdateDepGraphForSourceRequest{
-				Consumer: o.RefConsumer,
-				Target:   u.NewTarget,
-				Spec:     u.RefSpec,
-				Name:     u.Name,
-				Commit:   u.NewCommit,
+			db.UpdateDepGraphForDependencyRequest{
+				Dependent: o.RefConsumer,
+				Target:    u.NewTarget,
+				Spec:      u.RefSpec,
+				Name:      u.Name,
+				Type:      types.AssetDependencySource,
+				Commit:    u.NewCommit,
 			},
 		)
 		if err != nil {

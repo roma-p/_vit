@@ -115,7 +115,9 @@ func CacheDependencies(
 // -- OPERATION API : update the dep graph after a operation -----------------
 
 // UpdateDepGraphForCommit materializes the new commit's forward closure, refreshes
-// the branch head's, and records the commit's reverse edges.
+// the branch head's, and records the commit's producer edges (produced-by on the
+// products it captured). Source reverse edges are the live-branch index, owned by
+// `source add`, not recorded per-commit.
 func UpdateDepGraphForCommit(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
@@ -128,30 +130,37 @@ func UpdateDepGraphForCommit(
 	if _, err := CacheDependencies(ctx, opctx, dbClient, branchRef); err != nil {
 		return err
 	}
-	return RecordDependentsForCommit(ctx, opctx, dbClient, commitRef)
+	return recordProducerEdges(ctx, opctx, dbClient, commitRef)
 }
 
-// UpdateDepGraphForTag materializes the new tag's forward closure.
+// UpdateDepGraphForTag materializes the new tag's forward closure and records
+// the producer edges that make the tagged products' produced-by resolve to this
+// tag (the tag carries its own product deps).
 func UpdateDepGraphForTag(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
 	tagRef *types.Ref,
 ) error {
-	_, err := CacheDependencies(ctx, opctx, dbClient, tagRef)
-	return err
+	if _, err := CacheDependencies(ctx, opctx, dbClient, tagRef); err != nil {
+		return err
+	}
+	return recordProducerEdges(ctx, opctx, dbClient, tagRef)
 }
 
-// UpdateDepGraphForSource materializes the consumer's forward closure and records
-// the reverse edge on the target (+ marks its dependents stale). It returns the
-// consumer's closure so the caller can present it into the workspace.
-func UpdateDepGraphForSource(
+// UpdateDepGraphForDependency materializes the DEPENDENT object's forward closure
+// and records the reverse edge on the target (+ marks the target's dependents
+// stale). It returns the dependent's closure so the caller can present it. This
+// is the single incremental edge-creation path for BOTH directions:
+//   - `source add`  => Type=source,  Dependent = the consumer
+//   - `product add` => Type=product, Dependent = the origin
+func UpdateDepGraphForDependency(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *Client,
-	r UpdateDepGraphForSourceRequest,
+	r UpdateDepGraphForDependencyRequest,
 ) (*types.DepGraph, error) {
-	g, err := CacheDependencies(ctx, opctx, dbClient, r.Consumer)
+	g, err := CacheDependencies(ctx, opctx, dbClient, r.Dependent)
 	if err != nil {
 		return nil, err
 	}
@@ -162,8 +171,8 @@ func UpdateDepGraphForSource(
 	if err := AddReverseEdge(
 		r.Target.RepoPath, targetAsset.Data.AssetUID, r.Target.ObjectPath(),
 		ReverseEntry{
-			Type:    types.AssetDependencySource,
-			Peer:    r.Consumer,
+			Type:    r.Type,
+			Peer:    r.Dependent,
 			Name:    r.Name,
 			RefSpec: r.Spec,
 			Commit:  r.Commit,
@@ -177,47 +186,13 @@ func UpdateDepGraphForSource(
 	return g, nil
 }
 
-type UpdateDepGraphForSourceRequest struct {
-	Consumer *types.Ref
-	Target   *types.Ref
-	Spec     *types.Ref
-	Name     string
-	Commit   string // consumer underlying commit id
-}
-
-func UpdateDepGraphForProduct(
-	ctx context.Context,
-	opctx *opcontext.OperationContext,
-	dbClient *Client,
-	r UpdateDepGraphForProductRequest,
-) (*types.DepGraph, error) {
-	g, err := CacheDependencies(ctx, opctx, dbClient, r.Origin)
-	if err != nil {
-		return nil, err
-	}
-	targetAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, r.Target, false)
-	if err != nil {
-		return g, err
-	}
-	if err := AddReverseEdge(
-		r.Target.RepoPath, targetAsset.Data.AssetUID, r.Target.ObjectPath(),
-		ReverseEntry{
-			Type:    types.AssetDependencyProduct,
-			Peer:    r.Origin,
-			Name:    r.Name,
-			RefSpec: r.Spec,
-		},
-	); err != nil {
-		return g, err
-	}
-	return g, nil
-}
-
-type UpdateDepGraphForProductRequest struct {
-	Origin *types.Ref
-	Target *types.Ref
-	Spec   *types.Ref
-	Name   string
+type UpdateDepGraphForDependencyRequest struct {
+	Dependent *types.Ref // the consumer (source) or the origin (product)
+	Target    *types.Ref
+	Spec      *types.Ref
+	Name      string
+	Type      types.AssetDependencyType
+	Commit    string // dependent's underlying commit id (source); "" for product
 }
 
 // CheckSourceAddNoCycle checks that adding a source won't create a cycle.

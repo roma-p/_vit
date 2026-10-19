@@ -247,14 +247,6 @@ func (o *operationCommit) Finish(
 		logger.Log(ctx, slog.LevelError, "commit: dep graph update failed", "err", err)
 	}
 
-	for _, pc := range o.productCommits {
-		produced := types.NewRefCommit(pc.Ref.RepoRef(), pc.Ref.AssetPath, pc.NewCommitID)
-		if err := db.RecordProducerForProduct(
-			ctx, opctx, dbClient, produced, commitRef, pc.ProductName, pc.Ref,
-		); err != nil {
-			logger.Log(ctx, slog.LevelError, "commit: record producer failed", "err", err)
-		}
-	}
 	g, err := db.GetDependencies(ctx, opctx, dbClient, commitRef)
 	if err != nil {
 		logger.Log(ctx, slog.LevelError, "commit: dep graph read failed", "err", err)

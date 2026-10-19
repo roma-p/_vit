@@ -327,13 +327,14 @@ func (o *operationBranch) Finish(
 
 	for _, pt := range o.productTargets {
 		targetBranch := types.NewRefBranch(pt.targetRef.RepoRef(), pt.targetRef.AssetPath, o.BranchName)
-		if _, err := db.UpdateDepGraphForProduct(
+		if _, err := db.UpdateDepGraphForDependency(
 			ctx, opctx, dbClient,
-			db.UpdateDepGraphForProductRequest{
-				Origin: o.outputRef,
-				Target: targetBranch,
-				Spec:   targetBranch,
-				Name:   pt.name,
+			db.UpdateDepGraphForDependencyRequest{
+				Dependent: o.outputRef,
+				Target:    targetBranch,
+				Spec:      targetBranch,
+				Name:      pt.name,
+				Type:      types.AssetDependencyProduct,
 			},
 		); err != nil {
 			logger.Log(ctx, slog.LevelError, "branch: product dep graph update failed", "err", err)

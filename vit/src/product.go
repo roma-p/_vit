@@ -213,15 +213,16 @@ func (o *operationProductAdd) Finish(
 		o.addOp.Finish(ctx, opctx, dbClient, logger, p)
 	}
 
-	if _, err := db.UpdateDepGraphForProduct(
+	if _, err := db.UpdateDepGraphForDependency(
 		ctx,
 		opctx,
 		dbClient,
-		db.UpdateDepGraphForProductRequest{
-			Origin: o.RefOrigin,
-			Target: o.RefTarget,
-			Spec:   o.RefTarget,
-			Name:   o.ProductName,
+		db.UpdateDepGraphForDependencyRequest{
+			Dependent: o.RefOrigin,
+			Target:    o.RefTarget,
+			Spec:      o.RefTarget,
+			Name:      o.ProductName,
+			Type:      types.AssetDependencyProduct,
 		},
 	); err != nil {
 		logger.Log(ctx, slog.LevelError, "product add: dep graph update failed", "err", err)
