@@ -339,7 +339,7 @@ func (o *operationBranch) Finish(
 			logger.Log(ctx, slog.LevelError, "branch: product dep graph update failed", "err", err)
 		}
 		if err := workspace.PresentProduct(
-			ctx, o.InputRef.RepoPath, o.outputRef, pt.name, targetBranch, p,
+			ctx, o.outputRef, pt.name, targetBranch, p,
 		); err != nil {
 			logger.Log(ctx, slog.LevelError, "branch: present product failed", "err", err)
 		}

@@ -60,6 +60,8 @@ func ExtInternal(p string) string { return path.Ext(filepath.ToSlash(p)) }
 
 func AbsOS(p string) (string, error) { return filepath.Abs(filepath.FromSlash(p)) }
 
+func IsAbsOS(p string) bool { return filepath.IsAbs(filepath.FromSlash(p)) }
+
 // --- Split ---
 
 func SplitInternal(p string) []string {

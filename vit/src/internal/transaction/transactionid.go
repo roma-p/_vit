@@ -52,7 +52,7 @@ func newTransactionIDFromName(repoPath, encodedName string) (*TransactionID, err
 	}
 
 	operation := splitTransactionID[1]
-	var ref *types.Ref = nil
+	var ref *types.Ref
 	if len(splitTransactionID) == 3 {
 		refSubPath := splitTransactionID[2]
 		refPath := decoded + refSubPath
@@ -60,6 +60,8 @@ func newTransactionIDFromName(repoPath, encodedName string) (*TransactionID, err
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		ref = types.NewRefEmpty(repoPath, decoded)
 	}
 
 	return &TransactionID{

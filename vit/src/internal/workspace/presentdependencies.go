@@ -25,18 +25,17 @@ func PresentSources(
 			"present sources: consumer has no pointer",
 		)
 	}
-	return aliasSources(ctx, repoPath, fsutil.PathOS(repoPath, rel), g, root, p)
+	return aliasSources(ctx, fsutil.PathOS(repoPath, rel), g, root, p)
 }
 
 func PresentProduct(
 	ctx context.Context,
-	repoPath string,
 	origin *types.Ref,
 	name string,
 	target *types.Ref,
 	p Presenter,
 ) error {
-	originRel, ok, err := ResolveWorkspacePathFromRef(repoPath, origin)
+	originRel, ok, err := ResolveWorkspacePathFromRef(origin.RepoPath, origin)
 	if err != nil {
 		return err
 	}
@@ -46,9 +45,10 @@ func PresentProduct(
 			"present product: origin has no pointer",
 		)
 	}
-	productWorkspacePath := fsutil.PathOS(repoPath, originRel, name)
+	productWorkspacePath := fsutil.PathOS(origin.RepoPath, originRel, name)
 
-	targetRel, ok, err := ResolveWorkspacePathFromRef(repoPath, target)
+	targetRepo := refRepoPath(target, origin.RepoPath)
+	targetRel, ok, err := ResolveWorkspacePathFromRef(targetRepo, target)
 	if err != nil {
 		return err
 	}
@@ -62,18 +62,25 @@ func PresentProduct(
 	if err := p.Unpresent(productWorkspacePath); err != nil {
 		return err
 	}
-	return p.Alias(ctx, fsutil.PathOS(repoPath, targetRel), productWorkspacePath)
+	return p.Alias(ctx, fsutil.PathOS(targetRepo, targetRel), productWorkspacePath)
 }
 
 func sameObject(a, b *types.Ref) bool {
 	return a.RepoUID == b.RepoUID && a.AssetPath == b.AssetPath && a.ObjectPath() == b.ObjectPath()
 }
 
+func refRepoPath(ref *types.Ref, fallback string) string {
+	if ref.RepoPath != "" {
+		return ref.RepoPath
+	}
+	return fallback
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
 
 func aliasSources(
 	ctx context.Context,
-	repoPath, currentWorkspacePath string,
+	currentWorkspacePath string,
 	g *types.DepGraph,
 	current *types.Ref,
 	p Presenter,
@@ -91,7 +98,8 @@ func aliasSources(
 			return err
 		}
 
-		rel, ok, err := ResolveWorkspacePathFromRef(repoPath, target)
+		targetRepo := refRepoPath(target, current.RepoPath)
+		rel, ok, err := ResolveWorkspacePathFromRef(targetRepo, target)
 		if err != nil {
 			return err
 		}
@@ -102,7 +110,7 @@ func aliasSources(
 				"present sources: cannot alias a provider that has no presentation",
 			)
 		}
-		if err := p.Alias(ctx, fsutil.PathOS(repoPath, rel), sourceWorkspacePath); err != nil {
+		if err := p.Alias(ctx, fsutil.PathOS(targetRepo, rel), sourceWorkspacePath); err != nil {
 			return err
 		}
 	}

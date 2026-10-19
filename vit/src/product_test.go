@@ -182,6 +182,22 @@ func TestProductAdd_lsManifestsProduct(t *testing.T) {
 	}
 }
 
+func TestProductAdd_targetQualifierParsed(t *testing.T) {
+	env := newVitEnv(t)
+	anim := must(env.Add(ctx, env.abs("shot/anim"), env.fileSrc("anim.ma", "A"))).String
+
+	must(env.ProductAdd(ctx, env.branchRef("shot/anim"), env.abs("render/beauty")+"@branch=base", "render", true))
+
+	if _, err := os.Stat(env.targetBranchWs("render/beauty")); err != nil {
+		t.Fatalf("expected target at a clean path render/beauty: %v", err)
+	}
+	if _, err := os.Stat(env.abs("render/beauty@branch=base")); err == nil {
+		t.Fatal("qualifier leaked into the asset path: render/beauty@branch=base exists")
+	}
+	env.editFile(filepath.Join(anim, "render", "out.exr"), "frame1")
+	testutils.AssertEqual(t, env.read(filepath.Join(env.targetBranchWs("render/beauty"), "out.exr")), "frame1")
+}
+
 func TestProductAdd_duplicateNameRejected(t *testing.T) {
 	env := newVitEnv(t)
 	must(env.Add(ctx, env.abs("shot/anim"), env.fileSrc("anim.ma", "A")))

@@ -74,8 +74,24 @@ func (o *OperationContext) Repo() *types.RepoRef {
 }
 
 func (o *OperationContext) RepoRefFor(uid string) *types.RepoRef {
-	c := o.RefConfigs[uid]
-	return &types.RepoRef{UID: uid, Path: c.RepoPath, Site: c.CurrentSite}
+	if c, ok := o.RefConfigs[uid]; ok {
+		return &types.RepoRef{UID: uid, Path: c.RepoPath, Site: c.CurrentSite}
+	}
+	var path string
+	for _, c := range o.RefConfigs {
+		if p, ok := c.Repos[uid]; ok && p != "" {
+			path = p
+			break
+		}
+	}
+	if path != "" {
+		if _, err := o.AddRepoConfig(path); err == nil {
+			if c, ok := o.RefConfigs[uid]; ok {
+				return &types.RepoRef{UID: uid, Path: c.RepoPath, Site: c.CurrentSite}
+			}
+		}
+	}
+	return &types.RepoRef{UID: uid}
 }
 
 func (o *OperationContext) AddRepoConfig(repoPath string) (string, error) {

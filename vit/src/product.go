@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"vit/internal/db"
 	"vit/internal/fsutil"
@@ -53,13 +52,13 @@ func (c *Client) ProductAdd(
 				return err
 			}
 
-			targetAssetPath := fsutil.PathInternal(pathTarget)
-			if rp := opctx.RepoPath(); strings.HasPrefix(pathTarget, rp) {
-				if rel, rerr := fsutil.RelInternal(rp, pathTarget); rerr == nil {
-					targetAssetPath = rel
-				}
+			refTarget, err := workspace.ResolveCreateTarget(ctx, opctx, pathTarget)
+			if err != nil {
+				return err
 			}
-			refTarget := types.NewRefBranch(opctx.Repo(), targetAssetPath, types.DefaultBranchName)
+			if err := refTarget.CheckTypeOfRef(types.RefTypeBranch); err != nil {
+				return err
+			}
 
 			dbClient, err := db.NewClient(ctx, opctx, c.logger)
 			if err != nil {
@@ -73,21 +72,17 @@ func (c *Client) ProductAdd(
 				ProductName: productName,
 			}
 
-			needCreate := create
+			targetExists := false
 			if create {
-				idx, ierr := dbClient.GetTreeIndex(ctx, opctx, opctx.RepoPath())
+				idx, ierr := dbClient.GetTreeIndex(ctx, opctx, refTarget.RepoPath)
 				if ierr != nil {
 					return ierr
 				}
-				if entry, ok := idx.PathToID[targetAssetPath]; ok &&
+				if entry, ok := idx.PathToID[refTarget.AssetPath]; ok &&
 					entry.Type == db.TreeNodeTypeAsset && entry.AssetUID != "" {
-					needCreate = false
+					targetExists = true
 				}
 			}
-			if needCreate {
-				op.addOp = newOperationAdd(opctx.Repo(), targetAssetPath, "")
-			}
-
 			req := transaction.Request{
 				Opctx:     opctx,
 				DBClient:  dbClient,
@@ -97,24 +92,30 @@ func (c *Client) ProductAdd(
 				Progress:  c.progress,
 				Command:   types.CommandProductAdd,
 				User:      opctx.User,
-				RepoPath:  opctx.RepoPath(),
+				RepoPath:  refOrigin.RepoPath,
 				Timestamp: opctx.TimeStamp,
 				Ref:       refOrigin, // history subject = the origin getting the product
 			}
 
-			if needCreate {
-				return transaction.RunTreeChangedAndEdit(
+			if create && !targetExists {
+				op.addOp = newOperationAdd(opctx.RepoRefFor(refTarget.RepoUID), refTarget.AssetPath, "")
+				if err := transaction.RunTreeChangedAndEdit(
 					ctx, req,
-					[]string{targetAssetPath},
+					[]*types.Ref{refTarget},
 					[]*types.Ref{refOrigin},
 					transaction.TransactionBranch,
-				)
-			} else {
-				return transaction.RunEdit(
-					ctx, req,
-					[]*types.Ref{refOrigin}, transaction.TransactionBranch,
-				)
+				); err != nil {
+					return err
+				}
+			} else if err := transaction.RunEdit(
+				ctx, req,
+				[]*types.Ref{refOrigin}, transaction.TransactionBranch,
+			); err != nil {
+				return err
 			}
+
+			registerCrossRepo(ctx, c.logger, refOrigin, refTarget)
+			return nil
 		},
 	)
 	if err != nil {
@@ -228,7 +229,6 @@ func (o *operationProductAdd) Finish(
 
 	if err := workspace.PresentProduct(
 		ctx,
-		o.RefOrigin.RepoPath,
 		o.RefOrigin,
 		o.ProductName,
 		o.RefTarget,

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -60,6 +61,24 @@ func InitRepoConfig(repoPath, currentSiteAlias string) error {
 		return newConfigWriteError(genRepoConfigPath(repoPath), err)
 	}
 	return nil
+}
+
+func RegisterRepo(ctx context.Context, repoPath, uid, localPath string) error {
+	configPath := genRepoConfigPath(repoPath)
+	return fsutil.WithExclusiveLock(ctx, configPath, func() error {
+		cfg, err := LoadRepoConfig(repoPath)
+		if err != nil {
+			return err
+		}
+		if cfg.Repos == nil {
+			cfg.Repos = make(map[string]string)
+		}
+		if cfg.Repos[uid] == localPath {
+			return nil
+		}
+		cfg.Repos[uid] = localPath
+		return fsutil.NewJSONHandlerFromPath(configPath, cfg).Write()
+	})
 }
 
 func genRepoConfigPath(repoPath string) string {

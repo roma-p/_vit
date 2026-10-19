@@ -55,32 +55,37 @@ func ResolveRefFromPath(
 	opctx *opcontext.OperationContext,
 	path string,
 ) (*types.Ref, error) {
-	repoPath := opctx.RepoPath()
-	if ref, err := types.NewRefFromPath(repoPath, path); err == nil {
-		uid, err := opctx.ResolveRepoUIDFromPath(repoPath)
-		if err != nil {
-			return nil, err
-		}
-		ref.RepoUID = uid
-		if ref.RefType == types.RefTypeTag && ref.Site == "" {
-			ref.Site = opctx.RepoRefFor(uid).Site
-		}
-		return ref, nil
+	repoRef, rel, err := repoRefForPath(opctx, path)
+	if err != nil {
+		return nil, err
 	}
-	for cur := fsutil.PathInternal(path); cur != "." && cur != "/" && cur != ""; cur = fsutil.DirInternal(cur) {
-		pp := pointerPath(repoPath, cur)
-		if _, err := os.Stat(pp); err != nil {
-			continue
-		}
-		h, err := fsutil.ResolveHandler[Pointer](ctx, opctx.JSONPool, pp, false, nil)
-		if err != nil {
-			return nil, NewErrUntrackedFile(path)
-		}
-		ref := h.Data.Ref
-		ref.RepoPath = opctx.RepoRefFor(ref.RepoUID).Path
-		return &ref, nil
+	ref, found, err := tryResolveRef(ctx, opctx, repoRef, rel, path)
+	if err != nil {
+		return nil, err
 	}
-	return nil, NewErrUntrackedFile(path)
+	if !found {
+		return nil, NewErrUntrackedFile(path)
+	}
+	return ref, nil
+}
+
+func ResolveCreateTarget(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	path string,
+) (*types.Ref, error) {
+	repoRef, rel, err := repoRefForPath(opctx, path)
+	if err != nil {
+		return nil, err
+	}
+	ref, found, err := tryResolveRef(ctx, opctx, repoRef, rel, path)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return types.NewRefBranch(repoRef, rel, types.DefaultBranchName), nil
+	}
+	return ref, nil
 }
 
 // ResolveWorkspacePathFromRef finds where a ref is materialized by scanning its
@@ -144,6 +149,59 @@ func RemovePointer(repoPath, wsPath string) error {
 }
 
 // -- FILE LOCAL -------------------------------------------------------------
+
+func repoRefForPath(
+	opctx *opcontext.OperationContext,
+	path string,
+) (*types.RepoRef, string, error) {
+	if fsutil.IsAbsOS(path) {
+		repoPath, rel, err := fsutil.FindVitRepoFromPath(fsutil.PathInternal(path), true)
+		if err != nil {
+			return nil, "", newErrWorkspaceInternal(err, "resolve ref: no repo found for "+path)
+		}
+		uid, err := opctx.ResolveRepoUIDFromPath(repoPath)
+		if err != nil {
+			return nil, "", err
+		}
+		return opctx.RepoRefFor(uid), rel, nil
+	}
+	return opctx.Repo(), fsutil.PathInternal(path), nil
+}
+
+func tryResolveRef(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	repoRef *types.RepoRef,
+	rel, origPath string,
+) (*types.Ref, bool, error) {
+	// 1. ref-string form (asset@type=value); succeeds without the asset existing.
+	if ref, err := types.NewRefFromPath(repoRef.Path, rel); err == nil {
+		ref.RepoUID = repoRef.UID
+		ref.RepoPath = repoRef.Path
+		if ref.RefType == types.RefTypeTag && ref.Site == "" {
+			ref.Site = repoRef.Site
+		}
+		return ref, true, nil
+	}
+
+	// 2. workspace path => walk up to the nearest pointer in that repo.
+	for cur := rel; cur != "." && cur != "/" && cur != ""; cur = fsutil.DirInternal(cur) {
+		pp := pointerPath(repoRef.Path, cur)
+		if _, err := os.Stat(pp); err != nil {
+			continue
+		}
+		h, err := fsutil.ResolveHandler[Pointer](ctx, opctx.JSONPool, pp, false, nil)
+		if err != nil {
+			return nil, false, NewErrUntrackedFile(origPath)
+		}
+		ref := h.Data.Ref
+		ref.RepoUID = repoRef.UID
+		ref.RepoPath = repoRef.Path
+		return &ref, true, nil
+	}
+
+	return nil, false, nil
+}
 
 func pointerPath(repoPath, rel string) string {
 	return fsutil.PathOS(repoPath, ".vit", "workspace", "pointers", rel+".json")

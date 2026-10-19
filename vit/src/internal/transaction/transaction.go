@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sort"
 	"time"
 
 	"vit/internal/blob"
@@ -26,7 +27,7 @@ func RunTreeChanged(
 	for i, p := range assetPaths {
 		tids[i] = newTransactionID(TransactionTreeChanged, types.NewRefEmpty(r.RepoPath, p))
 	}
-	return run(ctx, r, func() error { return validateTreeChanged(r.RepoPath, assetPaths) }, tids)
+	return run(ctx, r, tids)
 }
 
 // RunEdit drives an operation that edits existing assets (commit/branch).
@@ -41,30 +42,31 @@ func RunEdit(
 	for i, ref := range refs {
 		tids[i] = newTransactionID(op, ref)
 	}
-	return run(ctx, r, func() error { return validateEdit(r.RepoPath, refs) }, tids)
+	return run(ctx, r, tids)
 }
 
 // RunTreeChangedAndEdit combines RunTreeChanged and RunEdit.
 func RunTreeChangedAndEdit(
 	ctx context.Context,
 	r Request,
-	createPaths []string,
+	createRefs []*types.Ref,
 	editRefs []*types.Ref,
 	editOp TransactionOperation,
 ) error {
-	tids := make([]TransactionID, 0, len(createPaths)+len(editRefs))
-	for _, p := range createPaths {
-		tids = append(tids, newTransactionID(TransactionTreeChanged, types.NewRefEmpty(r.RepoPath, p)))
+	tids := make([]TransactionID, 0, len(createRefs)+len(editRefs))
+	for _, ref := range createRefs {
+		tids = append(
+			tids,
+			newTransactionID(
+				TransactionTreeChanged,
+				types.NewRefEmpty(ref.RepoPath, ref.AssetPath),
+			),
+		)
 	}
 	for _, ref := range editRefs {
 		tids = append(tids, newTransactionID(editOp, ref))
 	}
-	return run(ctx, r, func() error {
-		if err := validateTreeChanged(r.RepoPath, createPaths); err != nil {
-			return err
-		}
-		return validateEdit(r.RepoPath, editRefs)
-	}, tids)
+	return run(ctx, r, tids)
 }
 
 type Request struct {
@@ -89,18 +91,18 @@ type Request struct {
 func run(
 	ctx context.Context,
 	r Request,
-	extraValidate func() error,
 	tids []TransactionID,
 ) error {
-	err := withTransaction(ctx, r.RepoPath, tids, r.Command, r.User, r.Timestamp,
+	err := withTransaction(ctx, tids, r.Command, r.User, r.Timestamp,
 		func() error {
-			// 0. We now hold the scan-lock. Any DB read taken before it (e.g.
-			//    discovery to decide what to lock) may be stale, so evict the
-			//    read cache: Validate must re-parse the source of truth under the
+			// 0. We now hold the scan-lock(s). Any DB read taken before it
+			//    may be stale, so evict the read cache:
+			//     Validate must re-parse the source of truth under the
 			//    lock, not reuse a pre-lock parse.
 			r.Opctx.JSONPool.DropReadCache()
-			// 1. domain validate (conflict scan) first, then operation validate.
-			if err := extraValidate(); err != nil {
+
+			// 1. check for on going transaction conflict, then run operation validate.
+			if err := scanForConflicts(tids); err != nil {
 				return err
 			}
 			if err := r.Operation.Validate(ctx, r.Opctx, r.DBClient); err != nil {
@@ -109,7 +111,7 @@ func run(
 			return nil
 		},
 		func() error {
-			// 3. Plan the object-tier writes (writes nothing), then execute them
+			// 2. Plan the blob object to copy (plan only, do nothing), then execute them
 			//    (copy blobs, write content nodes + manifests).
 			plan, err := r.Operation.PlanBlobUpdate(ctx, r.Opctx)
 			if err != nil {
@@ -123,7 +125,7 @@ func run(
 				}
 			}
 
-			// 4. run the function responsible for updating the data, and write all of them on disk.
+			// 3. run the function responsible for updating the data, and write all of them on disk.
 			//    Write lock on DB only hold here!
 			if err := r.Operation.DBUpdate(ctx, r.Opctx, r.DBClient); err != nil {
 				return err
@@ -132,7 +134,8 @@ func run(
 				return err
 			}
 
-			// 5. Best effort finish.
+			// 4. Best effort finish: presentation, cache update.
+			//    all of what is done here should be re-derivable using a vit gc (todo)
 			r.Operation.Finish(ctx, r.Opctx, r.DBClient, r.Logger, r.Presenter)
 
 			return nil
@@ -142,7 +145,7 @@ func run(
 		return err
 	}
 
-	// 6. Record the operation in the activity log — after a successful flush,
+	// 5. Record the operation in the activity log — after a successful flush,
 	//    outside the repo transaction lock, best-effort
 	recordHistory(ctx, r, tids)
 	return nil
@@ -193,7 +196,6 @@ func recordHistory(ctx context.Context, r Request, tids []TransactionID) {
 // used by the validate() method of other transaction.
 func withTransaction(
 	ctx context.Context,
-	repoPath string,
 	tids []TransactionID,
 	command types.VitCommand,
 	user string,
@@ -201,52 +203,96 @@ func withTransaction(
 	validate func() error,
 	operation func() error,
 ) error {
-	lockPath := fsutil.PathOS(repoPath, ".vit", "transaction.lock")
-	transactionDir := fsutil.PathOS(repoPath, ".vit", "transaction")
+	repos := listRepoPathsFromTids(tids)
+
+	// 1. Lock every involved repo's transaction scan-lock, for a short time, so no
+	//    new transaction is created in any of them while we scan for conflicts and
+	//    stake our tids. They are acquired in a canonical (sorted) order so two
+	//    multi-repo transactions can never deadlock, and held ONLY for the window
+	//    below — never during operation().
+	//    ! For that short window, each involved repo is read-only. This is the only
+	//      place that happens.
+	held, err := acquireScanLocks(ctx, repos)
+	if err != nil {
+		return err
+	}
 
 	var transactionFiles []string
+	err = func() error {
+		for _, repo := range repos {
+			cleanOrphanedTransactions(fsutil.PathOS(repo, ".vit", "transaction"))
+		}
 
-	// 1. Lock all transaction for a short time
-	//    We don't want a new transaction beeing created while we scan all of them
-	//    to detect conflict.
-	//    ! This imply that for that short time, the entire repo is read only!
-	//      This is the only place where it happens
-	err := fsutil.WithExclusiveLock(ctx, lockPath, func() error {
-		cleanOrphanedTransactions(transactionDir)
-
-		if err := validate(); err != nil {
-			return err
+		if verr := validate(); verr != nil {
+			return verr
 		}
 
 		for _, tid := range tids {
-			f := fsutil.PathOS(transactionDir, tid.Encode())
-			transactionFiles = append(transactionFiles, f)
-			err := fsutil.NewJSONHandlerFromPath(f, &transactionPayload{
+			f := fsutil.PathOS(tid.Ref.RepoPath, ".vit", "transaction", tid.Encode())
+			if werr := fsutil.NewJSONHandlerFromPath(f, &transactionPayload{
 				AssetPath: tid.Ref.AssetPath,
 				Operation: tid.Operation,
 				Command:   command,
 				User:      user,
 				Modified:  timestamp,
-			}).Write()
-			if err != nil {
-				return err
+			}).Write(); werr != nil {
+				return werr
 			}
+			transactionFiles = append(transactionFiles, f)
 		}
 		return nil
-	})
+	}()
+
+	// 2. Release every scan-lock: a repo is read-only only for the window above.
+	for _, d := range held {
+		fsutil.ReleaseExclusiveLock(d)
+	}
 	if err != nil {
+		for _, f := range transactionFiles { // roll back tids we managed to write
+			_ = os.Remove(f)
+		}
 		return err
 	}
 
-	// 2. Keep transaction files alive while operating.
+	// 3. Keep transaction files alive while operating.
 	done := make(chan struct{})
 	go touchFilesLoop(ctx, transactionFiles, done)
 
 	tx := &activeTransaction{files: transactionFiles, stop: func() { close(done) }}
 	defer tx.finish()
 
-	// 3. Do the actual work.
+	// 4. Do the actual work.
 	return operation()
+}
+
+func listRepoPathsFromTids(tids []TransactionID) []string {
+	seen := map[string]bool{}
+	var repos []string
+	for i := range tids {
+		p := tids[i].Ref.RepoPath
+		if !seen[p] {
+			seen[p] = true
+			repos = append(repos, p)
+		}
+	}
+	sort.Strings(repos)
+	return repos
+}
+
+func acquireScanLocks(ctx context.Context, repos []string) ([]string, error) {
+	var held []string
+	for _, repo := range repos {
+		lockPath := fsutil.PathOS(repo, ".vit", "transaction.lock")
+		lockDir, err := fsutil.AcquireExclusiveLock(ctx, lockPath)
+		if err != nil {
+			for _, d := range held {
+				fsutil.ReleaseExclusiveLock(d)
+			}
+			return nil, err
+		}
+		held = append(held, lockDir)
+	}
+	return held, nil
 }
 
 type transactionPayload struct {

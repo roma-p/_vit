@@ -51,13 +51,7 @@ func (c *Client) SourceAdd(
 				return err
 			}
 
-			srcPath := pathObjectProvider
-			if rp := opctx.RepoPath(); strings.HasPrefix(srcPath, rp) {
-				if rel, rerr := fsutil.RelInternal(rp, srcPath); rerr == nil {
-					srcPath = rel
-				}
-			}
-			refSource, err := workspace.ResolveRefFromPath(ctx, opctx, srcPath)
+			refSource, err := workspace.ResolveRefFromPath(ctx, opctx, pathObjectProvider)
 			if err != nil {
 				return err
 			}
@@ -74,7 +68,7 @@ func (c *Client) SourceAdd(
 				NewDepedencyName: sourceName,
 			}
 
-			return transaction.RunEdit(
+			if err := transaction.RunEdit(
 				ctx,
 				transaction.Request{
 					Opctx:     opctx,
@@ -89,7 +83,12 @@ func (c *Client) SourceAdd(
 					Timestamp: opctx.TimeStamp,
 				},
 				[]*types.Ref{refConsumer}, transaction.TransactionBranch,
-			)
+			); err != nil {
+				return err
+			}
+
+			registerCrossRepo(ctx, c.logger, refConsumer, refSource)
+			return nil
 		},
 	)
 	if err != nil {
@@ -211,8 +210,6 @@ func (o *operationSourceAdd) Finish(
 		return
 	}
 
-	// present the closure into the consumer workspace (recursive hardlinks under
-	// the dependency name path).
 	if err := workspace.PresentSources(ctx, g, o.RefWithNewDep, p); err != nil {
 		logger.Log(ctx, slog.LevelError, "source add: present sources failed", "err", err)
 	}

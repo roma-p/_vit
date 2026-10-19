@@ -9,46 +9,36 @@ import (
 	"vit/internal/types"
 )
 
-// validateTreeChanged checks that no existing transaction conflicts with
-// a tree mutation (add/move/delete). TreeChanged is exclusive: it conflicts
-// with ANY existing transaction on overlapping paths.
-func validateTreeChanged(repoPath string, assetPaths []string) error {
-	existing, err := scanExistingTransactions(repoPath)
-	if err != nil {
-		return err
+// scanForConflicts checks every tid against the in-progress transactions of its OWN
+// repo (tids are grouped by repo, so a multi-repo transaction is validated across
+// all involved repos). Conflict rules, unchanged:
+//   - a TreeChanged tid conflicts with ANY overlapping transaction;
+//   - an edit (Commit/Branch/Tag) conflicts with an overlapping TreeChanged, or
+//     with another edit on the SAME object.
+func scanForConflicts(tids []TransactionID) error {
+	byRepo := map[string][]TransactionID{}
+	for i := range tids {
+		p := tids[i].Ref.RepoPath
+		byRepo[p] = append(byRepo[p], tids[i])
 	}
 
-	for _, path := range assetPaths {
-		for i := range existing {
-			if pathsOverlap(path, existing[i].Ref.AssetPath) {
-				return newConflictError(path, &existing[i])
-			}
+	for repoPath, group := range byRepo {
+		existing, err := scanExistingTransactions(repoPath)
+		if err != nil {
+			return err
 		}
-	}
-	return nil
-}
-
-// validateEdit checks that no existing transaction conflicts with a
-// commit or branch operation. Edit operations conflict with:
-//   - Any TreeChanged on overlapping paths
-//   - Another Commit/Branch targeting the same ref
-func validateEdit(repoPath string, refs []*types.Ref) error {
-	existing, err := scanExistingTransactions(repoPath)
-	if err != nil {
-		return err
-	}
-
-	for _, ref := range refs {
-		for i := range existing {
-			e := &existing[i]
-			if !pathsOverlap(ref.AssetPath, e.Ref.AssetPath) {
-				continue
-			}
-			if e.Operation == TransactionTreeChanged {
-				return newConflictErrorFromRef(ref, e)
-			}
-			if ref.AssetPath == e.Ref.AssetPath && ref.ObjectPath() == e.Ref.ObjectPath() {
-				return newConflictErrorFromRef(ref, e)
+		for _, t := range group {
+			for i := range existing {
+				e := &existing[i]
+				if e.Ref == nil || !pathsOverlap(t.Ref.AssetPath, e.Ref.AssetPath) {
+					continue
+				}
+				if t.Operation == TransactionTreeChanged || e.Operation == TransactionTreeChanged {
+					return newConflictErrorFromRef(t.Ref, e)
+				}
+				if t.Ref.AssetPath == e.Ref.AssetPath && t.Ref.ObjectPath() == e.Ref.ObjectPath() {
+					return newConflictErrorFromRef(t.Ref, e)
+				}
 			}
 		}
 	}
@@ -94,21 +84,6 @@ func pathsOverlap(a, b string) bool {
 		return true
 	}
 	return strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
-}
-
-func newConflictError(assetPath string, existing *TransactionID) error {
-	return types.NewVitError(
-		types.ErrTransactionConflict,
-		[]string{
-			fmt.Sprintf("conflict with in-progress operation (%s) on: %s",
-				existing.Operation, existing.Ref.AssetPath),
-		},
-		[]any{
-			"assetPath", assetPath,
-			"existingOperation", existing.Operation,
-			"existingAssetPath", existing.Ref.AssetPath,
-		},
-	)
 }
 
 func newConflictErrorFromRef(ref *types.Ref, existing *TransactionID) error {
