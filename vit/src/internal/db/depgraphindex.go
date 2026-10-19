@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"maps"
 	"os"
 
 	"vit/internal/fsutil"
@@ -269,11 +270,6 @@ func buildDependencies(
 			g.Merge(childG)
 		case types.AssetDependencyProduct:
 			provider := productProvider(root, dep)
-			if provider != nil && root.RefType == types.RefTypeTag {
-				provider = types.NewRefTagFloating(
-					provider.RepoRef(), provider.AssetPath, root.TagFamily, root.Site,
-				)
-			}
 			if provider != nil {
 				if err := addProductTargetNode(ctx, opctx, dbClient, g, provider); err != nil {
 					return nil, err
@@ -353,7 +349,14 @@ func dependenciesForRef(
 		if err != nil {
 			return nil, types.DepGraphNode{}, err
 		}
-		return c.Dependencies, types.DepGraphNode{
+		deps := c.Dependencies
+		if len(tag.Dependencies) > 0 {
+			merged := make(types.AssetDependencies, len(deps)+len(tag.Dependencies))
+			maps.Copy(merged, deps)
+			maps.Copy(merged, tag.Dependencies) // product overrides win
+			deps = merged
+		}
+		return deps, types.DepGraphNode{
 			PayloadFile: c.Content,
 			Author:      tag.Author,
 			Timestamp:   tag.Timestamp,

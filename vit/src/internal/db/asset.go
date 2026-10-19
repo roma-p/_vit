@@ -17,10 +17,11 @@ func TagObject(r TagObjectRequest) (string, error) {
 	return addTag(
 		r.Asset,
 		&types.AssetTag{
-			Message:   r.Message,
-			Author:    r.Author,
-			Commit:    r.TargetCommit,
-			Timestamp: r.TimeStamp,
+			Message:      r.Message,
+			Author:       r.Author,
+			Commit:       r.TargetCommit,
+			Timestamp:    r.TimeStamp,
+			Dependencies: r.Dependencies,
 		},
 		r.TagFamily, r.SiteUID,
 	)
@@ -34,6 +35,9 @@ type TagObjectRequest struct {
 	TagFamily    string
 	TargetCommit string
 	SiteUID      string
+	// Dependencies: the tag's product overrides (resolved to product tags). Nil
+	// for a product/leaf tag with nothing of its own produced.
+	Dependencies types.AssetDependencies
 }
 
 func CommitBranch(r CommitBranchRequest) (string, error) {
@@ -334,11 +338,21 @@ func fillDependencyRepoPaths(opctx *opcontext.OperationContext, asset *types.Ass
 			ref.RepoPath = opctx.RepoRefFor(ref.RepoUID).Path
 		}
 	}
+	fillDeps := func(deps types.AssetDependencies) {
+		for _, dep := range deps {
+			fill(dep.RefSpec)
+			fill(dep.RefResolved)
+		}
+	}
 	for _, commits := range []map[string]*types.AssetCommit{asset.Commits, asset.Branches} {
 		for _, c := range commits {
-			for _, dep := range c.Dependencies {
-				fill(dep.RefSpec)
-				fill(dep.RefResolved)
+			fillDeps(c.Dependencies)
+		}
+	}
+	for _, fam := range asset.Tags {
+		for _, site := range fam {
+			for _, tag := range site {
+				fillDeps(tag.Dependencies)
 			}
 		}
 	}
