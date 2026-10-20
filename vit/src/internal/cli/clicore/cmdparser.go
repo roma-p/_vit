@@ -9,7 +9,7 @@ import (
 )
 
 type flagDef struct {
-	flagType   string // "bool", "string", etc.
+	flagType   string // "bool", "string", "commastring"
 	defaultVal any
 	usage      string
 }
@@ -60,6 +60,15 @@ func (a *CmdParser) AddArgString(name string, value string, usage string) error 
 	return nil
 }
 
+func (a *CmdParser) AddArgCommaString(name string, usage string) error {
+	if _, ok := a.FlagArgs[name]; ok {
+		return fmt.Errorf("already a flag '%s' in parser '%s'", name, a.Name)
+	}
+	a.flagDefs[name] = flagDef{flagType: "commastring", defaultVal: "", usage: usage}
+	a.FlagArgs[name] = a.FlagSet.String(name, "", usage)
+	return nil
+}
+
 func (a *CmdParser) AddVariadic(name string, usage string) error {
 	if len(a.OptionalPosArgs) > 0 {
 		return fmt.Errorf(
@@ -88,6 +97,24 @@ func (a *CmdParser) GetFlag(name string) any {
 
 func (a *CmdParser) GetArg(name string) string {
 	return a.ArgsMap[name]
+}
+
+func (a *CmdParser) GetCommaString(name string) []string {
+	v, ok := a.FlagArgs[name].(*string)
+	if !ok || v == nil {
+		return nil
+	}
+	return parseCommaString(*v)
+}
+
+func parseCommaString(s string) []string {
+	var out []string
+	for _, item := range strings.Split(s, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func (a *CmdParser) GetVariadic(name string) []string {
@@ -122,7 +149,7 @@ func (a *CmdParser) resetFlagSet() {
 		switch def.flagType {
 		case "bool":
 			a.FlagArgs[name] = a.FlagSet.Bool(name, def.defaultVal.(bool), def.usage)
-		case "string":
+		case "string", "commastring":
 			a.FlagArgs[name] = a.FlagSet.String(name, def.defaultVal.(string), def.usage)
 		}
 	}

@@ -98,7 +98,7 @@ class VitClient:
         {{range .Params}}{{if .IsVariadic}}args.extend({{.Name}})
         {{end}}{{end}}
         {{range .Params}}{{if .IsFlag}}if {{.Name}}:
-            {{if eq .FlagKind "str"}}args.extend(["-{{.FlagName}}", {{.Name}}]){{else}}args.append("-{{.FlagName}}"){{end}}
+            {{if eq .FlagKind "str"}}args.extend(["-{{.FlagName}}", {{.Name}}]){{else if eq .FlagKind "list"}}args.extend(["-{{.FlagName}}", ",".join({{.Name}})]){{else}}args.append("-{{.FlagName}}"){{end}}
         {{end}}{{end}}
 
         return (yield from self._run(args))

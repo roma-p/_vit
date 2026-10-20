@@ -1,6 +1,7 @@
 package clicore
 
 import (
+	"strings"
 	"testing"
 
 	testutils "vit/internal/testhelpers"
@@ -85,4 +86,29 @@ func TestStringFlagValue(t *testing.T) {
 	testutils.AssertEqual(t, parser.GetArg("assetPath"), "some/path")
 	testutils.AssertEqual(t, parser.GetArg("src"), "source.ma")
 	testutils.AssertEqual(t, *parser.GetFlag("message").(*string), "hello")
+}
+
+func TestCommaStringFlag(t *testing.T) {
+	parser := NewArgParser("add", []string{"assetPath"}, []string{"src"})
+	parser.AddArgCommaString("branches", "some usage")
+
+	// `-name value` form: the value is NOT taken as a positional.
+	testutils.AssertEqual(t, parser.Parse([]string{"some/path", "-branches", "wip, lookdev,,"}), nil)
+	testutils.AssertEqual(t, parser.GetArg("assetPath"), "some/path")
+	testutils.AssertEqual(t, parser.GetArg("src"), "")
+	testutils.AssertEqual(t, strings.Join(parser.GetCommaString("branches"), "|"), "wip|lookdev")
+
+	// `-name=value` form, with the optional positional after it.
+	testutils.AssertEqual(t, parser.Parse([]string{"some/path", "--branches=a,b", "source.ma"}), nil)
+	testutils.AssertEqual(t, parser.GetArg("src"), "source.ma")
+	testutils.AssertEqual(t, strings.Join(parser.GetCommaString("branches"), "|"), "a|b")
+
+	// unset -> nil.
+	testutils.AssertEqual(t, parser.Parse([]string{"some/path"}), nil)
+	testutils.AssertEqual(t, len(parser.GetCommaString("branches")), 0)
+}
+
+func TestParseCommaString(t *testing.T) {
+	testutils.AssertEqual(t, strings.Join(parseCommaString(" a, ,b ,"), "|"), "a|b")
+	testutils.AssertEqual(t, len(parseCommaString("")), 0)
 }

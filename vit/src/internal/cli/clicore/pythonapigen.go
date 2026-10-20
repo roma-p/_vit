@@ -29,7 +29,7 @@ type pythonParam struct {
 	IsFlag       bool
 	IsVariadic   bool   // Python *args (trailing list of positionals)
 	FlagName     string // Flag name (without -)
-	FlagKind     string // "bool" (flag alone), "str" (-name value)
+	FlagKind     string // "bool" (flag alone), "str" (-name value), "list" (-name a,b)
 	ParamDoc     string
 }
 
@@ -230,6 +230,17 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 				IsFlag:   true,
 				FlagName: flagName,
 				FlagKind: "str",
+				ParamDoc: flagDef.usage,
+			})
+		case "commastring":
+			method.Params = append(method.Params, pythonParam{
+				Name:     pythonFlagName,
+				Type:     "Optional[List[str]]",
+				Default:  "None",
+				Optional: true,
+				IsFlag:   true,
+				FlagName: flagName,
+				FlagKind: "list",
 				ParamDoc: flagDef.usage,
 			})
 		}
