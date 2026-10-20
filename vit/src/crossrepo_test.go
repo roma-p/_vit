@@ -117,3 +117,21 @@ func TestSourceAdd_crossRepo(t *testing.T) {
 		t.Fatalf("repo B did not register repo A: %+v", b.knownRepos(t))
 	}
 }
+
+// A target in ANOTHER repo that exists but lacks the branch: --create makes the
+// branch there (one transaction locking both repos), empty, and delivery lands in it.
+func TestProductAdd_crossRepoCreateMissingBranch(t *testing.T) {
+	a := newVitEnv(t)
+	b := a.sibling("repoB")
+	anim := must(a.Add(ctx, a.abs("shot/anim"), a.fileSrc("anim.ma", "A"))).String
+	must(b.Add(ctx, b.abs("render/beauty"), b.fileSrc("old.exr", "old")))
+
+	must(a.ProductAdd(ctx, a.branchRef("shot/anim"), b.abs("render/beauty")+"@branch=wip", "render", true))
+
+	if !hasBranch(must(b.Ls(ctx, b.abs("render/beauty"))), "wip") {
+		t.Fatal("repo B render has no 'wip' branch")
+	}
+	wipWs := filepath.Join(b.abs("render/beauty"), "branches", "branch-wip")
+	a.editFile(filepath.Join(anim, "render", "out.exr"), "frame1")
+	testutils.AssertEqual(t, b.read(filepath.Join(wipWs, "out.exr")), "frame1")
+}

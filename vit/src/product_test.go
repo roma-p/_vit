@@ -207,3 +207,53 @@ func TestProductAdd_duplicateNameRejected(t *testing.T) {
 	_, err := env.ProductAdd(ctx, env.branchRef("shot/anim"), env.abs("render/depth"), "render", true)
 	assertErrCode(t, err, types.ErrDependencyAlreadyExists)
 }
+
+func TestProductAdd_attachCreatesMissingBranch(t *testing.T) {
+	env := newVitEnv(t)
+	anim := must(env.Add(ctx, env.abs("shot/anim"), env.fileSrc("anim.ma", "A"))).String
+	must(env.Add(ctx, env.abs("render/beauty"), "")) // base only
+
+	must(env.ProductAdd(ctx, env.branchRef("shot/anim"), env.abs("render/beauty")+"@branch=wip", "render", false))
+
+	if !hasBranch(must(env.Ls(ctx, env.abs("render/beauty"))), "wip") {
+		t.Fatal("render has no 'wip' branch")
+	}
+	env.editFile(filepath.Join(anim, "render", "out.exr"), "frame1")
+	wipWs := filepath.Join(env.abs("render/beauty"), "branches", "branch-wip")
+	testutils.AssertEqual(t, env.read(filepath.Join(wipWs, "out.exr")), "frame1")
+}
+
+func TestProductAdd_createMissingBranchOnExistingTarget(t *testing.T) {
+	env := newVitEnv(t)
+	anim := must(env.Add(ctx, env.abs("shot/anim"), env.fileSrc("anim.ma", "A"))).String
+	must(env.Add(ctx, env.abs("render/beauty"), env.fileSrc("old.exr", "old"))) // base has content
+
+	must(env.ProductAdd(ctx, env.branchRef("shot/anim"), env.abs("render/beauty")+"@branch=wip", "render", true))
+
+	if !hasBranch(must(env.Ls(ctx, env.abs("render/beauty"))), "wip") {
+		t.Fatal("render has no 'wip' branch")
+	}
+	wipWs := filepath.Join(env.abs("render/beauty"), "branches", "branch-wip")
+	if entries, err := os.ReadDir(wipWs); err != nil || len(entries) != 0 {
+		t.Fatalf("render@wip should start empty (not inherit base content): %v %v", entries, err)
+	}
+
+	env.editFile(filepath.Join(anim, "render", "out.exr"), "frame1")
+	testutils.AssertEqual(t, env.read(filepath.Join(wipWs, "out.exr")), "frame1")
+	testutils.AssertEqual(t, env.read(filepath.Join(env.targetBranchWs("render/beauty"), "old.exr")), "old")
+}
+
+func TestProductAdd_createNewTargetWithBranch(t *testing.T) {
+	env := newVitEnv(t)
+	anim := must(env.Add(ctx, env.abs("shot/anim"), env.fileSrc("anim.ma", "A"))).String
+
+	must(env.ProductAdd(ctx, env.branchRef("shot/anim"), env.abs("render/beauty")+"@branch=wip", "render", true))
+
+	render := must(env.Ls(ctx, env.abs("render/beauty")))
+	if !hasBranch(render, types.DefaultBranchName) || !hasBranch(render, "wip") {
+		t.Fatalf("new target should have base and wip, got %v", render.Branches)
+	}
+	env.editFile(filepath.Join(anim, "render", "out.exr"), "frame1")
+	wipWs := filepath.Join(env.abs("render/beauty"), "branches", "branch-wip")
+	testutils.AssertEqual(t, env.read(filepath.Join(wipWs, "out.exr")), "frame1")
+}

@@ -82,7 +82,7 @@ var cmdDefinition = clicore.CmdTree{
 			SubCommands: map[string]*clicore.CmdTree{
 				"add": {
 					Name:        "Add product",
-					Description: "Attach an origin branch as producer of a target asset (--create to create the target)",
+					Description: "Attach an origin branch as producer of a target branch (created if missing; --create to also create a missing target asset)",
 					Run:         runProductAdd,
 					ArgParser:   buildProductAddArgParser(),
 					ResultType:  types.StringResult{},

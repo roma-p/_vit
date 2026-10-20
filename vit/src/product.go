@@ -72,16 +72,12 @@ func (c *Client) ProductAdd(
 				ProductName: productName,
 			}
 
-			targetExists := false
-			if create {
-				idx, ierr := dbClient.GetTreeIndex(ctx, opctx, refTarget.RepoPath)
-				if ierr != nil {
-					return ierr
-				}
-				if entry, ok := idx.PathToID[refTarget.AssetPath]; ok &&
-					entry.Type == db.TreeNodeTypeAsset && entry.AssetUID != "" {
-					targetExists = true
-				}
+			// prelock discovery phase:
+			// -> does the target exists?
+			// -> doest it have the target branch
+			assetExists, branchExists, err := productTargetState(ctx, opctx, dbClient, refTarget)
+			if err != nil {
+				return err
 			}
 			req := transaction.Request{
 				Opctx:     opctx,
@@ -94,11 +90,19 @@ func (c *Client) ProductAdd(
 				User:      opctx.User,
 				RepoPath:  refOrigin.RepoPath,
 				Timestamp: opctx.TimeStamp,
-				Ref:       refOrigin, // history subject = the origin getting the product
+				Ref:       refOrigin,
 			}
 
-			if create && !targetExists {
-				op.addOp = newOperationAdd(opctx.RepoRefFor(refTarget.RepoUID), refTarget.AssetPath, "", nil)
+			switch {
+			case create && !assetExists:
+				// if asset is to create, create it with the extra branch if it is not the default one.
+				var branches []string
+				if refTarget.BranchName != types.DefaultBranchName {
+					branches = []string{refTarget.BranchName}
+				}
+				op.addOp = newOperationAdd(
+					opctx.RepoRefFor(refTarget.RepoUID), refTarget.AssetPath, "", branches,
+				)
 				if err := transaction.RunTreeChangedAndEdit(
 					ctx, req,
 					[]*types.Ref{refTarget},
@@ -107,11 +111,25 @@ func (c *Client) ProductAdd(
 				); err != nil {
 					return err
 				}
-			} else if err := transaction.RunEdit(
-				ctx, req,
-				[]*types.Ref{refOrigin}, transaction.TransactionBranch,
-			); err != nil {
-				return err
+
+			case assetExists && !branchExists:
+				// if asset exists but not target branch, create product branch
+				// (in validate -> create a sub branch op
+				op.createBranch = true
+				if err := transaction.RunEdit(
+					ctx, req,
+					[]*types.Ref{refOrigin, refTarget}, transaction.TransactionBranch,
+				); err != nil {
+					return err
+				}
+
+			default:
+				if err := transaction.RunEdit(
+					ctx, req,
+					[]*types.Ref{refOrigin}, transaction.TransactionBranch,
+				); err != nil {
+					return err
+				}
 			}
 
 			registerCrossRepo(ctx, c.logger, refOrigin, refTarget)
@@ -131,7 +149,11 @@ type operationProductAdd struct {
 	RefTarget   *types.Ref
 	ProductName string
 
-	addOp *operationAdd // if product is to be created, nested  add op.
+	addOp        *operationAdd // target asset to create: nested add op.
+	createBranch bool          // target asset exists but lacks the branch: create it.
+
+	// filled at Validate
+	branchOp *operationBranch
 }
 
 func (o *operationProductAdd) Validate(
@@ -154,19 +176,47 @@ func (o *operationProductAdd) Validate(
 	if o.addOp != nil {
 		return o.addOp.Validate(ctx, opctx, dbClient)
 	}
-	if _, err := dbClient.GetJSONAssetFromRef(ctx, opctx, o.RefTarget, false); err != nil {
+
+	target, err := dbClient.GetJSONAssetFromRef(ctx, opctx, o.RefTarget, false)
+	if err != nil {
 		return newErrProductTargetNotFound(o.RefTarget, err)
 	}
-	return nil
+
+	if o.createBranch {
+		// recheck branch still don't exists (now taht we have the transaction lock)
+		// prepare sub branch op is not exits
+		// otherwise ignore
+		base, err := db.GetBranchCommit(target.Data, types.DefaultBranchName)
+		if err != nil {
+			return err
+		}
+		o.branchOp = &operationBranch{
+			InputRef: types.NewRefCommit(
+				o.RefTarget.RepoRef(), o.RefTarget.AssetPath, base.Parent,
+			),
+			BranchNames: []string{o.RefTarget.BranchName},
+			empty:       true,
+		}
+		return o.branchOp.Validate(ctx, opctx, dbClient)
+	} else if _, ok := target.Data.Branches[o.RefTarget.BranchName]; !ok {
+		// recheck that the branch still exists (now that we have the transaction lock)
+		// return err if not
+		return newErrProductTargetNotFound(o.RefTarget, nil)
+	} else {
+		return nil
+	}
 }
 
 func (o *operationProductAdd) PlanBlobUpdate(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 ) (*types.BlobUpdatePlan, error) {
-	if o.addOp != nil {
+	switch {
+	case o.addOp != nil:
 		return o.addOp.PlanBlobUpdate(ctx, opctx)
-	} else {
+	case o.branchOp != nil:
+		return o.branchOp.PlanBlobUpdate(ctx, opctx)
+	default:
 		return &types.BlobUpdatePlan{}, nil
 	}
 }
@@ -186,6 +236,11 @@ func (o *operationProductAdd) DBUpdate(
 	// don't exist, which is a bug.
 	if o.addOp != nil {
 		if err := o.addOp.DBUpdate(ctx, opctx, dbClient); err != nil {
+			return err
+		}
+	}
+	if o.branchOp != nil {
+		if err := o.branchOp.DBUpdate(ctx, opctx, dbClient); err != nil {
 			return err
 		}
 	}
@@ -211,6 +266,9 @@ func (o *operationProductAdd) Finish(
 ) {
 	if o.addOp != nil {
 		o.addOp.Finish(ctx, opctx, dbClient, logger, p)
+	}
+	if o.branchOp != nil {
+		o.branchOp.Finish(ctx, opctx, dbClient, logger, p)
 	}
 
 	if _, err := db.UpdateDepGraphForDependency(
@@ -242,6 +300,28 @@ func (o *operationProductAdd) Finish(
 // HistorySummary: "<name> → <target>".
 func (o *operationProductAdd) HistorySummary() string {
 	return fmt.Sprintf("%s → %s", o.ProductName, o.RefTarget.RelativePath())
+}
+
+func productTargetState(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+	ref *types.Ref,
+) (assetExists, branchExists bool, err error) {
+	idx, err := dbClient.GetTreeIndex(ctx, opctx, ref.RepoPath)
+	if err != nil {
+		return false, false, err
+	}
+	entry, ok := idx.PathToID[ref.AssetPath]
+	if !ok || entry.Type != db.TreeNodeTypeAsset || entry.AssetUID == "" {
+		return false, false, nil
+	}
+	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, ref, false)
+	if err != nil {
+		return false, false, err
+	}
+	_, branchExists = asset.Data.Branches[ref.BranchName]
+	return true, branchExists, nil
 }
 
 func newErrProductTargetNotFound(ref *types.Ref, cause error) error {
