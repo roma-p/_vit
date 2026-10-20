@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	testutils "vit/internal/testhelpers"
+	"vit/internal/types"
 )
 
 // sibling spins up a SECOND repo (its own temp dir) sharing this env's client,
@@ -134,4 +135,83 @@ func TestProductAdd_crossRepoCreateMissingBranch(t *testing.T) {
 	wipWs := filepath.Join(b.abs("render/beauty"), "branches", "branch-wip")
 	a.editFile(filepath.Join(anim, "render", "out.exr"), "frame1")
 	testutils.AssertEqual(t, b.read(filepath.Join(wipWs, "out.exr")), "frame1")
+}
+
+// -- cross-repo CASCADE: origin in A, product in B ---------------------------
+
+// crossOriginWithProduct adds origin `shot/anim` in a and attaches a `render`
+// product created in b. Returns the origin's base-branch workspace dir.
+func crossOriginWithProduct(a, b *vitEnv) string {
+	must(a.Add(ctx, a.abs("shot/anim"), a.fileSrc("src", "v1")))
+	must(a.ProductAdd(ctx, a.branchRef("shot/anim"), b.abs("render/beauty"), "render", true))
+	return a.baseWs("shot/anim")
+}
+
+// A snapshot of the origin captures the changed product in repo B and pins it.
+func TestSnapshotCascade_crossRepo(t *testing.T) {
+	a := newVitEnv(t)
+	b := a.sibling("repoB")
+	ws := crossOriginWithProduct(a, b)
+	a.editFile(filepath.Join(ws, "render", "out.exr"), "frame1")
+	a.editFile(filepath.Join(ws, "src"), "v2")
+
+	snap := must(a.Snapshot(ctx, a.branchRef("shot/anim"), "v2+render")).String
+
+	e := productEdge(must(a.Ls(ctx, snap)), "render")
+	if e == nil || e.Provider == nil || e.Provider.RefType != types.RefTypeCommit {
+		t.Fatalf("expected render produced (provider=commit), got %+v", e)
+	}
+	if e.Provider.RepoUID != b.repoUID(t) {
+		t.Fatalf("product commit should live in repo B %q, got %q", b.repoUID(t), e.Provider.RepoUID)
+	}
+}
+
+// Tagging the origin tags the product commit in repo B.
+func TestTagCascade_crossRepo(t *testing.T) {
+	a := newVitEnv(t)
+	b := a.sibling("repoB")
+	ws := crossOriginWithProduct(a, b)
+	a.editFile(filepath.Join(ws, "render", "out.exr"), "frame1")
+	a.editFile(filepath.Join(ws, "src"), "v2")
+
+	must(a.Tag(ctx, a.branchRef("shot/anim"), "approved", "approve v2"))
+
+	if tagLatest(must(b.Ls(ctx, b.abs("render/beauty"))), "approved") == "" {
+		t.Fatal("repo B render was not tagged 'approved'")
+	}
+	if must(b.Ls(ctx, b.abs("render/beauty")+"@tag=approved")).Object == nil {
+		t.Fatal("repo B render@tag=approved did not resolve to an object")
+	}
+}
+
+// Branching the origin creates the same-named, empty product branch in repo B
+// and re-points the origin branch's edge (and its delivery) to it.
+func TestBranchMirror_crossRepo(t *testing.T) {
+	a := newVitEnv(t)
+	b := a.sibling("repoB")
+	ws := crossOriginWithProduct(a, b)
+	a.editFile(filepath.Join(ws, "render", "out.exr"), "frame1")
+	a.editFile(filepath.Join(ws, "src"), "v2")
+	must(a.Snapshot(ctx, a.branchRef("shot/anim"), "v2+render")) // origin clean
+
+	must(a.Branch(ctx, a.branchRef("shot/anim"), []string{"wip"}))
+
+	if !hasBranch(must(b.Ls(ctx, b.abs("render/beauty"))), "wip") {
+		t.Fatal("repo B render has no 'wip' branch")
+	}
+	bWip := filepath.Join(b.abs("render/beauty"), "branches", "branch-wip")
+	if entries, err := os.ReadDir(bWip); err != nil || len(entries) != 0 {
+		t.Fatalf("repo B render@wip should start empty: %v %v", entries, err)
+	}
+
+	e := productEdge(must(a.Ls(ctx, a.abs("shot/anim")+"@branch=wip")), "render")
+	if e == nil || e.RefSpec == nil || e.RefSpec.RepoUID != b.repoUID(t) ||
+		e.RefSpec.AssetPath != "render/beauty" || e.RefSpec.BranchName != "wip" {
+		t.Fatalf("origin@wip edge not re-pointed to repo B render@wip: %+v", e)
+	}
+
+	aWip := filepath.Join(a.abs("shot/anim"), "branches", "branch-wip")
+	a.editFile(filepath.Join(aWip, "render", "out.exr"), "WIP")
+	testutils.AssertEqual(t, b.read(filepath.Join(bWip, "out.exr")), "WIP")
+	testutils.AssertEqual(t, b.read(filepath.Join(b.baseWs("render/beauty"), "out.exr")), "frame1")
 }
