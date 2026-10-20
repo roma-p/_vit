@@ -74,3 +74,15 @@ func TestVariadicRejectsOptional(t *testing.T) {
 		t.Fatal("expected AddVariadic to reject: can't have variadic + optional positionals")
 	}
 }
+
+// A string flag written `-name value` takes the next token as its value, not as
+// a positional.
+func TestStringFlagValue(t *testing.T) {
+	parser := NewArgParser("add", []string{"assetPath"}, []string{"src"})
+	parser.AddArgString("message", "", "some usage")
+
+	testutils.AssertEqual(t, parser.Parse([]string{"some/path", "-message", "hello", "source.ma"}), nil)
+	testutils.AssertEqual(t, parser.GetArg("assetPath"), "some/path")
+	testutils.AssertEqual(t, parser.GetArg("src"), "source.ma")
+	testutils.AssertEqual(t, *parser.GetFlag("message").(*string), "hello")
+}

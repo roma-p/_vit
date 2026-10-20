@@ -95,3 +95,11 @@ func TestFindCmdTreeGeneralHelp(t *testing.T) {
 	result := cmdTreeTest.FindCmdTree([]string{"-h"})
 	testutils.AssertEqual(t, result.Code, OnCmdBranchAndHelpAsked)
 }
+
+// The command's args reach its parser in their ORIGINAL order, so a valued flag
+// stays right before its value (only the command-path tokens are dropped).
+func TestFindCmdTreeKeepsFlagValueOrder(t *testing.T) {
+	result := cmdTreeTest.FindCmdTree([]string{"handle", "add", "some/path", "-opt", "a,b", "handle", "other/path"})
+	testutils.AssertEqual(t, result.Code, CmdFound)
+	testutils.AssertSliceEqual(t, result.Args, []string{"some/path", "-opt", "a,b", "handle", "other/path"})
+}

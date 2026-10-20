@@ -50,10 +50,14 @@ const (
 )
 
 func (c *CmdTree) FindCmdTree(args []string) FindCmdResult {
-	posArgs, flagArgs := splitPosFlagArgs(args)
+	posArgs, flagArgs := splitDashArgs(args)
 	ret := c.find(c.Name, posArgs)
 
-	ret.Args = append(ret.Args, flagArgs...)
+	if ret.Code == CmdNotFound {
+		ret.Args = append(ret.Args, flagArgs...)
+	} else {
+		ret.Args = dropPositionals(args, len(posArgs)-len(ret.Args))
+	}
 
 	isHelpAsked := false
 	for _, f := range flagArgs {
@@ -124,4 +128,29 @@ func (c *CmdTree) find(commandName string, args []string) FindCmdResult {
 			Usage:   c.BuildHelp(),
 		}
 	}
+}
+
+func splitDashArgs(args []string) ([]string, []string) {
+	var flagArgs []string
+	var posArgs []string
+	for _, arg := range args {
+		if len(arg) > 0 && arg[0] == '-' {
+			flagArgs = append(flagArgs, arg)
+		} else {
+			posArgs = append(posArgs, arg)
+		}
+	}
+	return posArgs, flagArgs
+}
+
+func dropPositionals(args []string, n int) []string {
+	out := make([]string, 0, len(args))
+	for _, arg := range args {
+		if n > 0 && (len(arg) == 0 || arg[0] != '-') {
+			n--
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
 }

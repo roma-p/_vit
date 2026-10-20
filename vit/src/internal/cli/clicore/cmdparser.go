@@ -131,7 +131,7 @@ func (a *CmdParser) resetFlagSet() {
 func (a *CmdParser) Parse(args []string) *UsageError {
 	a.resetFlagSet()
 
-	posArgs, flagArgs := splitPosFlagArgs(args)
+	posArgs, flagArgs := a.splitPosFlagArgs(args)
 
 	// Parse flags FIRST so they're available even if there's a usage error
 	if err := a.FlagSet.Parse(flagArgs); err != nil {
@@ -194,15 +194,24 @@ func (a *CmdParser) buildUsage() {
 	a.Usage = u
 }
 
-func splitPosFlagArgs(args []string) ([]string, []string) {
+func (a *CmdParser) splitPosFlagArgs(args []string) ([]string, []string) {
 	var flagArgs []string
 	var posArgs []string
 
-	for _, arg := range args {
-		if len(arg) > 0 && arg[0] == '-' {
-			flagArgs = append(flagArgs, arg)
-		} else {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if len(arg) == 0 || arg[0] != '-' {
 			posArgs = append(posArgs, arg)
+			continue
+		}
+		flagArgs = append(flagArgs, arg)
+		name := strings.TrimLeft(arg, "-")
+		if strings.Contains(name, "=") {
+			continue // value given inline
+		}
+		if def, ok := a.flagDefs[name]; ok && def.flagType != "bool" && i+1 < len(args) {
+			i++
+			flagArgs = append(flagArgs, args[i])
 		}
 	}
 	return posArgs, flagArgs
