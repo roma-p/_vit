@@ -182,29 +182,29 @@ func (o *operationProductAdd) Validate(
 		return newErrProductTargetNotFound(o.RefTarget, err)
 	}
 
-	if o.createBranch {
-		// recheck branch still don't exists (now taht we have the transaction lock)
-		// prepare sub branch op is not exits
-		// otherwise ignore
-		base, err := db.GetBranchCommit(target.Data, types.DefaultBranchName)
-		if err != nil {
-			return err
-		}
-		o.branchOp = &operationBranch{
-			InputRef: types.NewRefCommit(
-				o.RefTarget.RepoRef(), o.RefTarget.AssetPath, base.Parent,
-			),
-			BranchNames: []string{o.RefTarget.BranchName},
-			empty:       true,
-		}
-		return o.branchOp.Validate(ctx, opctx, dbClient)
-	} else if _, ok := target.Data.Branches[o.RefTarget.BranchName]; !ok {
-		// recheck that the branch still exists (now that we have the transaction lock)
-		// return err if not
-		return newErrProductTargetNotFound(o.RefTarget, nil)
-	} else {
+	// recheck the branch now that we hold the transaction lock.
+	_, branchExists := target.Data.Branches[o.RefTarget.BranchName]
+	switch {
+	case branchExists:
+		// found missing at discovery but created concurrently since: just attach.
 		return nil
+	case !o.createBranch:
+		return newErrProductTargetNotFound(o.RefTarget, nil)
 	}
+
+	// still missing: create it empty at base head.
+	base, err := db.GetBranchCommit(target.Data, types.DefaultBranchName)
+	if err != nil {
+		return err
+	}
+	o.branchOp = &operationBranch{
+		InputRef: types.NewRefCommit(
+			o.RefTarget.RepoRef(), o.RefTarget.AssetPath, base.Parent,
+		),
+		BranchNames: []string{o.RefTarget.BranchName},
+		empty:       true,
+	}
+	return o.branchOp.Validate(ctx, opctx, dbClient)
 }
 
 func (o *operationProductAdd) PlanBlobUpdate(
