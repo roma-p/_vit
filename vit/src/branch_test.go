@@ -121,6 +121,14 @@ func TestBranch_noNameFails(t *testing.T) {
 	assertErrCode(t, err, types.ErrInvalidInut)
 }
 
+func TestBranch_onlyEmptyNamesFails(t *testing.T) {
+	env := newVitEnv(t)
+	must(env.Add(ctx, env.abs("chars/hero"), env.fileSrc("hero.txt", "v1")))
+
+	_, err := env.Branch(ctx, env.branchRef("chars/hero"), []string{"", ""})
+	assertErrCode(t, err, types.ErrInvalidInut)
+}
+
 func TestBranch_oneExistingNameFailsAll(t *testing.T) {
 	env := newVitEnv(t)
 	must(env.Add(ctx, env.abs("chars/hero"), env.fileSrc("hero.txt", "v1")))

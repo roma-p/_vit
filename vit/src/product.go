@@ -98,7 +98,7 @@ func (c *Client) ProductAdd(
 			}
 
 			if create && !targetExists {
-				op.addOp = newOperationAdd(opctx.RepoRefFor(refTarget.RepoUID), refTarget.AssetPath, "")
+				op.addOp = newOperationAdd(opctx.RepoRefFor(refTarget.RepoUID), refTarget.AssetPath, "", nil)
 				if err := transaction.RunTreeChangedAndEdit(
 					ctx, req,
 					[]*types.Ref{refTarget},

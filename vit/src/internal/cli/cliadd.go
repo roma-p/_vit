@@ -9,7 +9,9 @@ import (
 )
 
 func buildAddArgParser() *clicore.CmdParser {
-	return clicore.NewArgParser("add", []string{"assetPath"}, []string{"src"})
+	ret := clicore.NewArgParser("add", []string{"assetPath"}, []string{"src"})
+	ret.AddArgCommaString("branches", "comma-separated extra branches to create at init, besides base")
+	return ret
 }
 
 func runAdd(ctx context.Context, client *vit.Client, argParser *clicore.CmdParser) (types.Result, error) {
@@ -17,5 +19,6 @@ func runAdd(ctx context.Context, client *vit.Client, argParser *clicore.CmdParse
 		ctx,
 		argParser.GetArg("assetPath"),
 		argParser.GetArg("src"),
+		argParser.GetCommaString("branches")...,
 	)
 }

@@ -117,14 +117,6 @@ func (o *operationBranch) Validate(
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
 ) error {
-	if len(o.BranchNames) == 0 {
-		return types.NewVitError(
-			types.ErrInvalidInut,
-			[]string{"at least one branch name is required"},
-			[]any{"ref", o.InputRef.RelativePath()},
-		)
-	}
-
 	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, o.InputRef, false)
 	if err != nil {
 		return err
@@ -133,6 +125,13 @@ func (o *operationBranch) Validate(
 	o.BranchNames, err = checkNewBranchNames(asset.Data.Branches, o.InputRef.AssetPath, o.BranchNames)
 	if err != nil {
 		return err
+	}
+	if len(o.BranchNames) == 0 {
+		return types.NewVitError(
+			types.ErrInvalidInut,
+			[]string{"at least one branch name is required"},
+			[]any{"ref", o.InputRef.RelativePath()},
+		)
 	}
 
 	switch o.InputRef.RefType {
@@ -392,11 +391,7 @@ func checkNewBranchNames(
 	var unique, taken []string
 	for _, name := range names {
 		if name == "" {
-			return nil, types.NewVitError(
-				types.ErrInvalidInut,
-				[]string{"a branch name can't be empty"},
-				[]any{"asset", assetPath},
-			)
+			continue
 		}
 		if seen[name] {
 			continue

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"time"
 
 	"vit/internal/blob"
@@ -17,11 +18,15 @@ import (
 	"vit/internal/workspace"
 )
 
-func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringResult, error) {
+func (c *Client) Add(
+	ctx context.Context,
+	assetPath, src string,
+	branches ...string,
+) (*types.StringResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, types.NewCancelledError(err)
 	}
-	c.logger.Info("AddAsset", "assetPath", assetPath, "src", src)
+	c.logger.Info("AddAsset", "assetPath", assetPath, "src", src, "branches", branches)
 
 	assetPath = fsutil.PathOS(assetPath)
 
@@ -52,7 +57,7 @@ func (c *Client) Add(ctx context.Context, assetPath, src string) (*types.StringR
 		}
 		defer dbClient.Close()
 
-		op := newOperationAdd(opctx.Repo(), assetPath, src)
+		op := newOperationAdd(opctx.Repo(), assetPath, src, branches)
 
 		if err := transaction.RunTreeChanged(
 			ctx,
@@ -90,6 +95,7 @@ type operationAdd struct {
 	RepoRef   *types.RepoRef
 	AssetPath string
 	Src       string
+	Branches  []string
 
 	// filled at Validate
 	closestPathFound string
@@ -106,11 +112,12 @@ type operationAdd struct {
 	WorkspaceBranchPath string
 }
 
-func newOperationAdd(repoRef *types.RepoRef, assetPath, src string) *operationAdd {
+func newOperationAdd(repoRef *types.RepoRef, assetPath, src string, branches []string) *operationAdd {
 	return &operationAdd{
 		RepoRef:   repoRef,
 		AssetPath: assetPath,
 		Src:       src,
+		Branches:  branches,
 	}
 }
 
@@ -120,6 +127,14 @@ func (o *operationAdd) Validate(
 	dbClient *db.Client,
 ) error {
 	var err error
+	o.Branches, err = checkNewBranchNames(nil, o.AssetPath, o.Branches)
+	if err != nil {
+		return err
+	}
+	o.Branches = slices.DeleteFunc(o.Branches, func(name string) bool {
+		return name == types.DefaultBranchName
+	})
+
 	o.closestPathFound, err = dbClient.IsAssetPathAvailable(
 		ctx, opctx,
 		o.RepoRef.Path,
@@ -156,6 +171,14 @@ func (o *operationAdd) PlanBlobUpdate(
 		return nil, err
 	}
 
+	for _, name := range o.Branches {
+		p, err := blob.PlanBranchFromContentNode(o.RepoRef.Path, o.AssetPath, name, o.contentNode)
+		if err != nil {
+			return nil, err
+		}
+		appendPlan(plan, p)
+	}
+
 	return plan, nil
 }
 
@@ -186,6 +209,15 @@ func (o *operationAdd) DBUpdate(
 		return err
 	}
 	o.firstCommitID = branch.Parent
+
+	for _, name := range o.Branches {
+		if err := db.AddBranch(
+			asset.Data, o.firstCommitID, name, opctx.User,
+			o.contentNode.ContentHash, o.baselineTimeStamp,
+		); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -207,6 +239,20 @@ func (o *operationAdd) Finish(
 	)
 	if err != nil {
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
+	}
+
+	for _, name := range o.Branches {
+		blobPath, err := blob.BranchContentPath(o.RepoRef.Path, o.AssetPath, name)
+		if err != nil {
+			logger.Log(ctx, slog.LevelError, "workspace present failed", "branch", name, "err", err)
+			continue
+		}
+		if _, err := workspace.PresentBranch(
+			ctx, opctx.JSONPool, o.RepoRef.Path, blobPath, p,
+			types.NewRefBranch(o.RepoRef, o.AssetPath, name),
+		); err != nil {
+			logger.Log(ctx, slog.LevelError, "workspace present failed", "branch", name, "err", err)
+		}
 	}
 
 	if _, err := workspace.PresentCommit(
