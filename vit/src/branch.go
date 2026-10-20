@@ -3,6 +3,7 @@ package vit
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"vit/internal/blob"
@@ -13,21 +14,26 @@ import (
 	"vit/internal/workspace"
 )
 
-// Branch creates a new branch <name> rooted at the object referenced by path (a
-// clean branch, a commit, a tag). Branching from a DIRTY branch is not allowed.
-// new branch files are presented with inherited sources.
-func (c *Client) Branch(ctx context.Context, path, name string) (*types.StringResult, error) {
+// Branch creates one new branch per name, all rooted at the object referenced by
+// path (a clean branch, a commit, a tag). Branching from a DIRTY branch is not
+// allowed. New branch files are presented with inherited dependencies. Returns one
+// workspace path per created branch, in the order of names.
+func (c *Client) Branch(
+	ctx context.Context,
+	path string,
+	names []string,
+) (*types.StringListResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, types.NewCancelledError(err)
 	}
-	c.logger.Info("Branch", "path", path, "name", name)
+	c.logger.Info("Branch", "path", path, "names", names)
 
 	presenter, err := workspace.ResolvePresenter(ctx, c.logger)
 	if err != nil {
 		return nil, err
 	}
 
-	var branchWorkspacePath string
+	var branchWorkspacePaths []string
 	err = opcontext.WithOperationContext(ctx, path, func(
 		opctx *opcontext.OperationContext,
 		path string, // internal here
@@ -48,7 +54,7 @@ func (c *Client) Branch(ctx context.Context, path, name string) (*types.StringRe
 			return err
 		}
 
-		op := &operationBranch{InputRef: ref, BranchName: name, productTargets: products}
+		op := &operationBranch{InputRef: ref, BranchNames: names, productTargets: products}
 
 		refs := []*types.Ref{ref}
 		for _, p := range products {
@@ -75,35 +81,35 @@ func (c *Client) Branch(ctx context.Context, path, name string) (*types.StringRe
 			return err
 		}
 
-		branchWorkspacePath = op.BranchWorkspacePath
+		branchWorkspacePaths = op.BranchWorkspacePaths
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &types.StringResult{String: branchWorkspacePath}, nil
+	return &types.StringListResult{StringList: branchWorkspacePaths}, nil
 }
 
 type operationBranch struct {
 	// input
 	InputRef       *types.Ref
-	BranchName     string
+	BranchNames    []string
 	productTargets []originProduct
 	empty          bool
 
 	// filled at Validate
-	targetCommit    string             // the commit the new branch roots at
+	targetCommit    string             // the commit every new branch roots at
 	contentNode     *types.ContentNode // its content
 	productBranches []*operationBranch
 
 	// filled at PlanBlobUpdate (empty branches only): the empty content hash.
 	emptyContentHash string
 
-	// filled at DBUpdate
-	outputRef *types.Ref
+	// filled at DBUpdate, one per BranchNames entry
+	outputRefs []*types.Ref
 
-	// filled at Finish
-	BranchWorkspacePath string
+	// filled at Finish, one per successfully presented branch
+	BranchWorkspacePaths []string
 }
 
 func (o *operationBranch) Validate(
@@ -111,10 +117,10 @@ func (o *operationBranch) Validate(
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
 ) error {
-	if o.BranchName == "" {
+	if len(o.BranchNames) == 0 {
 		return types.NewVitError(
 			types.ErrInvalidInut,
-			[]string{"a branch name is required"},
+			[]string{"at least one branch name is required"},
 			[]any{"ref", o.InputRef.RelativePath()},
 		)
 	}
@@ -124,12 +130,9 @@ func (o *operationBranch) Validate(
 		return err
 	}
 
-	if _, ok := asset.Data.Branches[o.BranchName]; ok {
-		return types.NewVitError(
-			types.ErrAssetObjectAlreadyExists,
-			[]string{"a branch named '" + o.BranchName + "' already exists on this asset"},
-			[]any{"asset", o.InputRef.AssetPath, "branch", o.BranchName},
-		)
+	o.BranchNames, err = checkNewBranchNames(asset.Data.Branches, o.InputRef.AssetPath, o.BranchNames)
+	if err != nil {
+		return err
 	}
 
 	switch o.InputRef.RefType {
@@ -174,13 +177,19 @@ func (o *operationBranch) Validate(
 		return err
 	}
 
-	// prepare creating branch for every product taht does not have a branch which name matches
+	// prepare creating, on every product, the branches it does not have yet.
 	for _, pt := range o.productTargets {
 		tAsset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, pt.targetRef, false)
 		if err != nil {
 			return err
 		}
-		if _, exists := tAsset.Data.Branches[o.BranchName]; exists {
+		var missing []string
+		for _, name := range o.BranchNames {
+			if _, exists := tAsset.Data.Branches[name]; !exists {
+				missing = append(missing, name)
+			}
+		}
+		if len(missing) == 0 {
 			continue
 		}
 		tBase, err := db.GetBranchCommit(tAsset.Data, pt.targetRef.BranchName)
@@ -191,13 +200,16 @@ func (o *operationBranch) Validate(
 			InputRef: types.NewRefCommit(
 				pt.targetRef.RepoRef(), pt.targetRef.AssetPath, tBase.Parent,
 			),
-			BranchName: o.BranchName,
-			empty:      true,
+			BranchNames: missing,
+			empty:       true,
 		}
 		if err := sub.Validate(ctx, opctx, dbClient); err != nil {
 			return err
 		}
 		o.productBranches = append(o.productBranches, sub)
+		// TODO: what happen if the branch is dirty? should be allow "product add"
+		// meaning if we commit origin, product would be committing with artefacts
+		// that were not producted by origin.
 	}
 	return nil
 }
@@ -216,26 +228,26 @@ func (o *operationBranch) PlanBlobUpdate(
 		appendPlan(plan, p)
 	}
 
-	if o.empty {
-		self, node, err := blob.PlanEmptyBranch(
-			o.InputRef.RepoPath, o.InputRef.AssetPath, o.BranchName,
+	for _, name := range o.BranchNames {
+		if o.empty {
+			self, node, err := blob.PlanEmptyBranch(o.InputRef.RepoPath, o.InputRef.AssetPath, name)
+			if err != nil {
+				return nil, err
+			}
+			o.contentNode = node
+			o.emptyContentHash = node.ContentHash
+			appendPlan(plan, self)
+			continue
+		}
+
+		self, err := blob.PlanBranchFromContentNode(
+			o.InputRef.RepoPath, o.InputRef.AssetPath, name, o.contentNode,
 		)
 		if err != nil {
 			return nil, err
 		}
-		o.contentNode = node
-		o.emptyContentHash = node.ContentHash
 		appendPlan(plan, self)
-		return plan, nil
 	}
-
-	self, err := blob.PlanBranchFromContentNode(
-		o.InputRef.RepoPath, o.InputRef.AssetPath, o.BranchName, o.contentNode,
-	)
-	if err != nil {
-		return nil, err
-	}
-	appendPlan(plan, self)
 	return plan, nil
 }
 
@@ -264,27 +276,32 @@ func (o *operationBranch) DBUpdate(
 	if o.empty {
 		content = o.emptyContentHash
 	}
-	if err := db.AddBranch(
-		asset.Data, o.targetCommit, o.BranchName, opctx.User, content, time.Now(),
-	); err != nil {
-		return err
-	}
 
-	newBranch, err := db.GetBranchCommit(asset.Data, o.BranchName)
-	if err != nil {
-		return err
-	}
-	for _, pt := range o.productTargets {
-		dep, ok := newBranch.Dependencies[pt.name]
-		if !ok || dep.Type != types.AssetDependencyProduct {
-			continue
+	for _, name := range o.BranchNames {
+		if err := db.AddBranch(
+			asset.Data, o.targetCommit, name, opctx.User, content, time.Now(),
+		); err != nil {
+			return err
 		}
-		dep.RefSpec = types.NewRefBranch(pt.targetRef.RepoRef(), pt.targetRef.AssetPath, o.BranchName)
-		dep.RefResolved = nil
-		dep.Commit = ""
-	}
 
-	o.outputRef = types.NewRefBranch(o.InputRef.RepoRef(), o.InputRef.AssetPath, o.BranchName)
+		// rewire each product dep onto the product's branch of the same name.
+		newBranch, err := db.GetBranchCommit(asset.Data, name)
+		if err != nil {
+			return err
+		}
+		for _, pt := range o.productTargets {
+			dep, ok := newBranch.Dependencies[pt.name]
+			if !ok || dep.Type != types.AssetDependencyProduct {
+				continue
+			}
+			dep.RefSpec = types.NewRefBranch(pt.targetRef.RepoRef(), pt.targetRef.AssetPath, name)
+			dep.RefResolved = nil
+			dep.Commit = ""
+		}
+
+		o.outputRefs = append(o.outputRefs,
+			types.NewRefBranch(o.InputRef.RepoRef(), o.InputRef.AssetPath, name))
+	}
 	return nil
 }
 
@@ -299,50 +316,103 @@ func (o *operationBranch) Finish(
 		sub.Finish(ctx, opctx, dbClient, logger, p)
 	}
 
-	blobPathBranch, err := blob.BranchContentPath(o.InputRef.RepoPath, o.InputRef.AssetPath, o.BranchName)
+	// best-effort per branch: one failed presentation does not skip the others.
+	for _, outputRef := range o.outputRefs {
+		if ws, ok := o.finishBranch(ctx, opctx, dbClient, logger, p, outputRef); ok {
+			o.BranchWorkspacePaths = append(o.BranchWorkspacePaths, ws)
+		}
+	}
+}
+
+func (o *operationBranch) finishBranch(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+	logger *slog.Logger,
+	p workspace.Presenter,
+	outputRef *types.Ref,
+) (string, bool) {
+	name := outputRef.BranchName
+
+	blobPathBranch, err := blob.BranchContentPath(o.InputRef.RepoPath, o.InputRef.AssetPath, name)
 	if err != nil {
-		logger.Log(ctx, slog.LevelError, "branch: blob path failed", "err", err)
-		return
+		logger.Log(ctx, slog.LevelError, "branch: blob path failed", "branch", name, "err", err)
+		return "", false
 	}
 
-	o.BranchWorkspacePath, err = workspace.PresentBranch(
-		ctx, opctx.JSONPool, o.InputRef.RepoPath, blobPathBranch, p, o.outputRef,
+	ws, err := workspace.PresentBranch(
+		ctx, opctx.JSONPool, o.InputRef.RepoPath, blobPathBranch, p, outputRef,
 	)
 	if err != nil {
-		logger.Log(ctx, slog.LevelError, "branch: workspace present failed", "err", err)
-		return
+		logger.Log(ctx, slog.LevelError, "branch: workspace present failed", "branch", name, "err", err)
+		return "", false
 	}
 
 	// Present the branch's inherited sources (deep-copied from the root commit).
-	g, err := db.GetDependencies(ctx, opctx, dbClient, o.outputRef)
+	g, err := db.GetDependencies(ctx, opctx, dbClient, outputRef)
 	if err != nil {
-		logger.Log(ctx, slog.LevelError, "branch: dep graph read failed", "err", err)
-		return
+		logger.Log(ctx, slog.LevelError, "branch: dep graph read failed", "branch", name, "err", err)
+		return ws, true
 	}
 	if len(g.Edges) > 0 {
-		if err := workspace.PresentSources(ctx, g, o.outputRef, p); err != nil {
-			logger.Log(ctx, slog.LevelError, "branch: present sources failed", "err", err)
+		if err := workspace.PresentSources(ctx, g, outputRef, p); err != nil {
+			logger.Log(ctx, slog.LevelError, "branch: present sources failed", "branch", name, "err", err)
 		}
 	}
 
 	for _, pt := range o.productTargets {
-		targetBranch := types.NewRefBranch(pt.targetRef.RepoRef(), pt.targetRef.AssetPath, o.BranchName)
+		targetBranch := types.NewRefBranch(pt.targetRef.RepoRef(), pt.targetRef.AssetPath, name)
 		if _, err := db.UpdateDepGraphForDependency(
 			ctx, opctx, dbClient,
 			db.UpdateDepGraphForDependencyRequest{
-				Dependent: o.outputRef,
+				Dependent: outputRef,
 				Target:    targetBranch,
 				Spec:      targetBranch,
 				Name:      pt.name,
 				Type:      types.AssetDependencyProduct,
 			},
 		); err != nil {
-			logger.Log(ctx, slog.LevelError, "branch: product dep graph update failed", "err", err)
+			logger.Log(ctx, slog.LevelError, "branch: product dep graph update failed", "branch", name, "err", err)
 		}
 		if err := workspace.PresentProduct(
-			ctx, o.outputRef, pt.name, targetBranch, p,
+			ctx, outputRef, pt.name, targetBranch, p,
 		); err != nil {
-			logger.Log(ctx, slog.LevelError, "branch: present product failed", "err", err)
+			logger.Log(ctx, slog.LevelError, "branch: present product failed", "branch", name, "err", err)
 		}
 	}
+	return ws, true
+}
+
+func checkNewBranchNames(
+	existing map[string]*types.AssetCommit,
+	assetPath string,
+	names []string,
+) ([]string, error) {
+	seen := make(map[string]bool, len(names))
+	var unique, taken []string
+	for _, name := range names {
+		if name == "" {
+			return nil, types.NewVitError(
+				types.ErrInvalidInut,
+				[]string{"a branch name can't be empty"},
+				[]any{"asset", assetPath},
+			)
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		unique = append(unique, name)
+		if _, ok := existing[name]; ok {
+			taken = append(taken, name)
+		}
+	}
+	if len(taken) > 0 {
+		return nil, types.NewVitError(
+			types.ErrAssetObjectAlreadyExists,
+			[]string{"branches already exist on this asset: " + strings.Join(taken, ", ")},
+			[]any{"asset", assetPath, "branches", taken},
+		)
+	}
+	return unique, nil
 }

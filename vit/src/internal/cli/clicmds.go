@@ -62,10 +62,10 @@ var cmdDefinition = clicore.CmdTree{
 			SubCommands: map[string]*clicore.CmdTree{
 				"add": {
 					Name:        "Add branch",
-					Description: "Create a new branch from a branch/commit/tag/snapshot (source branch must be clean)",
+					Description: "Create one or more branches from a branch/commit/tag/snapshot (source branch must be clean)",
 					Run:         runBranchAdd,
 					ArgParser:   buildBranchAddArgParser(),
-					ResultType:  types.StringResult{},
+					ResultType:  types.StringListResult{},
 				},
 			},
 		},

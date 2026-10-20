@@ -9,7 +9,9 @@ import (
 )
 
 func buildBranchAddArgParser() *clicore.CmdParser {
-	return clicore.NewArgParser("branch add", []string{"path", "name"}, []string{})
+	ret := clicore.NewArgParser("branch add", []string{"path"}, []string{})
+	ret.AddVariadic("names", "names of the branches to create")
+	return ret
 }
 
 func runBranchAdd(
@@ -17,5 +19,5 @@ func runBranchAdd(
 	client *vit.Client,
 	argParser *clicore.CmdParser,
 ) (types.Result, error) {
-	return client.Branch(ctx, argParser.GetArg("path"), argParser.GetArg("name"))
+	return client.Branch(ctx, argParser.GetArg("path"), argParser.GetVariadic("names"))
 }

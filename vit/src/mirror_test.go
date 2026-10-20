@@ -209,7 +209,7 @@ func TestBranchMirror_repointsAndIsolates(t *testing.T) {
 	env.editFile(filepath.Join(ws, "src"), "v2")
 	must(env.Snapshot(ctx, env.branchRef("shot/anim"), "v2+render")) // origin clean
 
-	must(env.Branch(ctx, env.branchRef("shot/anim"), "wip"))
+	must(env.Branch(ctx, env.branchRef("shot/anim"), []string{"wip"}))
 
 	// origin@wip product edge re-pointed to render/beauty@branch=wip.
 	owip := must(env.Ls(ctx, env.abs("shot/anim")+"@branch=wip"))
@@ -311,5 +311,31 @@ func TestProducedBy_showsOrigin(t *testing.T) {
 	// the producer (lgt) is itself produced by nobody.
 	if pb := must(env.Ls(ctx, env.abs("shot/lgt")+"@branch=base")).Object.ProducedBy; len(pb) != 0 {
 		t.Fatalf("shot/lgt: expected no producer, got %v", pb)
+	}
+}
+
+// Branching an origin with several names creates every same-named product
+// branch (empty) and re-points each origin branch's edge to its own one.
+func TestBranchMirror_multipleNames(t *testing.T) {
+	env := newVitEnv(t)
+	ws := env.originWithProduct(t, "shot/anim", "v1")
+	env.editFile(filepath.Join(ws, "src"), "v2")
+	must(env.Snapshot(ctx, env.branchRef("shot/anim"), "v2")) // product now on the commit
+
+	must(env.Branch(ctx, env.branchRef("shot/anim"), []string{"wip", "lookdev"}))
+
+	render := must(env.Ls(ctx, env.abs("render/beauty")))
+	for _, name := range []string{"wip", "lookdev"} {
+		if !hasBranch(render, name) {
+			t.Fatalf("render has no %q branch", name)
+		}
+		ws := filepath.Join(env.abs("render/beauty"), "branches", "branch-"+name)
+		if entries, err := os.ReadDir(ws); err != nil || len(entries) != 0 {
+			t.Fatalf("render@%s should start empty: %v %v", name, entries, err)
+		}
+		e := productEdge(must(env.Ls(ctx, env.abs("shot/anim")+"@branch="+name)), "render")
+		if e == nil || e.RefSpec == nil || e.RefSpec.BranchName != name {
+			t.Fatalf("origin@%s render edge not re-pointed to render@%s: %+v", name, name, e)
+		}
 	}
 }
