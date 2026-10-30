@@ -102,9 +102,9 @@ func ListReverseEdges(
 	return ret, nil
 }
 
-// MarkDependentsStale drops a per-OBJECT reverse-stale marker on every object whose
-// reverse changed when a source edge into targetB was added: targetB and every
-// object in its forward closure.
+// MarkDependentsStale drops a per-ASSET reverse-stale marker on every asset whose
+// reverse changed when an edge into targetB was added: targetB and every object it
+// reaches through SOURCE edges (product outputs keep their own consumers).
 func MarkDependentsStale(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
@@ -115,21 +115,27 @@ func MarkDependentsStale(
 	if err != nil {
 		return err
 	}
-	idx, err := dbClient.GetTreeIndex(ctx, opctx, targetB.RepoPath)
-	if err != nil {
-		return err
-	}
-	for repoUID, byAsset := range gB.Nodes {
-		repoPath := opctx.RepoRefFor(repoUID).Path
-		for assetPath := range byAsset {
-			y := &types.Ref{RepoUID: repoUID, RepoPath: repoPath, AssetPath: assetPath}
-			uid, err := dbClient.assetUIDFromIndex(ctx, opctx, idx, y)
-			if err != nil {
-				return err
-			}
-			if err := touchMarker(pathReverseStale(repoPath, uid)); err != nil {
-				return err
-			}
+	marked := map[string]bool{}
+	for _, y := range gB.SourceClosure(targetB) {
+		k := y.RepoUID + "\x00" + y.AssetPath
+		if marked[k] {
+			continue
+		}
+		marked[k] = true
+		repoPath := opctx.RepoRefFor(y.RepoUID).Path
+
+		// the index of the object's OWN repo: the closure may cross repos.
+		idx, err := dbClient.GetTreeIndex(ctx, opctx, repoPath)
+		if err != nil {
+			return err
+		}
+		y = &types.Ref{RepoUID: y.RepoUID, RepoPath: repoPath, AssetPath: y.AssetPath}
+		uid, err := dbClient.assetUIDFromIndex(ctx, opctx, idx, y)
+		if err != nil {
+			return err
+		}
+		if err := touchMarker(pathReverseStale(repoPath, uid)); err != nil {
+			return err
 		}
 	}
 	return nil

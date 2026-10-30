@@ -2,6 +2,7 @@ package vit_test
 
 import (
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -87,5 +88,27 @@ func TestSourcePush_clearsReverseStaleMarker(t *testing.T) {
 	res := must(env.SourcePush(ctx, env.abs("asset/rig")+"@tag=approved", nil))
 	if len(res.Consumers) != 1 {
 		t.Fatalf("after clearing, the cached reverse graph should still list 1 consumer, got %d", len(res.Consumers))
+	}
+}
+
+// Sourcing an origin marks only the origin's SOURCE closure stale, not the
+// products it produces into (their consumers did not change).
+func TestSourceAdd_marksOnlySourceClosureStale(t *testing.T) {
+	env := newVitEnv(t)
+	ws := env.originWithProduct(t, "shot/lgt", "v1")
+	env.editFile(filepath.Join(ws, "render", "out.exr"), "frame1")
+	env.editFile(filepath.Join(ws, "src"), "v2")
+	must(env.Snapshot(ctx, env.branchRef("shot/lgt"), "lgt + render")) // the pinned commit produced render
+	must(env.Add(ctx, env.abs("shot/comp"), env.fileSrc("comp.nk", "c1")))
+	for _, m := range env.reverseStaleMarkers() {
+		if err := os.Remove(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	must(env.SourceAdd(ctx, env.branchRef("shot/comp"), env.branchRef("shot/lgt"), "lgt"))
+
+	if m := env.reverseStaleMarkers(); len(m) != 1 {
+		t.Fatalf("expected only shot/lgt marked stale, got %d markers: %v", len(m), m)
 	}
 }

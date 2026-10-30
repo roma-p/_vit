@@ -98,6 +98,25 @@ func (d *DepGraph) Merge(other *DepGraph) {
 	}
 }
 
+// SourceClosure returns root and every object reachable from it through SOURCE
+// edges only, root first.
+func (d *DepGraph) SourceClosure(root *Ref) []*Ref {
+	key := func(r *Ref) string { return r.RepoUID + "\x00" + r.AssetPath + "\x00" + r.ObjectPath() }
+	seen := map[string]bool{key(root): true}
+	out := []*Ref{root}
+	for i := 0; i < len(out); i++ {
+		for _, e := range d.Edges {
+			if e.Type != AssetDependencySource || e.Provider == nil ||
+				key(e.Consumer) != key(out[i]) || seen[key(e.Provider)] {
+				continue
+			}
+			seen[key(e.Provider)] = true
+			out = append(out, e.Provider)
+		}
+	}
+	return out
+}
+
 func edgeKey(e DependencyGraphEdge) string {
 	provider := ""
 	if e.Provider != nil {
