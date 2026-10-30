@@ -168,6 +168,10 @@ func lsObject(
 	g, _ := db.GetDependencies(ctx, opctx, dbClient, ref)
 	usedBy, _ := db.GetUsedBy(ctx, opctx, dbClient, ref)
 	producedBy, _ := db.GetProducedBy(ctx, opctx, dbClient, ref)
+	lineage, _ := db.GetLineage(ctx, opctx, dbClient, ref)
+	if lineage != nil && len(lineage.Edges) == 0 {
+		lineage = nil
+	}
 
 	wsPath, _, _ := workspace.ResolveWorkspacePathFromRef(ref.RepoPath, ref)
 
@@ -183,6 +187,7 @@ func lsObject(
 			Dependencies:  g,
 			UsedBy:        usedBy,
 			ProducedBy:    producedBy,
+			Lineage:       lineage,
 		},
 	}, nil
 }

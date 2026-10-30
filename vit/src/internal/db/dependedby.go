@@ -275,23 +275,7 @@ func GetProducedBy(
 	dbClient *Client,
 	ref *types.Ref,
 ) ([]*types.Ref, error) {
-	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, ref, false)
-	if err != nil {
-		return nil, err
-	}
-
-	objPath := ref.ObjectPath()
-	if ref.RefType == types.RefTypeTag {
-		outRef, _, err := ResolveCommitForDependency(asset.Data, ref) // non-floating tag ref
-		if err != nil {
-			return nil, err
-		}
-		objPath = outRef.ObjectPath()
-	}
-
-	entries, err := ListReverseEdges(
-		opctx, ref.RepoPath, asset.Data.AssetUID, objPath, types.AssetDependencyProduct,
-	)
+	entries, err := producerEntries(ctx, opctx, dbClient, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -311,6 +295,31 @@ func GetProducedBy(
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+func producerEntries(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *Client,
+	ref *types.Ref,
+) ([]ReverseEntry, error) {
+	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, ref, false)
+	if err != nil {
+		return nil, err
+	}
+
+	objPath := ref.ObjectPath()
+	if ref.RefType == types.RefTypeTag {
+		outRef, _, err := ResolveCommitForDependency(asset.Data, ref) // non-floating tag ref
+		if err != nil {
+			return nil, err
+		}
+		objPath = outRef.ObjectPath()
+	}
+
+	return ListReverseEdges(
+		opctx, ref.RepoPath, asset.Data.AssetUID, objPath, types.AssetDependencyProduct,
+	)
 }
 
 func usedByKey(ref *types.Ref) string {

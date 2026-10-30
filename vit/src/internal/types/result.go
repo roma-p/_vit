@@ -101,6 +101,10 @@ type LsObject struct {
 	// ProducedBy names the origin objects that declare this asset as a product
 	// output (the inverse of a forward product edge); direct, not transitive.
 	ProducedBy []*Ref `json:"produced_by,omitempty"`
+	// Lineage is the provenance of the object and of what it consumes: who
+	// produced each of them, and transitively what those producers consumed and
+	// who produced that. Computed on demand, never cached.
+	Lineage *DepGraph `json:"lineage,omitempty"`
 }
 
 func (r *LsResult) ToStringSlice() []string {
@@ -156,6 +160,16 @@ func (r *LsResult) ToStringSlice() []string {
 			out = append(out, "  produced by:")
 			for _, r := range o.ProducedBy {
 				out = append(out, "    "+r.RelativePath())
+			}
+		}
+		if o.Lineage != nil {
+			out = append(out, "  lineage:")
+			for i := range o.Lineage.Edges {
+				e := o.Lineage.Edges[i]
+				if e.Type == AssetDependencyProduct {
+					out = append(out, fmt.Sprintf("    %s\t<- %s",
+						e.Provider.RelativePath(), e.Consumer.RelativePath()))
+				}
 			}
 		}
 		if len(o.UsedBy) > 0 {
