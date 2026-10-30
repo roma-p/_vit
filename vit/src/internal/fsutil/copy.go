@@ -42,8 +42,8 @@ func CopyFiles(ctx context.Context, progress *CopyProgress, requests []types.Cop
 type CopyProgress struct {
 	writer      types.ProgressWriter
 	currentFile string
-	currentSize int
-	bytesRead   int
+	currentSize int64
+	bytesRead   int64
 }
 
 func NewCopyProgress(writer types.ProgressWriter) *CopyProgress {
@@ -58,13 +58,13 @@ func (p *CopyProgress) init(operation string, totalItems int, totalBytes int64) 
 	})
 }
 
-func (p *CopyProgress) updateFile(name string, size int) {
+func (p *CopyProgress) updateFile(name string, size int64) {
 	p.currentFile = name
 	p.currentSize = size
 	p.bytesRead = 0
 }
 
-func (p *CopyProgress) updateBytes(n int) {
+func (p *CopyProgress) updateBytes(n int64) {
 	p.bytesRead += n
 	p.writer.UpdateProgress(types.ProgressItem{
 		Name: p.currentFile,
@@ -125,7 +125,7 @@ func copyOneRequest(
 				cleanup()
 				return err
 			}
-			progress.updateFile(BaseOS(srcPath), int(stat.Size))
+			progress.updateFile(BaseOS(srcPath), stat.Size)
 			if err := copyFileDirect(ctx, srcPath, dstPath, writable, progress); err != nil {
 				cleanup()
 				return err
@@ -192,7 +192,7 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	}
 	n, err := pr.reader.Read(p)
 	if n > 0 {
-		pr.progress.updateBytes(n)
+		pr.progress.updateBytes(int64(n))
 	}
 	return n, err
 }

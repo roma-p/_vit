@@ -14,8 +14,8 @@ func (p *ProgressWriterEmpty) CloseProgress(progressFinish ProgressFinish) {}
 
 type ProgressItem struct {
 	Name string `json:"name"`
-	Size int    `json:"size"`
-	Done int    `json:"done"`
+	Size int64  `json:"size"`
+	Done int64  `json:"done"`
 }
 
 type ProgressManifest struct {

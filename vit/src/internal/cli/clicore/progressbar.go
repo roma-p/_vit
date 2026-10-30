@@ -15,8 +15,8 @@ type progressBar struct {
 	totalItems      int
 	completedItems  int
 	currentItem     string
-	currentItemSize int
-	currentItemDone int
+	currentItemSize int64
+	currentItemDone int64
 	done            chan struct{}
 	stderr          io.Writer
 }
@@ -82,7 +82,7 @@ func (p *progressBar) StartDisplay() {
 	}()
 }
 
-func (p *progressBar) UpdateItem(name string, size int, done int) {
+func (p *progressBar) UpdateItem(name string, size int64, done int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.currentItem = name
