@@ -153,14 +153,16 @@ func GetDependents(
 	cachePath := pathDepGraph(ref.RepoPath, uid)
 	markerPath := pathReverseStale(ref.RepoPath, uid)
 
-	// 1. cache: fresh hit if present and the asset isn't marked stale.
+	// 1. cache: fresh hit if present and the asset isn't marked stale. The marker is
+	// stat'ed BEFORE the rebuild reads the truth, so a re-mark during it is detected.
 	cache, err := readGraphCache(cachePath)
 	if err != nil {
 		return nil, err
 	}
-	stale := cache != nil && markerExists(markerPath)
+	marker, stale := statMarker(markerPath)
 	if cache != nil && !stale {
 		if g, ok := cache.Reverse[objPath]; ok {
+			fillGraphRepoPaths(opctx, g)
 			return g, nil
 		}
 	}
@@ -208,12 +210,17 @@ func GetDependents(
 	if cache == nil {
 		cache = newGraphCache()
 	}
-	if cache.Reverse == nil {
+	if cache.Reverse == nil || stale {
 		cache.Reverse = make(map[string]*types.DepGraph)
 	}
 	cache.Reverse[objPath] = g
 	if err := fsutil.NewJSONHandlerFromPath(cachePath, cache).Write(); err != nil {
 		return nil, newErrDBInternal(err, "could not write reverse graph to dep cache")
+	}
+	if stale {
+		if err := clearMarkerIfUnchanged(markerPath, marker); err != nil {
+			return nil, err
+		}
 	}
 	return g, nil
 }
@@ -418,9 +425,24 @@ func touchMarker(path string) error {
 	return nil
 }
 
-func markerExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+// statMarker returns the marker's file info and whether it exists.
+func statMarker(path string) (os.FileInfo, bool) {
+	fi, err := os.Stat(path)
+	return fi, err == nil
+}
+
+// clearMarkerIfUnchanged removes the marker only if it is still the file seen by
+// statMarker: touchMarker replaces it atomically (new inode), so a re-mark during
+// the rebuild keeps it even on a coarse-mtime FS (NFS).
+func clearMarkerIfUnchanged(path string, seen os.FileInfo) error {
+	now, ok := statMarker(path)
+	if !ok || !os.SameFile(seen, now) || !now.ModTime().Equal(seen.ModTime()) {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return newErrDBInternal(err, "could not clear reverse-stale marker")
+	}
+	return nil
 }
 
 func pathReverseStale(repoPath, assetUID string) string {
@@ -485,6 +507,18 @@ func readReverseDir(
 		*out = append(*out, *h.Data)
 	}
 	return nil
+}
+
+// fillGraphRepoPaths rehydrates the RepoPath (json:"-") of a cached graph's edge
+// refs from their RepoUID.
+func fillGraphRepoPaths(opctx *opcontext.OperationContext, g *types.DepGraph) {
+	for i := range g.Edges {
+		for _, ref := range []*types.Ref{g.Edges[i].Consumer, g.Edges[i].Provider, g.Edges[i].RefSpec} {
+			if ref != nil && ref.RepoPath == "" {
+				ref.RepoPath = opctx.RepoRefFor(ref.RepoUID).Path
+			}
+		}
+	}
 }
 
 func reverseEdgeFileName(t types.AssetDependencyType, peer *types.Ref) string {

@@ -1,7 +1,9 @@
 package vit_test
 
 import (
+	"io/fs"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	testutils "vit/internal/testhelpers"
@@ -50,5 +52,40 @@ func TestSourcePush_noopWhenUpToDate(t *testing.T) {
 		if len(c.Updates) != 0 {
 			t.Fatalf("expected no updates, got %v", c.Updates)
 		}
+	}
+}
+
+// reverseStaleMarkers lists the repo's .reverse_stale marker files.
+func (r *vitEnv) reverseStaleMarkers() []string {
+	var out []string
+	_ = filepath.WalkDir(r.depGraphDir(), func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(path, ".reverse_stale") {
+			out = append(out, path)
+		}
+		return nil
+	})
+	return out
+}
+
+// A source add marks the provider's reverse graph stale; the next reverse read
+// rebuilds it AND clears the marker, and later reads still see the consumer.
+func TestSourcePush_clearsReverseStaleMarker(t *testing.T) {
+	env := newVitEnv(t)
+	must(env.Add(ctx, env.abs("asset/rig"), env.fileSrc("rig.ma", "rig v1")))
+	must(env.Tag(ctx, env.branchRef("asset/rig"), "approved", "rig approved"))
+	must(env.Add(ctx, env.abs("seq/shot0010/anim"), env.fileSrc("anim.ma", "a")))
+	must(env.SourceAdd(ctx, env.branchRef("seq/shot0010/anim"), env.abs("asset/rig")+"@tag=approved", "rig"))
+
+	if len(env.reverseStaleMarkers()) == 0 {
+		t.Fatal("source add should leave a reverse-stale marker on the provider")
+	}
+	must(env.SourcePush(ctx, env.abs("asset/rig")+"@tag=approved", nil))
+	if m := env.reverseStaleMarkers(); len(m) != 0 {
+		t.Fatalf("reverse read should clear the marker, still have %v", m)
+	}
+
+	res := must(env.SourcePush(ctx, env.abs("asset/rig")+"@tag=approved", nil))
+	if len(res.Consumers) != 1 {
+		t.Fatalf("after clearing, the cached reverse graph should still list 1 consumer, got %d", len(res.Consumers))
 	}
 }
