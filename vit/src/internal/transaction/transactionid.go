@@ -31,6 +31,12 @@ func (t *TransactionID) Encode() string {
 	return encoded
 }
 
+func (t *TransactionID) fileName(token string) string {
+	return t.Encode() + tokenSeparator + token
+}
+
+const tokenSeparator = "---tx="
+
 func newTransactionID(op TransactionOperation, ref *types.Ref) TransactionID {
 	return TransactionID{
 		Operation: op,
@@ -39,6 +45,9 @@ func newTransactionID(op TransactionOperation, ref *types.Ref) TransactionID {
 }
 
 func newTransactionIDFromName(repoPath, encodedName string) (*TransactionID, error) {
+	if i := strings.LastIndex(encodedName, tokenSeparator); i >= 0 {
+		encodedName = encodedName[:i]
+	}
 	splitTransactionID := strings.Split(encodedName, "---")
 
 	if len(splitTransactionID) < 2 || len(splitTransactionID) > 3 {

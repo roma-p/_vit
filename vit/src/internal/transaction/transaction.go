@@ -2,6 +2,7 @@ package transaction
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"sort"
@@ -110,7 +111,7 @@ func run(
 			}
 			return nil
 		},
-		func() error {
+		func(ctx context.Context, tx *activeTransaction) error {
 			// 2. Plan the blob object to copy (plan only, do nothing), then execute them
 			//    (copy blobs, write content nodes + manifests).
 			plan, err := r.Operation.PlanBlobUpdate(ctx, r.Opctx)
@@ -128,6 +129,9 @@ func run(
 			// 3. run the function responsible for updating the data, and write all of them on disk.
 			//    Write lock on DB only hold here!
 			if err := r.Operation.DBUpdate(ctx, r.Opctx, r.DBClient); err != nil {
+				return err
+			}
+			if err := tx.ensureStillValid(); err != nil {
 				return err
 			}
 			if err := r.Opctx.JSONPool.FlushForWrite(); err != nil {
@@ -201,9 +205,10 @@ func withTransaction(
 	user string,
 	timestamp time.Time,
 	validate func() error,
-	operation func() error,
+	operation func(ctx context.Context, tx *activeTransaction) error,
 ) error {
 	repos := listRepoPathsFromTids(tids)
+	token := fsutil.GenerateUID(8)
 
 	// 1. Lock every involved repo's transaction scan-lock, for a short time, so no
 	//    new transaction is created in any of them while we scan for conflicts and
@@ -228,7 +233,7 @@ func withTransaction(
 		}
 
 		for _, tid := range tids {
-			f := fsutil.PathOS(tid.Ref.RepoPath, ".vit", "transaction", tid.Encode())
+			f := fsutil.PathOS(tid.Ref.RepoPath, ".vit", "transaction", tid.fileName(token))
 			if werr := fsutil.NewJSONHandlerFromPath(f, &transactionPayload{
 				AssetPath: tid.Ref.AssetPath,
 				Operation: tid.Operation,
@@ -255,14 +260,22 @@ func withTransaction(
 	}
 
 	// 3. Keep transaction files alive while operating.
+	opCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	done := make(chan struct{})
-	go touchFilesLoop(ctx, transactionFiles, done)
+	go touchFilesLoop(opCtx, transactionFiles, done, cancel)
 
 	tx := &activeTransaction{files: transactionFiles, stop: func() { close(done) }}
 	defer tx.finish()
 
 	// 4. Do the actual work.
-	return operation()
+	if err := operation(opCtx, tx); err != nil {
+		if lost := transactionLostCause(opCtx); lost != nil {
+			return lost
+		}
+		return err
+	}
+	return nil
 }
 
 func listRepoPathsFromTids(tids []TransactionID) []string {
@@ -303,7 +316,12 @@ type transactionPayload struct {
 	Modified  time.Time            `json:"modified"`
 }
 
-func touchFilesLoop(ctx context.Context, files []string, done chan struct{}) {
+func touchFilesLoop(
+	ctx context.Context,
+	files []string,
+	done chan struct{},
+	cancel context.CancelCauseFunc,
+) {
 	ticker := time.NewTicker(fsutil.KeepaliveInterval)
 	defer ticker.Stop()
 
@@ -316,7 +334,10 @@ func touchFilesLoop(ctx context.Context, files []string, done chan struct{}) {
 		case <-ticker.C:
 			now := time.Now()
 			for _, f := range files {
-				_ = os.Chtimes(f, now, now)
+				if err := os.Chtimes(f, now, now); os.IsNotExist(err) {
+					cancel(newErrTransactionLost(f, err))
+					return
+				}
 			}
 		}
 	}
@@ -347,6 +368,15 @@ type activeTransaction struct {
 	stop  func()
 }
 
+func (t *activeTransaction) ensureStillValid() error {
+	for _, f := range t.files {
+		if _, err := os.Stat(f); err != nil {
+			return newErrTransactionLost(f, err)
+		}
+	}
+	return nil
+}
+
 func (t *activeTransaction) finish() {
 	if t.stop != nil {
 		t.stop()
@@ -354,4 +384,23 @@ func (t *activeTransaction) finish() {
 	for _, f := range t.files {
 		_ = os.Remove(f) // TODO(fsutil) atomic remove
 	}
+}
+
+func transactionLostCause(ctx context.Context) error {
+	var verr *types.VitError
+	if errors.As(context.Cause(ctx), &verr) && verr.Name == types.ErrTransactionLost {
+		return verr
+	}
+	return nil
+}
+
+func newErrTransactionLost(tidFile string, err error) error {
+	return types.NewVitError(
+		types.ErrTransactionLost,
+		[]string{
+			"transaction lost: another process took it over after this one stalled",
+			"nothing was recorded, retry the command",
+		},
+		[]any{"tidFile", tidFile, "err", err.Error()},
+	)
 }
