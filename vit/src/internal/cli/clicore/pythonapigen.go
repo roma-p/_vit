@@ -118,7 +118,9 @@ func (c *CmdTree) GenPythonAPI(outputPath string) error {
 		UniqueResultTypes: []*pythonResultType{},
 	}
 
-	c.collectMethods("", []string{}, &data.Methods)
+	for _, cmd := range c.walkAPICommands("", nil) {
+		cmd.Tree.collectSingleMethod(cmd.Name, cmd.CmdParts, &data.Methods)
+	}
 
 	seenTypes := make(map[string]bool)
 	for _, method := range data.Methods {
@@ -199,13 +201,9 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 		})
 	}
 
-	// Add flag parameters (skip global flags: json, debug, v, h)
-	for flagName, flagDef := range c.ArgParser.flagDefs {
-		// Skip global flags
-		if flagName == "json" || flagName == "debug" || flagName == "v" || flagName == "h" {
-			continue
-		}
-
+	// Add flag parameters
+	for _, flagName := range c.ArgParser.apiFlagNames() {
+		flagDef := c.ArgParser.flagDefs[flagName]
 		pythonFlagName := strings.ReplaceAll(flagName, "-", "_")
 
 		switch flagDef.flagType {
@@ -247,31 +245,4 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 	}
 
 	*methods = append(*methods, method)
-}
-
-// collectMethods recursively walks the command tree and collects Python methods
-func (c *CmdTree) collectMethods(pythonName string, cmdParts []string, methods *[]pythonMethod) {
-	if c.NoPyAPI {
-		return
-	}
-
-	if c.Run != nil && c.ArgParser != nil {
-		c.collectSingleMethod(pythonName, cmdParts, methods)
-	}
-
-	for subCmdName, subCmd := range c.SubCommands {
-		// Convert hyphens to underscores for valid Python method names
-		pythonSubCmdName := strings.ReplaceAll(subCmdName, "-", "_")
-		var newPythonName string
-		if pythonName == "" {
-			newPythonName = pythonSubCmdName
-		} else {
-			newPythonName = pythonName + "_" + pythonSubCmdName
-		}
-
-		newCmdParts := append([]string{}, cmdParts...)
-		newCmdParts = append(newCmdParts, subCmdName)
-
-		subCmd.collectMethods(newPythonName, newCmdParts, methods)
-	}
 }

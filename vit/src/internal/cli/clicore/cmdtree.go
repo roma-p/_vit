@@ -14,8 +14,8 @@ type CmdTree struct {
 	SubCommands map[string]*CmdTree
 	Run         func(ctx context.Context, client *vit.Client, argParser *CmdParser) (types.Result, error)
 	ArgParser   *CmdParser
-	NoPyAPI     bool // If true, this command will not be included in the generated Python API
-	ResultType  any  // Example instance of the result type (e.g., AddResult{}) for Python API generation
+	NoAPI       bool // If true, this command will not be included in the generated APIs
+	ResultType  any  // Example instance of the result type (e.g., AddResult{}) for API generation
 }
 
 func (c *CmdTree) BuildHelp() []string {

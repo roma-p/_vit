@@ -39,6 +39,7 @@ func buildMinimal() {
 	goBuild(binaryPath)
 	fmt.Println(" o Built: bin/vit-minimal")
 	generatePythonAPI(binaryPath)
+	generateRustAPI(binaryPath)
 }
 
 func buildPortable() {
@@ -70,6 +71,7 @@ func buildPortable() {
 	fmt.Println("   (uses vendor-bins")
 
 	generatePythonAPI(binaryPath)
+	generateRustAPI(binaryPath)
 }
 
 func generatePythonAPI(binaryPath string) {
@@ -82,6 +84,19 @@ func generatePythonAPI(binaryPath string) {
 
 	if err := cmd.Run(); err != nil {
 		fatal("Failed to generate Python API: %v", err)
+	}
+}
+
+func generateRustAPI(binaryPath string) {
+	fmt.Println(" o Generated: vit.rs")
+	outputPath := filepath.Join(filepath.Dir(binaryPath), "vit.rs")
+
+	cmd := exec.Command(binaryPath, "dev", "genrust", outputPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fatal("Failed to generate Rust API: %v", err)
 	}
 }
 

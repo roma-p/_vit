@@ -74,7 +74,7 @@ var cmdDefinition = clicore.CmdTree{
 			Description: "Tag a given ref",
 			Run:         runTag,
 			ArgParser:   buildTagArgParser(),
-			ResultType:  types.SourcePullResult{},
+			ResultType:  types.StringResult{},
 		},
 		"product": {
 			Name:        "Product",
@@ -105,7 +105,7 @@ var cmdDefinition = clicore.CmdTree{
 					Description: "Update an asset's sources to their latest pinned version",
 					Run:         runSourcePull,
 					ArgParser:   buildSourcePullArgParser(),
-					ResultType:  types.StringListResult{},
+					ResultType:  types.SourcePullResult{},
 				},
 				"push": {
 					Name:        "Push source",
@@ -125,7 +125,14 @@ var cmdDefinition = clicore.CmdTree{
 					Description: "Generate Python API client",
 					Run:         runGenPy,
 					ArgParser:   clicore.NewArgParser("genpy", []string{"output"}, []string{}),
-					NoPyAPI:     true, // Don't include this command in generated API
+					NoAPI:       true, // Don't include this command in generated APIs
+				},
+				"genrust": {
+					Name:        "GenRust",
+					Description: "Generate Rust API client",
+					Run:         runGenRust,
+					ArgParser:   clicore.NewArgParser("genrust", []string{"output"}, []string{}),
+					NoAPI:       true,
 				},
 			},
 		},
