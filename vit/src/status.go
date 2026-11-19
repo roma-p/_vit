@@ -59,12 +59,14 @@ type resolveChangeRecordRequest struct {
 	Opctx     *opcontext.OperationContext
 	BranchRef *types.Ref
 	DBClient  *db.Client
+	Prepared  *resolveChangeRecordResult
 }
 
 type resolveChangeRecordResult struct {
 	ChangeRecord          *types.ChangeRecord
 	PrevCommitContentNode *types.ContentNode
 	WorkspaceDirStat      *types.DirStat
+	Base                  *types.AssetCommit
 }
 
 func resolveChangeRecord(
@@ -96,6 +98,9 @@ func resolveChangeRecord(
 	)
 	if err != nil {
 		return nil, err
+	}
+	if request.Prepared != nil && sameDiffBase(request.Prepared.Base, commitBranch) {
+		return request.Prepared, nil
 	}
 
 	// excluding sources from status evaluation.
@@ -132,5 +137,20 @@ func resolveChangeRecord(
 		ChangeRecord:          changes,
 		PrevCommitContentNode: contentRoot,
 		WorkspaceDirStat:      workspaceDirStat,
+		Base:                  commitBranch,
 	}, nil
+}
+
+// -- FILE LOCAL -------------------------------------------------------------
+
+func sameDiffBase(a, b *types.AssetCommit) bool {
+	if a.Parent != b.Parent || !a.Timestamp.Equal(b.Timestamp) || len(a.Dependencies) != len(b.Dependencies) {
+		return false
+	}
+	for name := range a.Dependencies {
+		if _, ok := b.Dependencies[name]; !ok {
+			return false
+		}
+	}
+	return true
 }

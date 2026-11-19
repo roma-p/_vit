@@ -62,6 +62,10 @@ func (c *Client) Tag(ctx context.Context, path, tagfamily, message string) (*typ
 			refs = append(refs, p.targetRef)
 		}
 
+		if err := op.prepare(ctx, opctx, dbClient); err != nil {
+			return err
+		}
+
 		if err := transaction.RunEdit(
 			ctx,
 			transaction.Request{
@@ -126,6 +130,18 @@ type taggedProduct struct {
 	contentNode *types.ContentNode
 }
 
+func (o *operationTag) prepare(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+) error {
+	if o.InputRef.RefType != types.RefTypeBranch {
+		return nil
+	}
+	o.oc = o.newCommitOperation()
+	return o.oc.prepare(ctx, opctx, dbClient)
+}
+
 func (o *operationTag) Validate(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
@@ -153,15 +169,10 @@ func (o *operationTag) Validate(
 		o.targetCommit = o.InputRef.CommitID
 
 	case types.RefTypeBranch:
-		oc := &operationCommit{Ref: o.InputRef, Message: o.Message}
-		for _, p := range o.productTargets {
-			oc.productCommits = append(oc.productCommits, &operationCommit{
-				Ref:         p.targetRef,
-				Message:     o.Message,
-				ProductName: p.name,
-			})
+		if o.oc == nil {
+			o.oc = o.newCommitOperation()
 		}
-		err := oc.Validate(ctx, opctx, dbClient)
+		err := o.oc.Validate(ctx, opctx, dbClient)
 		if types.IsErrCode(err, types.ErrNoChangeToCommit) {
 			branchCommit, err := db.GetBranchCommit(asset.Data, o.InputRef.BranchName)
 			if err != nil {
@@ -171,7 +182,6 @@ func (o *operationTag) Validate(
 		} else if err != nil {
 			return err
 		} else {
-			o.oc = oc
 			o.doCommit = true
 			o.targetCommit = ""
 			return nil
@@ -341,6 +351,18 @@ func (o *operationTag) tagProducts(
 		})
 	}
 	return nil
+}
+
+func (o *operationTag) newCommitOperation() *operationCommit {
+	oc := &operationCommit{Ref: o.InputRef, Message: o.Message}
+	for _, p := range o.productTargets {
+		oc.productCommits = append(oc.productCommits, &operationCommit{
+			Ref:         p.targetRef,
+			Message:     o.Message,
+			ProductName: p.name,
+		})
+	}
+	return oc
 }
 
 func presentTag(

@@ -55,6 +55,9 @@ func (c *Client) Branch(
 		}
 
 		op := &operationBranch{InputRef: ref, BranchNames: names, productTargets: products}
+		if err := op.prepare(ctx, opctx, dbClient); err != nil {
+			return err
+		}
 
 		refs := []*types.Ref{ref}
 		for _, p := range products {
@@ -97,6 +100,9 @@ type operationBranch struct {
 	productTargets []originProduct
 	empty          bool
 
+	// filled at prepare
+	prepared *resolveChangeRecordResult
+
 	// filled at Validate
 	targetCommit    string             // the commit every new branch roots at
 	contentNode     *types.ContentNode // its content
@@ -110,6 +116,26 @@ type operationBranch struct {
 
 	// filled at Finish, one per successfully presented branch
 	BranchWorkspacePaths []string
+}
+
+func (o *operationBranch) prepare(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+) error {
+	if o.InputRef.RefType != types.RefTypeBranch {
+		return nil
+	}
+	r, err := resolveChangeRecord(ctx, resolveChangeRecordRequest{
+		Opctx:     opctx,
+		BranchRef: o.InputRef,
+		DBClient:  dbClient,
+	})
+	if err != nil {
+		return err
+	}
+	o.prepared = r
+	return nil
 }
 
 func (o *operationBranch) Validate(
@@ -140,6 +166,7 @@ func (o *operationBranch) Validate(
 			Opctx:     opctx,
 			BranchRef: o.InputRef,
 			DBClient:  dbClient,
+			Prepared:  o.prepared,
 		})
 		if cErr != nil {
 			return cErr
