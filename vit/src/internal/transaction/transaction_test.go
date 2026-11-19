@@ -88,6 +88,31 @@ func TestTransactionLostWhenTheDocLockIsStolen(t *testing.T) {
 	}
 }
 
+func TestScanLockKeptAliveDuringValidate(t *testing.T) {
+	repo := t.TempDir()
+	doc := filepath.Join(repo, "asset.json")
+	writeDoc(t, doc, "before")
+
+	lockDir := filepath.Join(repo, ".vit", ".transaction.lock.lock")
+	op := &docOperation{path: doc, value: "after", duringValidate: func() {
+		old := time.Now().Add(-time.Hour)
+		if err := os.Chtimes(lockDir, old, old); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(fsutil.KeepaliveInterval + 500*time.Millisecond)
+		info, err := os.Stat(lockDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if age := time.Since(info.ModTime()); age > fsutil.LockAcquireTimeout {
+			t.Fatalf("scan-lock not refreshed: %s old", age)
+		}
+	}}
+	if err := runDoc(t, repo, op); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTransactionLostKeepsTheOtherTid(t *testing.T) {
 	repo := t.TempDir()
 	doc := filepath.Join(repo, "asset.json")
@@ -150,11 +175,15 @@ func TestTransactionIDFromNameIgnoresToken(t *testing.T) {
 type docOperation struct {
 	path           string
 	value          string
+	duringValidate func()
 	duringDBUpdate func()
 	waitForCancel  bool
 }
 
 func (o *docOperation) Validate(context.Context, *opcontext.OperationContext, *db.Client) error {
+	if o.duringValidate != nil {
+		o.duringValidate()
+	}
 	return nil
 }
 

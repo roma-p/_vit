@@ -220,7 +220,7 @@ func withTransaction(
 	//    below — never during operation().
 	//    ! For that short window, each involved repo is read-only. This is the only
 	//      place that happens.
-	held, err := acquireScanLocks(ctx, repos)
+	release, err := acquireScanLocks(ctx, repos)
 	if err != nil {
 		return err
 	}
@@ -252,9 +252,7 @@ func withTransaction(
 	}()
 
 	// 2. Release every scan-lock: a repo is read-only only for the window above.
-	for _, d := range held {
-		fsutil.ReleaseExclusiveLock(d)
-	}
+	release()
 	if err != nil {
 		for _, f := range transactionFiles { // roll back tids we managed to write
 			_ = os.Remove(f)
@@ -295,20 +293,23 @@ func listRepoPathsFromTids(tids []TransactionID) []string {
 	return repos
 }
 
-func acquireScanLocks(ctx context.Context, repos []string) ([]string, error) {
-	var held []string
+func acquireScanLocks(ctx context.Context, repos []string) (func(), error) {
+	var stops []func()
+	release := func() {
+		for _, stop := range stops {
+			stop()
+		}
+	}
 	for _, repo := range repos {
 		lockPath := fsutil.PathOS(repo, ".vit", "transaction.lock")
-		lockDir, err := fsutil.AcquireExclusiveLock(ctx, lockPath)
+		stop, err := fsutil.AcquireExclusiveLockWithKeepalive(ctx, lockPath)
 		if err != nil {
-			for _, d := range held {
-				fsutil.ReleaseExclusiveLock(d)
-			}
+			release()
 			return nil, err
 		}
-		held = append(held, lockDir)
+		stops = append(stops, stop)
 	}
-	return held, nil
+	return release, nil
 }
 
 type transactionPayload struct {
