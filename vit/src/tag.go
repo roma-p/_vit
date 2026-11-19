@@ -62,10 +62,6 @@ func (c *Client) Tag(ctx context.Context, path, tagfamily, message string) (*typ
 			refs = append(refs, p.targetRef)
 		}
 
-		if err := op.prepare(ctx, opctx, dbClient); err != nil {
-			return err
-		}
-
 		if err := transaction.RunEdit(
 			ctx,
 			transaction.Request{
@@ -130,7 +126,7 @@ type taggedProduct struct {
 	contentNode *types.ContentNode
 }
 
-func (o *operationTag) prepare(
+func (o *operationTag) Prepare(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
@@ -139,7 +135,7 @@ func (o *operationTag) prepare(
 		return nil
 	}
 	o.oc = o.newCommitOperation()
-	return o.oc.prepare(ctx, opctx, dbClient)
+	return o.oc.Prepare(ctx, opctx, dbClient)
 }
 
 func (o *operationTag) Validate(

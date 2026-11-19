@@ -95,6 +95,11 @@ func run(
 	r Request,
 	tids []TransactionID,
 ) error {
+	if p, ok := r.Operation.(preparer); ok {
+		if err := p.Prepare(ctx, r.Opctx, r.DBClient); err != nil {
+			return err
+		}
+	}
 	err := withTransaction(ctx, tids, r.Command, r.User, r.Timestamp,
 		func() error {
 			// 0. We now hold the scan-lock(s). Any DB read taken before it
@@ -165,6 +170,10 @@ func run(
 	//    outside the repo transaction lock, best-effort
 	recordHistory(ctx, r, tids, concurrent)
 	return err
+}
+
+type preparer interface {
+	Prepare(ctx context.Context, opctx *opcontext.OperationContext, dbClient *db.Client) error
 }
 
 // historyDescriber is optionally implemented by operations that want to add a

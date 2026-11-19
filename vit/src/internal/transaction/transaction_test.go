@@ -206,6 +206,26 @@ func TestTransactionWritesWhileValid(t *testing.T) {
 	}
 }
 
+func TestPrepareRunsBeforeTheScanLock(t *testing.T) {
+	repo := t.TempDir()
+	doc := filepath.Join(repo, "asset.json")
+	writeDoc(t, doc, "before")
+
+	lockDir := filepath.Join(repo, ".vit", ".transaction.lock.lock")
+	op := &preparedDocOperation{docOperation: &docOperation{path: doc, value: "after"}, lockDir: lockDir}
+	op.duringValidate = func() {
+		if !op.prepared {
+			t.Fatal("Validate ran before Prepare")
+		}
+	}
+	if err := runDoc(t, repo, op); err != nil {
+		t.Fatal(err)
+	}
+	if op.lockedDuringPrepare {
+		t.Fatal("Prepare ran under the scan-lock")
+	}
+}
+
 func TestTransactionIDFromNameIgnoresToken(t *testing.T) {
 	ref := types.NewRefEmpty("/repo", "shots/sh 010")
 	tid := newTransactionID(TransactionTreeChanged, ref)
@@ -273,6 +293,20 @@ func (o *docOperation) Finish(
 	context.Context, *opcontext.OperationContext, *db.Client, *slog.Logger, workspace.Presenter,
 ) {
 	o.finished = true
+}
+
+type preparedDocOperation struct {
+	*docOperation
+	lockDir             string
+	prepared            bool
+	lockedDuringPrepare bool
+}
+
+func (o *preparedDocOperation) Prepare(context.Context, *opcontext.OperationContext, *db.Client) error {
+	_, err := os.Stat(o.lockDir)
+	o.lockedDuringPrepare = err == nil
+	o.prepared = true
+	return nil
 }
 
 type hookDoc struct {

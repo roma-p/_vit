@@ -67,10 +67,6 @@ func (c *Client) Snapshot(ctx context.Context, path, message string) (*types.Str
 			refs = append(refs, p.targetRef)
 		}
 
-		if err := op.prepare(ctx, opctx, dbClient); err != nil {
-			return err
-		}
-
 		if err := transaction.RunEdit(
 			ctx,
 			transaction.Request{
@@ -110,7 +106,7 @@ type operationCommit struct {
 	productCommits []*operationCommit
 	ProductName    string
 
-	// filled at prepare
+	// filled at Prepare
 	prepared *resolveChangeRecordResult
 
 	// filled at validate
@@ -126,7 +122,7 @@ type operationCommit struct {
 	CommitPath string
 }
 
-func (o *operationCommit) prepare(
+func (o *operationCommit) Prepare(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
@@ -141,7 +137,7 @@ func (o *operationCommit) prepare(
 	}
 	o.prepared = r
 	for _, pc := range o.productCommits {
-		if err := pc.prepare(ctx, opctx, dbClient); err != nil {
+		if err := pc.Prepare(ctx, opctx, dbClient); err != nil {
 			return err
 		}
 	}

@@ -55,9 +55,6 @@ func (c *Client) Branch(
 		}
 
 		op := &operationBranch{InputRef: ref, BranchNames: names, productTargets: products}
-		if err := op.prepare(ctx, opctx, dbClient); err != nil {
-			return err
-		}
 
 		refs := []*types.Ref{ref}
 		for _, p := range products {
@@ -100,7 +97,7 @@ type operationBranch struct {
 	productTargets []originProduct
 	empty          bool
 
-	// filled at prepare
+	// filled at Prepare
 	prepared *resolveChangeRecordResult
 
 	// filled at Validate
@@ -118,7 +115,7 @@ type operationBranch struct {
 	BranchWorkspacePaths []string
 }
 
-func (o *operationBranch) prepare(
+func (o *operationBranch) Prepare(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,

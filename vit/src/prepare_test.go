@@ -80,7 +80,7 @@ func prepareCommit(t *testing.T, client *Client, branchPath string) *operationCo
 	var op *operationCommit
 	withCommitContext(t, client, branchPath, func(ctx context.Context, opctx *opcontext.OperationContext, dbClient *db.Client, ref *types.Ref) error {
 		op = &operationCommit{Ref: ref, Message: "edit"}
-		return op.prepare(ctx, opctx, dbClient)
+		return op.Prepare(ctx, opctx, dbClient)
 	})
 	return op
 }
