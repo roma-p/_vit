@@ -49,7 +49,7 @@ func CheckHardlinkSupport() (err error) {
 	messSlice = append(messSlice, "  Settings > Update & Security > For developers > Developer mode")
 	messSlice = append(messSlice, "  Or run as Administrator (not recommended for regular use)")
 
-	finalErr := types.NewStandardError(
+	finalErr := types.NewVitError(
 		types.ErrHardlinkNotSupported,
 		messSlice,
 		extra,

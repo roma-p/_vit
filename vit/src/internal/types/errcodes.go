@@ -43,4 +43,6 @@ const (
 	ErrNoChangeToCommit = "NoChangeToCommit"
 
 	ErrBranchDirty = "BranchDirty" // branching from a branch with uncommitted changes
+
+	ErrHardlinkNotSupported = "HardlinkNotSupported"
 )
