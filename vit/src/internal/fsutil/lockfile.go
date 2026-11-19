@@ -80,8 +80,7 @@ func AcquireExclusiveLockWithKeepalive(ctx context.Context, lockPath string) (st
 			case <-done:
 				return
 			case <-ticker.C:
-				now := time.Now()
-				_ = os.Chtimes(lockDir, now, now)
+				_ = TouchNow(lockDir)
 			}
 		}
 	}()
@@ -120,7 +119,14 @@ func WaitForLockRelease(ctx context.Context, lockPath string) error {
 
 	backoff := initialBackoff
 	for {
-		info, err := os.Stat(lockDir)
+		_, err := os.Stat(lockDir)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed to stat lock: %w", err)
+		}
+		stale, err := IsStaleAt(lockDir, NowAt(DirOS(lockDir)), LockAcquireTimeout)
 		if os.IsNotExist(err) {
 			return nil
 		}
@@ -129,7 +135,7 @@ func WaitForLockRelease(ctx context.Context, lockPath string) error {
 		}
 
 		// Orphaned lock — clean it and we're done.
-		if time.Since(info.ModTime()) > LockAcquireTimeout {
+		if stale {
 			_ = os.Remove(lockDir)
 			return nil
 		}
@@ -146,11 +152,10 @@ func WaitForLockRelease(ctx context.Context, lockPath string) error {
 // -- FILE LOCAL -------------------------------------------------------------
 
 func cleanOrphanedLock(lockDir string) {
-	info, err := os.Stat(lockDir)
-	if err != nil {
+	if _, err := os.Stat(lockDir); err != nil {
 		return
 	}
-	if time.Since(info.ModTime()) > LockAcquireTimeout {
+	if stale, _ := IsStaleAt(lockDir, NowAt(DirOS(lockDir)), LockAcquireTimeout); stale {
 		_ = os.Remove(lockDir)
 	}
 }

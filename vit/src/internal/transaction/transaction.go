@@ -336,9 +336,8 @@ func touchFilesLoop(
 		case <-done:
 			return
 		case <-ticker.C:
-			now := time.Now()
 			for _, f := range files {
-				if err := os.Chtimes(f, now, now); os.IsNotExist(err) {
+				if err := fsutil.TouchNow(f); os.IsNotExist(err) {
 					cancel(newErrTransactionLost(err))
 					return
 				}
@@ -352,16 +351,13 @@ func cleanOrphanedTransactions(transactionDir string) {
 	if err != nil {
 		return
 	}
+	now := fsutil.NowAt(transactionDir)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		path := fsutil.PathOS(transactionDir, entry.Name())
-		info, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
-		if time.Since(info.ModTime()) > fsutil.LockAcquireTimeout {
+		if stale, _ := fsutil.IsStaleAt(path, now, fsutil.LockAcquireTimeout); stale {
 			_ = os.Remove(path)
 		}
 	}
