@@ -16,7 +16,7 @@ import (
 )
 
 func TestCommitValidateReusesThePreparedChangeRecord(t *testing.T) {
-	client, branchPath := preparedRepo(t)
+	client, branchPath := dirtyRepo(t)
 	op := prepareCommit(t, client, branchPath)
 
 	if err := os.WriteFile(filepath.Join(branchPath, "b.txt"), []byte("BBB"), 0o644); err != nil {
@@ -32,7 +32,7 @@ func TestCommitValidateReusesThePreparedChangeRecord(t *testing.T) {
 }
 
 func TestCommitValidateRecomputesWhenTheBranchHeadMoved(t *testing.T) {
-	client, branchPath := preparedRepo(t)
+	client, branchPath := dirtyRepo(t)
 	op := prepareCommit(t, client, branchPath)
 
 	if _, err := client.Snapshot(context.Background(), branchPath, "other"); err != nil {
@@ -45,9 +45,81 @@ func TestCommitValidateRecomputesWhenTheBranchHeadMoved(t *testing.T) {
 	}
 }
 
+func TestBranchValidateReusesThePreparedContent(t *testing.T) {
+	client, branchPath := preparedRepo(t)
+	var fromCommit *types.Ref
+	for _, byCommit := range []bool{false, true} {
+		var op *operationBranch
+		withCommitContext(t, client, branchPath, func(ctx context.Context, opctx *opcontext.OperationContext, dbClient *db.Client, ref *types.Ref) error {
+			if byCommit {
+				ref = fromCommit
+			}
+			op = &operationBranch{InputRef: ref, BranchNames: []string{"other"}}
+			if err := op.Prepare(ctx, opctx, dbClient); err != nil {
+				return err
+			}
+			if !byCommit {
+				fromCommit = types.NewRefCommit(ref.RepoRef(), ref.AssetPath, op.prepared.Base.Parent)
+			}
+			return nil
+		})
+		withCommitContext(t, client, branchPath, func(ctx context.Context, opctx *opcontext.OperationContext, dbClient *db.Client, _ *types.Ref) error {
+			return op.Validate(ctx, opctx, dbClient)
+		})
+		if op.preparedContent == nil || op.contentNode != op.preparedContent {
+			t.Fatalf("byCommit=%v: content tree reloaded under the lock", byCommit)
+		}
+	}
+}
+
+func TestSourceAddValidateSkipsTheCycleCheckedAtPrepare(t *testing.T) {
+	ctx := context.Background()
+	client, repoPath, aBranch := newPreparedRepo(t)
+	src := filepath.Join(t.TempDir(), "b.txt")
+	if err := os.WriteFile(src, []byte("BBB"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bBranch, err := client.Add(ctx, filepath.Join(repoPath, "props", "chair"), src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SourceAdd(ctx, aBranch, bBranch.String, "chair"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(aBranch, "a.txt"), []byte("WWW"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Snapshot(ctx, aBranch, "publish"); err != nil {
+		t.Fatal(err)
+	}
+
+	withCommitContext(t, client, bBranch.String, func(ctx context.Context, opctx *opcontext.OperationContext, dbClient *db.Client, ref *types.Ref) error {
+		op := &operationSourceAdd{
+			RefWithNewDep:    ref,
+			RefDepSpec:       types.NewRefBranch(ref.RepoRef(), "props/table", types.DefaultBranchName),
+			NewDepedencyName: "table",
+		}
+		err := op.Validate(ctx, opctx, dbClient)
+		if !types.IsErrCode(err, types.ErrCircularDependency) {
+			t.Fatalf("want %s, got %v", types.ErrCircularDependency, err)
+		}
+		op.checked = []checkedSource{{*op.RefDepResolved, op.DepCommitID}}
+		if err := op.Validate(ctx, opctx, dbClient); err != nil {
+			t.Fatalf("cycle checked again under the lock: %v", err)
+		}
+		return nil
+	})
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
 
 func preparedRepo(t *testing.T) (*Client, string) {
+	t.Helper()
+	client, _, branchPath := newPreparedRepo(t)
+	return client, branchPath
+}
+
+func newPreparedRepo(t *testing.T) (*Client, string, string) {
 	t.Helper()
 	ctx := context.Background()
 	dir, cleanup := testutils.TempDir(t, "vit-repo-*")
@@ -69,10 +141,16 @@ func preparedRepo(t *testing.T) (*Client, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(added.String, "a.txt"), []byte("WWW"), 0o644); err != nil {
+	return client, repoPath, added.String
+}
+
+func dirtyRepo(t *testing.T) (*Client, string) {
+	t.Helper()
+	client, branchPath := preparedRepo(t)
+	if err := os.WriteFile(filepath.Join(branchPath, "a.txt"), []byte("WWW"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return client, added.String
+	return client, branchPath
 }
 
 func prepareCommit(t *testing.T, client *Client, branchPath string) *operationCommit {

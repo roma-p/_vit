@@ -86,6 +86,9 @@ type operationSourcePull struct {
 	RefConsumer *types.Ref
 	SourceNames []string // nil/empty == all sources
 
+	// filled at Prepare
+	checked []checkedSource
+
 	// filled at Validate
 	Updates []types.SourceUpdate
 }
@@ -108,6 +111,21 @@ func shortID(id string) string {
 		return id[:8]
 	}
 	return id
+}
+
+func (o *operationSourcePull) Prepare(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+) error {
+	if err := o.Validate(ctx, opctx, dbClient); err != nil {
+		return err
+	}
+	for _, u := range o.Updates {
+		o.checked = append(o.checked, checkedSource{*u.NewTarget, u.NewCommit})
+	}
+	o.Updates = nil
+	return nil
 }
 
 func (o *operationSourcePull) Validate(
@@ -160,7 +178,7 @@ func (o *operationSourcePull) Validate(
 			continue
 		}
 
-		if err := db.CheckSourceAddNoCycle(ctx, opctx, dbClient, o.RefConsumer, newTarget); err != nil {
+		if err := checkNoCycle(ctx, opctx, dbClient, o.RefConsumer, newTarget, newCommit, o.checked); err != nil {
 			return err
 		}
 

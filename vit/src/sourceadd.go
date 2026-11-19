@@ -105,9 +105,24 @@ type operationSourceAdd struct {
 	RefDepSpec       *types.Ref
 	NewDepedencyName string
 
+	// filled at Prepare
+	checked []checkedSource
+
 	// filled at validate
 	RefDepResolved *types.Ref
 	DepCommitID    string
+}
+
+func (o *operationSourceAdd) Prepare(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+) error {
+	if err := o.Validate(ctx, opctx, dbClient); err != nil {
+		return err
+	}
+	o.checked = []checkedSource{{*o.RefDepResolved, o.DepCommitID}}
+	return nil
 }
 
 func (o *operationSourceAdd) Validate(
@@ -144,10 +159,7 @@ func (o *operationSourceAdd) Validate(
 		return err
 	}
 
-	return db.CheckSourceAddNoCycle(
-		ctx, opctx, dbClient,
-		o.RefWithNewDep, o.RefDepResolved,
-	)
+	return checkNoCycle(ctx, opctx, dbClient, o.RefWithNewDep, o.RefDepResolved, o.DepCommitID, o.checked)
 }
 
 func (o *operationSourceAdd) PlanBlobUpdate(
@@ -228,4 +240,25 @@ func validateDependencyName(name string) error {
 		)
 	}
 	return nil
+}
+
+type checkedSource struct {
+	target types.Ref
+	commit string
+}
+
+func checkNoCycle(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+	consumer, target *types.Ref,
+	commit string,
+	checked []checkedSource,
+) error {
+	for _, c := range checked {
+		if c.target == *target && c.commit == commit {
+			return nil
+		}
+	}
+	return db.CheckSourceAddNoCycle(ctx, opctx, dbClient, consumer, target)
 }

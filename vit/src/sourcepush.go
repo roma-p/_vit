@@ -148,6 +148,19 @@ func (o *operationSourcePush) HistorySummary() string {
 		updates, len(o.subOps), strings.Join(names, ", "))
 }
 
+func (o *operationSourcePush) Prepare(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+) error {
+	for _, s := range o.subOps {
+		if err := s.Prepare(ctx, opctx, dbClient); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (o *operationSourcePush) Validate(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,

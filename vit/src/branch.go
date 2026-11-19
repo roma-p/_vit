@@ -98,7 +98,8 @@ type operationBranch struct {
 	empty          bool
 
 	// filled at Prepare
-	prepared *resolveChangeRecordResult
+	prepared        *resolveChangeRecordResult
+	preparedContent *types.ContentNode
 
 	// filled at Validate
 	targetCommit    string             // the commit every new branch roots at
@@ -120,19 +121,36 @@ func (o *operationBranch) Prepare(
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
 ) error {
-	if o.InputRef.RefType != types.RefTypeBranch {
+	if o.empty {
 		return nil
 	}
-	r, err := resolveChangeRecord(ctx, resolveChangeRecordRequest{
-		Opctx:     opctx,
-		BranchRef: o.InputRef,
-		DBClient:  dbClient,
-	})
+	if o.InputRef.RefType == types.RefTypeBranch {
+		r, err := resolveChangeRecord(ctx, resolveChangeRecordRequest{
+			Opctx:     opctx,
+			BranchRef: o.InputRef,
+			DBClient:  dbClient,
+		})
+		if err != nil {
+			return err
+		}
+		o.prepared = r
+		o.preparedContent = r.PrevCommitContentNode
+		return nil
+	}
+	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, o.InputRef, false)
 	if err != nil {
 		return err
 	}
-	o.prepared = r
-	return nil
+	_, target, err := db.ResolveCommitForDependency(asset.Data, o.InputRef)
+	if err != nil {
+		return err
+	}
+	commit, err := db.GetCommit(asset.Data, target)
+	if err != nil {
+		return err
+	}
+	o.preparedContent, err = blob.LoadContentTree(o.InputRef.RepoPath, o.InputRef.AssetPath, commit.Content)
+	return err
 }
 
 func (o *operationBranch) Validate(
@@ -195,9 +213,11 @@ func (o *operationBranch) Validate(
 	if err != nil {
 		return err
 	}
-	o.contentNode, err = blob.LoadContentTree(o.InputRef.RepoPath, o.InputRef.AssetPath, commit.Content)
-	if err != nil {
-		return err
+	if !o.empty {
+		o.contentNode, err = o.loadContent(commit.Content)
+		if err != nil {
+			return err
+		}
 	}
 
 	// prepare creating, on every product, the branches it does not have yet.
@@ -235,6 +255,13 @@ func (o *operationBranch) Validate(
 		// that were not producted by origin.
 	}
 	return nil
+}
+
+func (o *operationBranch) loadContent(hash string) (*types.ContentNode, error) {
+	if o.preparedContent != nil && o.preparedContent.ContentHash == hash {
+		return o.preparedContent, nil
+	}
+	return blob.LoadContentTree(o.InputRef.RepoPath, o.InputRef.AssetPath, hash)
 }
 
 func (o *operationBranch) PlanBlobUpdate(
