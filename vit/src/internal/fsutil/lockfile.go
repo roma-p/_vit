@@ -2,6 +2,7 @@ package fsutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -151,6 +152,32 @@ func cleanOrphanedLock(lockDir string) {
 	}
 	if time.Since(info.ModTime()) > LockAcquireTimeout {
 		_ = os.Remove(lockDir)
+	}
+}
+
+var ErrLockLost = errors.New("lock lost")
+
+func acquireOwnedLock(ctx context.Context, path string) (string, os.FileInfo, error) {
+	lockDir, err := AcquireExclusiveLock(ctx, path)
+	if err != nil {
+		return "", nil, err
+	}
+	lockID, err := os.Stat(lockDir)
+	if err != nil {
+		ReleaseExclusiveLock(lockDir)
+		return "", nil, err
+	}
+	return lockDir, lockID, nil
+}
+
+func holdsLock(lockDir string, id os.FileInfo) bool {
+	info, err := os.Stat(lockDir)
+	return err == nil && os.SameFile(info, id)
+}
+
+func releaseOwnedLock(lockDir string, id os.FileInfo) {
+	if holdsLock(lockDir, id) {
+		ReleaseExclusiveLock(lockDir)
 	}
 }
 

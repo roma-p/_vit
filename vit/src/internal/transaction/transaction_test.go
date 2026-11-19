@@ -63,6 +63,31 @@ func TestTransactionLostCancelsTheOperation(t *testing.T) {
 	}
 }
 
+func TestTransactionLostWhenTheDocLockIsStolen(t *testing.T) {
+	repo := t.TempDir()
+	doc := filepath.Join(repo, "asset.json")
+	writeDoc(t, doc, "before")
+
+	op := &docOperation{path: doc, value: "after", duringDBUpdate: func() {
+		lockDir := filepath.Join(repo, ".asset.json.lock")
+		if err := os.Remove(lockDir); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(lockDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	err := runDoc(t, repo, op)
+
+	var verr *types.VitError
+	if !errors.As(err, &verr) || verr.Name != types.ErrTransactionLost {
+		t.Fatalf("want %s, got %v", types.ErrTransactionLost, err)
+	}
+	if got := readDoc(t, doc); got != "before" {
+		t.Fatalf("doc written after its lock was stolen: %q", got)
+	}
+}
+
 func TestTransactionLostKeepsTheOtherTid(t *testing.T) {
 	repo := t.TempDir()
 	doc := filepath.Join(repo, "asset.json")

@@ -135,6 +135,9 @@ func run(
 				return err
 			}
 			if err := r.Opctx.JSONPool.FlushForWrite(); err != nil {
+				if errors.Is(err, fsutil.ErrLockLost) {
+					return newErrTransactionLost(err)
+				}
 				return err
 			}
 
@@ -335,7 +338,7 @@ func touchFilesLoop(
 			now := time.Now()
 			for _, f := range files {
 				if err := os.Chtimes(f, now, now); os.IsNotExist(err) {
-					cancel(newErrTransactionLost(f, err))
+					cancel(newErrTransactionLost(err))
 					return
 				}
 			}
@@ -371,7 +374,7 @@ type activeTransaction struct {
 func (t *activeTransaction) ensureStillValid() error {
 	for _, f := range t.files {
 		if _, err := os.Stat(f); err != nil {
-			return newErrTransactionLost(f, err)
+			return newErrTransactionLost(err)
 		}
 	}
 	return nil
@@ -394,13 +397,13 @@ func transactionLostCause(ctx context.Context) error {
 	return nil
 }
 
-func newErrTransactionLost(tidFile string, err error) error {
+func newErrTransactionLost(err error) error {
 	return types.NewVitError(
 		types.ErrTransactionLost,
 		[]string{
 			"transaction lost: another process took it over after this one stalled",
 			"nothing was recorded, retry the command",
 		},
-		[]any{"tidFile", tidFile, "err", err.Error()},
+		[]any{"err", err.Error()},
 	)
 }

@@ -3,6 +3,7 @@ package fsutil
 import (
 	"context"
 	"fmt"
+	"os"
 )
 
 // JSONHandlerPool caches JSON file handlers and manages their locks.
@@ -18,6 +19,7 @@ type poolEntry struct {
 	jsonhandler AnyJSONHandler
 	forWrite    bool
 	lockDir     string
+	lockID      os.FileInfo
 }
 
 // NewJSONHandlerPool init a new pool
@@ -56,18 +58,19 @@ func ResolveHandler[T any](
 		}
 
 		if forWrite && !existing.forWrite {
-			lockDir, err := AcquireExclusiveLock(ctx, path)
+			lockDir, lockID, err := acquireOwnedLock(ctx, path)
 			if err != nil {
 				return nil, err
 			}
 			fresh, err := jsonRead[T](path)
 			if err != nil {
-				ReleaseExclusiveLock(lockDir)
+				releaseOwnedLock(lockDir, lockID)
 				return nil, fmt.Errorf("re-read on escalation failed for %s: %w", path, err)
 			}
 			jsonhandler.Data = fresh
 			existing.forWrite = true
 			existing.lockDir = lockDir
+			existing.lockID = lockID
 			pool.order = append(pool.order, path)
 		}
 
@@ -82,6 +85,12 @@ func ResolveHandler[T any](
 // (either when its resolved with write priv or permission escalated)
 // ideally, the only way to write db is using this.
 func (p *JSONHandlerPool) FlushForWrite() error {
+	for _, path := range p.order {
+		entry, ok := p.data[path]
+		if ok && entry.forWrite && !holdsLock(entry.lockDir, entry.lockID) {
+			return fmt.Errorf("flush write failed for %s: %w", path, ErrLockLost)
+		}
+	}
 	for _, path := range p.order {
 		entry, ok := p.data[path]
 		if !ok || !entry.forWrite {
@@ -101,7 +110,7 @@ func (p *JSONHandlerPool) Release(path string) {
 		return
 	}
 	if entry.lockDir != "" {
-		ReleaseExclusiveLock(entry.lockDir)
+		releaseOwnedLock(entry.lockDir, entry.lockID)
 	}
 	delete(p.data, path)
 }
@@ -119,7 +128,7 @@ func (p *JSONHandlerPool) DropReadCache() {
 func (p *JSONHandlerPool) ReleaseAll() {
 	for _, entry := range p.data {
 		if entry.lockDir != "" {
-			ReleaseExclusiveLock(entry.lockDir)
+			releaseOwnedLock(entry.lockDir, entry.lockID)
 		}
 	}
 	p.data = make(map[string]*poolEntry)
@@ -147,18 +156,19 @@ func addHandler[T any](
 	entry := poolEntry{forWrite: forWrite}
 
 	if forWrite {
-		lockDir, err := AcquireExclusiveLock(ctx, path)
+		lockDir, lockID, err := acquireOwnedLock(ctx, path)
 		if err != nil {
 			return nil, err
 		}
 		entry.lockDir = lockDir
+		entry.lockID = lockID
 	}
 
 	handler, err := NewJSONHandlerFromFile[T](path)
 	if err != nil {
 		if initData == nil {
 			if entry.lockDir != "" {
-				ReleaseExclusiveLock(entry.lockDir)
+				releaseOwnedLock(entry.lockDir, entry.lockID)
 			}
 			return nil, err
 		}
