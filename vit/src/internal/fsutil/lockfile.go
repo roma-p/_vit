@@ -160,7 +160,10 @@ func cleanOrphanedLock(lockDir string) {
 	}
 }
 
-var ErrLockLost = errors.New("lock lost")
+var (
+	ErrLockLost        = errors.New("lock lost")
+	ErrConcurrentWrite = errors.New("lock lost during the write")
+)
 
 func acquireOwnedLock(ctx context.Context, path string) (string, os.FileInfo, error) {
 	lockDir, err := AcquireExclusiveLock(ctx, path)

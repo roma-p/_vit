@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"vit/internal/blob"
@@ -134,28 +135,36 @@ func run(
 			if err := tx.ensureStillValid(); err != nil {
 				return err
 			}
-			if err := r.Opctx.JSONPool.FlushForWrite(); err != nil {
-				if errors.Is(err, fsutil.ErrLockLost) {
-					return newErrTransactionLost(err)
-				}
-				return err
+			flushErr := r.Opctx.JSONPool.FlushForWrite()
+			if errors.Is(flushErr, fsutil.ErrLockLost) {
+				return newErrTransactionLost(flushErr)
+			}
+			if flushErr != nil && !errors.Is(flushErr, fsutil.ErrConcurrentWrite) {
+				return flushErr
+			}
+			if flushErr == nil {
+				flushErr = tx.ensureStillValid()
 			}
 
 			// 4. Best effort finish: presentation, cache update.
 			//    all of what is done here should be re-derivable using a vit gc (todo)
 			r.Operation.Finish(ctx, r.Opctx, r.DBClient, r.Logger, r.Presenter)
 
+			if flushErr != nil {
+				return newErrConcurrentWrite(flushErr)
+			}
 			return nil
 		},
 	)
-	if err != nil {
+	concurrent := isVitError(err, types.ErrConcurrentWrite)
+	if err != nil && !concurrent {
 		return err
 	}
 
 	// 5. Record the operation in the activity log — after a successful flush,
 	//    outside the repo transaction lock, best-effort
-	recordHistory(ctx, r, tids)
-	return nil
+	recordHistory(ctx, r, tids, concurrent)
+	return err
 }
 
 // historyDescriber is optionally implemented by operations that want to add a
@@ -164,7 +173,7 @@ type historyDescriber interface {
 	HistorySummary() string
 }
 
-func recordHistory(ctx context.Context, r Request, tids []TransactionID) {
+func recordHistory(ctx context.Context, r Request, tids []TransactionID, concurrent bool) {
 	subject := r.Ref
 	if subject == nil && len(tids) > 0 {
 		subject = tids[0].Ref
@@ -181,6 +190,9 @@ func recordHistory(ctx context.Context, r Request, tids []TransactionID) {
 	}
 	if d, ok := r.Operation.(historyDescriber); ok {
 		e.Details = d.HistorySummary()
+	}
+	if concurrent {
+		e.Details = strings.TrimSpace(e.Details + " (concurrent write detected)")
 	}
 	if err := history.Record(ctx, r.RepoPath, r.Opctx.Site(), e); err != nil {
 		r.Logger.Warn("history: failed to record entry", "command", r.Command, "err", err)
@@ -271,7 +283,7 @@ func withTransaction(
 
 	// 4. Do the actual work.
 	if err := operation(opCtx, tx); err != nil {
-		if lost := transactionLostCause(opCtx); lost != nil {
+		if lost := transactionLostCause(opCtx); lost != nil && !isVitError(err, types.ErrConcurrentWrite) {
 			return lost
 		}
 		return err
@@ -387,11 +399,15 @@ func (t *activeTransaction) finish() {
 }
 
 func transactionLostCause(ctx context.Context) error {
-	var verr *types.VitError
-	if errors.As(context.Cause(ctx), &verr) && verr.Name == types.ErrTransactionLost {
-		return verr
+	if cause := context.Cause(ctx); isVitError(cause, types.ErrTransactionLost) {
+		return cause
 	}
 	return nil
+}
+
+func isVitError(err error, name string) bool {
+	var verr *types.VitError
+	return errors.As(err, &verr) && verr.Name == name
 }
 
 func newErrTransactionLost(err error) error {
@@ -400,6 +416,17 @@ func newErrTransactionLost(err error) error {
 		[]string{
 			"transaction lost: another process took it over after this one stalled",
 			"nothing was recorded, retry the command",
+		},
+		[]any{"err", err.Error()},
+	)
+}
+
+func newErrConcurrentWrite(err error) error {
+	return types.NewVitError(
+		types.ErrConcurrentWrite,
+		[]string{
+			"the change was recorded, but another process took over this transaction during the write",
+			"it may have overwritten a change made at the same time: check `vit log` for this asset",
 		},
 		[]any{"err", err.Error()},
 	)

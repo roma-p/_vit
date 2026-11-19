@@ -2,6 +2,7 @@ package transaction
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"vit/internal/db"
 	"vit/internal/fsutil"
+	"vit/internal/history"
 	"vit/internal/opcontext"
 	"vit/internal/types"
 	"vit/internal/workspace"
@@ -113,6 +115,55 @@ func TestScanLockKeptAliveDuringValidate(t *testing.T) {
 	}
 }
 
+func TestConcurrentWriteDetectedAfterTheWrite(t *testing.T) {
+	cases := map[string]func(repo string){
+		"tid": func(repo string) {
+			for _, f := range tidFiles(t, repo) {
+				if err := os.Remove(f); err != nil {
+					t.Fatal(err)
+				}
+			}
+		},
+		"doc lock": func(repo string) {
+			lockDir := filepath.Join(repo, ".asset.json.lock")
+			if err := os.Remove(lockDir); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(lockDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	for name, steal := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo := t.TempDir()
+			doc := filepath.Join(repo, "asset.json")
+			writeDoc(t, doc, "before")
+
+			op := &docOperation{path: doc, value: "after", duringWrite: func() { steal(repo) }}
+			err := runDoc(t, repo, op)
+
+			var verr *types.VitError
+			if !errors.As(err, &verr) || verr.Name != types.ErrConcurrentWrite {
+				t.Fatalf("want %s, got %v", types.ErrConcurrentWrite, err)
+			}
+			if got := readDoc(t, doc); got != "after" {
+				t.Fatalf("got %q", got)
+			}
+			if !op.finished {
+				t.Fatal("Finish skipped")
+			}
+			entries, err := history.ReadAll(repo, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || !strings.Contains(entries[0].Details, "concurrent write") {
+				t.Fatalf("history: %+v", entries)
+			}
+		})
+	}
+}
+
 func TestTransactionLostKeepsTheOtherTid(t *testing.T) {
 	repo := t.TempDir()
 	doc := filepath.Join(repo, "asset.json")
@@ -177,7 +228,9 @@ type docOperation struct {
 	value          string
 	duringValidate func()
 	duringDBUpdate func()
+	duringWrite    func()
 	waitForCancel  bool
+	finished       bool
 }
 
 func (o *docOperation) Validate(context.Context, *opcontext.OperationContext, *db.Client) error {
@@ -196,11 +249,12 @@ func (o *docOperation) PlanBlobUpdate(
 func (o *docOperation) DBUpdate(
 	ctx context.Context, opctx *opcontext.OperationContext, _ *db.Client,
 ) error {
-	h, err := fsutil.ResolveHandler[map[string]string](ctx, opctx.JSONPool, o.path, true, nil)
+	h, err := fsutil.ResolveHandler[hookDoc](ctx, opctx.JSONPool, o.path, true, nil)
 	if err != nil {
 		return err
 	}
-	(*h.Data)["v"] = o.value
+	h.Data.V = o.value
+	h.Data.onWrite = o.duringWrite
 	if o.duringDBUpdate != nil {
 		o.duringDBUpdate()
 	}
@@ -218,6 +272,19 @@ func (o *docOperation) DBUpdate(
 func (o *docOperation) Finish(
 	context.Context, *opcontext.OperationContext, *db.Client, *slog.Logger, workspace.Presenter,
 ) {
+	o.finished = true
+}
+
+type hookDoc struct {
+	V       string `json:"v"`
+	onWrite func()
+}
+
+func (d hookDoc) MarshalJSON() ([]byte, error) {
+	if d.onWrite != nil {
+		d.onWrite()
+	}
+	return json.Marshal(map[string]string{"v": d.V})
 }
 
 func runDoc(t *testing.T, repo string, op Operation) error {

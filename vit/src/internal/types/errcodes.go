@@ -37,6 +37,7 @@ const (
 	ErrTransactionConflict = "TransactionConflict"
 	ErrTransactionFailed   = "TransactionFailed"
 	ErrTransactionLost     = "TransactionLost"
+	ErrConcurrentWrite     = "ConcurrentWrite"
 
 	ErrInvalidInut = "InvalidInput"
 

@@ -85,11 +85,8 @@ func ResolveHandler[T any](
 // (either when its resolved with write priv or permission escalated)
 // ideally, the only way to write db is using this.
 func (p *JSONHandlerPool) FlushForWrite() error {
-	for _, path := range p.order {
-		entry, ok := p.data[path]
-		if ok && entry.forWrite && !holdsLock(entry.lockDir, entry.lockID) {
-			return fmt.Errorf("flush write failed for %s: %w", path, ErrLockLost)
-		}
+	if path, lost := p.lostLock(); lost {
+		return fmt.Errorf("flush write failed for %s: %w", path, ErrLockLost)
 	}
 	for _, path := range p.order {
 		entry, ok := p.data[path]
@@ -100,7 +97,20 @@ func (p *JSONHandlerPool) FlushForWrite() error {
 			return fmt.Errorf("flush write failed for %s: %w", path, err)
 		}
 	}
+	if path, lost := p.lostLock(); lost {
+		return fmt.Errorf("flush wrote %s: %w", path, ErrConcurrentWrite)
+	}
 	return nil
+}
+
+func (p *JSONHandlerPool) lostLock() (string, bool) {
+	for _, path := range p.order {
+		entry, ok := p.data[path]
+		if ok && entry.forWrite && !holdsLock(entry.lockDir, entry.lockID) {
+			return path, true
+		}
+	}
+	return "", false
 }
 
 // Release releases a single entry and its lock. No-op if not cached.

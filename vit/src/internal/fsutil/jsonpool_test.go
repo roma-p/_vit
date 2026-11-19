@@ -2,6 +2,7 @@ package fsutil
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -47,6 +48,45 @@ func TestFlushForWriteRefusesAStolenLock(t *testing.T) {
 	if _, err := os.Stat(lockDirPath(a)); !os.IsNotExist(err) {
 		t.Fatalf("our own lock was not released: %v", err)
 	}
+}
+
+func TestFlushForWriteReportsALockLostDuringTheWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.json")
+	if err := NewJSONHandlerFromPath(path, &stealingDoc{Name: "before"}).Write(); err != nil {
+		t.Fatal(err)
+	}
+	pool := NewJSONHandlerPool()
+	h, err := ResolveHandler[stealingDoc](context.Background(), pool, path, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.Data.Name = "after"
+	h.Data.onWrite = func() { stealLock(t, path) }
+
+	if err := pool.FlushForWrite(); !errors.Is(err, ErrConcurrentWrite) {
+		t.Fatalf("want ErrConcurrentWrite, got %v", err)
+	}
+	got, err := NewJSONHandlerFromFile[stealingDoc](path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Data.Name != "after" {
+		t.Fatalf("got %q", got.Data.Name)
+	}
+}
+
+type stealingDoc struct {
+	Name    string `json:"name"`
+	onWrite func()
+}
+
+func (d stealingDoc) MarshalJSON() ([]byte, error) {
+	if d.onWrite != nil {
+		d.onWrite()
+	}
+	return json.Marshal(struct {
+		Name string `json:"name"`
+	}{d.Name})
 }
 
 func stealLock(t *testing.T, path string) {
