@@ -85,6 +85,11 @@ func (c *Client) GetTreeCache(
 	return treeCache, nil
 }
 
+func (c *Client) DropTreeCache() {
+	c.TreeIndexPool = make(map[string]*TreeIndex)
+	c.TreeCachePool = make(map[string]*TreeCache)
+}
+
 func (c *Client) MarkTreeStale(repoPath string) {
 	c.TreeStale[repoPath] = true
 }

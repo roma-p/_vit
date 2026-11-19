@@ -107,6 +107,9 @@ func run(
 			//     Validate must re-parse the source of truth under the
 			//    lock, not reuse a pre-lock parse.
 			r.Opctx.JSONPool.DropReadCache()
+			if r.DBClient != nil {
+				r.DBClient.DropTreeCache()
+			}
 
 			// 1. check for on going transaction conflict, then run operation validate.
 			if err := scanForConflicts(tids); err != nil {
