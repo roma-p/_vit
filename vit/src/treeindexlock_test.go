@@ -33,7 +33,7 @@ func TestAddSeesAnAssetAddedAfterTheTreeIndexWasLoaded(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		return transaction.RunTreeChanged(ctx, transaction.Request{
+		return transaction.Run(ctx, transaction.Request{
 			Opctx:     opctx,
 			DBClient:  dbClient,
 			Operation: newOperationAdd(opctx.Repo(), assetPath, src, nil),
@@ -42,7 +42,7 @@ func TestAddSeesAnAssetAddedAfterTheTreeIndexWasLoaded(t *testing.T) {
 			User:      opctx.User,
 			RepoPath:  opctx.RepoPath(),
 			Timestamp: opctx.TimeStamp,
-		}, []string{assetPath})
+		})
 	})
 	if !types.IsErrCode(err, types.ErrDBTreeNode) {
 		t.Fatalf("want %s, got %v", types.ErrDBTreeNode, err)

@@ -53,7 +53,7 @@ func (c *Client) SourcePull(
 			}
 			defer dbClient.Close()
 
-			return transaction.RunEdit(
+			return transaction.Run(
 				ctx,
 				transaction.Request{
 					Opctx:     opctx,
@@ -67,7 +67,6 @@ func (c *Client) SourcePull(
 					RepoPath:  opctx.RepoPath(),
 					Timestamp: opctx.TimeStamp,
 				},
-				[]*types.Ref{refConsumer}, transaction.TransactionBranch,
 			)
 		},
 	)
@@ -111,6 +110,10 @@ func shortID(id string) string {
 		return id[:8]
 	}
 	return id
+}
+
+func (o *operationSourcePull) Locks() transaction.Locks {
+	return transaction.Locks{Edited: []*types.Ref{o.RefConsumer}, EditOp: transaction.TransactionBranch}
 }
 
 func (o *operationSourcePull) Prepare(

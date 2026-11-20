@@ -59,7 +59,7 @@ func (c *Client) Add(
 
 		op := newOperationAdd(opctx.Repo(), assetPath, src, branches)
 
-		if err := transaction.RunTreeChanged(
+		if err := transaction.Run(
 			ctx,
 			transaction.Request{
 				Opctx:     opctx,
@@ -73,7 +73,6 @@ func (c *Client) Add(
 				RepoPath:  opctx.RepoPath(),
 				Timestamp: opctx.TimeStamp,
 			},
-			[]string{assetPath},
 		); err != nil {
 			return err
 		}
@@ -119,6 +118,10 @@ func newOperationAdd(repoRef *types.RepoRef, assetPath, src string, branches []s
 		Src:       src,
 		Branches:  branches,
 	}
+}
+
+func (o *operationAdd) Locks() transaction.Locks {
+	return transaction.Locks{Created: []*types.Ref{types.NewRefEmpty(o.RepoRef.Path, o.AssetPath)}}
 }
 
 func (o *operationAdd) Validate(

@@ -224,6 +224,9 @@ func TestPrepareRunsBeforeTheScanLock(t *testing.T) {
 	if op.lockedDuringPrepare {
 		t.Fatal("Prepare ran under the scan-lock")
 	}
+	if op.locksBeforePrepare {
+		t.Fatal("Locks read before Prepare")
+	}
 }
 
 func TestTransactionIDFromNameIgnoresToken(t *testing.T) {
@@ -251,6 +254,10 @@ type docOperation struct {
 	duringWrite    func()
 	waitForCancel  bool
 	finished       bool
+}
+
+func (o *docOperation) Locks() Locks {
+	return Locks{Edited: []*types.Ref{types.NewRefEmpty(filepath.Dir(o.path), "asset")}, EditOp: TransactionTag}
 }
 
 func (o *docOperation) Validate(context.Context, *opcontext.OperationContext, *db.Client) error {
@@ -300,6 +307,12 @@ type preparedDocOperation struct {
 	lockDir             string
 	prepared            bool
 	lockedDuringPrepare bool
+	locksBeforePrepare  bool
+}
+
+func (o *preparedDocOperation) Locks() Locks {
+	o.locksBeforePrepare = o.locksBeforePrepare || !o.prepared
+	return o.docOperation.Locks()
 }
 
 func (o *preparedDocOperation) Prepare(context.Context, *opcontext.OperationContext, *db.Client) error {
@@ -329,7 +342,7 @@ func runDoc(t *testing.T, repo string, op Operation) error {
 		JSONPool:  fsutil.NewJSONHandlerPool(),
 	}
 	t.Cleanup(opctx.Close)
-	return RunEdit(context.Background(), Request{
+	return Run(context.Background(), Request{
 		Opctx:     opctx,
 		Operation: op,
 		Logger:    slog.New(slog.DiscardHandler),
@@ -337,7 +350,7 @@ func runDoc(t *testing.T, repo string, op Operation) error {
 		User:      opctx.User,
 		RepoPath:  repo,
 		Timestamp: opctx.TimeStamp,
-	}, []*types.Ref{types.NewRefEmpty(repo, "asset")}, TransactionTag)
+	})
 }
 
 func tidFiles(t *testing.T, repo string) []string {

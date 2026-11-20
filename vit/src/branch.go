@@ -49,19 +49,9 @@ func (c *Client) Branch(
 		}
 		defer dbClient.Close()
 
-		products, err := productEdgesForRef(ctx, opctx, dbClient, ref, true)
-		if err != nil {
-			return err
-		}
+		op := &operationBranch{InputRef: ref, BranchNames: names}
 
-		op := &operationBranch{InputRef: ref, BranchNames: names, productTargets: products}
-
-		refs := []*types.Ref{ref}
-		for _, p := range products {
-			refs = append(refs, p.targetRef)
-		}
-
-		if err := transaction.RunEdit(
+		if err := transaction.Run(
 			ctx,
 			transaction.Request{
 				Opctx:     opctx,
@@ -76,7 +66,6 @@ func (c *Client) Branch(
 				Timestamp: opctx.TimeStamp,
 				Ref:       ref,
 			},
-			refs, transaction.TransactionBranch,
 		); err != nil {
 			return err
 		}
@@ -124,6 +113,11 @@ func (o *operationBranch) Prepare(
 	if o.empty {
 		return nil
 	}
+	var err error
+	o.productTargets, err = productEdgesForRef(ctx, opctx, dbClient, o.InputRef, true)
+	if err != nil {
+		return err
+	}
 	if o.InputRef.RefType == types.RefTypeBranch {
 		r, err := resolveChangeRecord(ctx, resolveChangeRecordRequest{
 			Opctx:     opctx,
@@ -151,6 +145,14 @@ func (o *operationBranch) Prepare(
 	}
 	o.preparedContent, err = blob.LoadContentTree(o.InputRef.RepoPath, o.InputRef.AssetPath, commit.Content)
 	return err
+}
+
+func (o *operationBranch) Locks() transaction.Locks {
+	refs := []*types.Ref{o.InputRef}
+	for _, p := range o.productTargets {
+		refs = append(refs, p.targetRef)
+	}
+	return transaction.Locks{Edited: refs, EditOp: transaction.TransactionBranch}
 }
 
 func (o *operationBranch) Validate(

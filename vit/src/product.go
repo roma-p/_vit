@@ -70,16 +70,10 @@ func (c *Client) ProductAdd(
 				RefOrigin:   refOrigin,
 				RefTarget:   refTarget,
 				ProductName: productName,
+				Create:      create,
 			}
 
-			// prelock discovery phase:
-			// -> does the target exists?
-			// -> doest it have the target branch
-			assetExists, branchExists, err := productTargetState(ctx, opctx, dbClient, refTarget)
-			if err != nil {
-				return err
-			}
-			req := transaction.Request{
+			if err := transaction.Run(ctx, transaction.Request{
 				Opctx:     opctx,
 				DBClient:  dbClient,
 				Presenter: presenter,
@@ -91,45 +85,8 @@ func (c *Client) ProductAdd(
 				RepoPath:  refOrigin.RepoPath,
 				Timestamp: opctx.TimeStamp,
 				Ref:       refOrigin,
-			}
-
-			switch {
-			case create && !assetExists:
-				// if asset is to create, create it with the extra branch if it is not the default one.
-				var branches []string
-				if refTarget.BranchName != types.DefaultBranchName {
-					branches = []string{refTarget.BranchName}
-				}
-				op.addOp = newOperationAdd(
-					opctx.RepoRefFor(refTarget.RepoUID), refTarget.AssetPath, "", branches,
-				)
-				if err := transaction.RunTreeChangedAndEdit(
-					ctx, req,
-					[]*types.Ref{refTarget},
-					[]*types.Ref{refOrigin},
-					transaction.TransactionBranch,
-				); err != nil {
-					return err
-				}
-
-			case assetExists && !branchExists:
-				// if asset exists but not target branch, create product branch
-				// (in validate -> create a sub branch op
-				op.createBranch = true
-				if err := transaction.RunEdit(
-					ctx, req,
-					[]*types.Ref{refOrigin, refTarget}, transaction.TransactionBranch,
-				); err != nil {
-					return err
-				}
-
-			default:
-				if err := transaction.RunEdit(
-					ctx, req,
-					[]*types.Ref{refOrigin}, transaction.TransactionBranch,
-				); err != nil {
-					return err
-				}
+			}); err != nil {
+				return err
 			}
 
 			registerCrossRepo(ctx, c.logger, refOrigin, refTarget)
@@ -148,12 +105,49 @@ type operationProductAdd struct {
 	RefOrigin   *types.Ref
 	RefTarget   *types.Ref
 	ProductName string
+	Create      bool
 
+	// filled at Prepare
 	addOp        *operationAdd // target asset to create: nested add op.
 	createBranch bool          // target asset exists but lacks the branch: create it.
 
 	// filled at Validate
 	branchOp *operationBranch
+}
+
+func (o *operationProductAdd) Prepare(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+) error {
+	assetExists, branchExists, err := productTargetState(ctx, opctx, dbClient, o.RefTarget)
+	if err != nil {
+		return err
+	}
+	switch {
+	case o.Create && !assetExists:
+		var branches []string
+		if o.RefTarget.BranchName != types.DefaultBranchName {
+			branches = []string{o.RefTarget.BranchName}
+		}
+		o.addOp = newOperationAdd(
+			opctx.RepoRefFor(o.RefTarget.RepoUID), o.RefTarget.AssetPath, "", branches,
+		)
+	case assetExists && !branchExists:
+		o.createBranch = true
+	}
+	return nil
+}
+
+func (o *operationProductAdd) Locks() transaction.Locks {
+	locks := transaction.Locks{Edited: []*types.Ref{o.RefOrigin}, EditOp: transaction.TransactionBranch}
+	switch {
+	case o.addOp != nil:
+		locks.Created = []*types.Ref{o.RefTarget}
+	case o.createBranch:
+		locks.Edited = append(locks.Edited, o.RefTarget)
+	}
+	return locks
 }
 
 func (o *operationProductAdd) Validate(

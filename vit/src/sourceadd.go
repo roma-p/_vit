@@ -68,7 +68,7 @@ func (c *Client) SourceAdd(
 				NewDepedencyName: sourceName,
 			}
 
-			if err := transaction.RunEdit(
+			if err := transaction.Run(
 				ctx,
 				transaction.Request{
 					Opctx:     opctx,
@@ -82,7 +82,6 @@ func (c *Client) SourceAdd(
 					RepoPath:  opctx.RepoPath(),
 					Timestamp: opctx.TimeStamp,
 				},
-				[]*types.Ref{refConsumer}, transaction.TransactionBranch,
 			); err != nil {
 				return err
 			}
@@ -111,6 +110,10 @@ type operationSourceAdd struct {
 	// filled at validate
 	RefDepResolved *types.Ref
 	DepCommitID    string
+}
+
+func (o *operationSourceAdd) Locks() transaction.Locks {
+	return transaction.Locks{Edited: []*types.Ref{o.RefWithNewDep}, EditOp: transaction.TransactionBranch}
 }
 
 func (o *operationSourceAdd) Prepare(

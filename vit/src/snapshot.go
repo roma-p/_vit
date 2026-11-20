@@ -52,22 +52,7 @@ func (c *Client) Snapshot(ctx context.Context, path, message string) (*types.Str
 			IsSnapshot: true, // explicit `vit snapshot` → a user snapshot
 		}
 
-		products, err := productEdgesForRef(ctx, opctx, dbClient, ref, false)
-		if err != nil {
-			return err
-		}
-		refs := []*types.Ref{ref}
-		for _, p := range products {
-			op.productCommits = append(op.productCommits, &operationCommit{
-				Ref:         p.targetRef,
-				Message:     message,
-				IsSnapshot:  true,
-				ProductName: p.name,
-			})
-			refs = append(refs, p.targetRef)
-		}
-
-		if err := transaction.RunEdit(
+		if err := transaction.Run(
 			ctx,
 			transaction.Request{
 				Opctx:     opctx,
@@ -83,7 +68,6 @@ func (c *Client) Snapshot(ctx context.Context, path, message string) (*types.Str
 				Message:   message,
 				Ref:       ref, // history subject = the origin
 			},
-			refs, transaction.TransactionBranch,
 		); err != nil {
 			return err
 		}
@@ -122,7 +106,28 @@ type operationCommit struct {
 	CommitPath string
 }
 
+func (o *operationCommit) Locks() transaction.Locks {
+	refs := []*types.Ref{o.Ref}
+	for _, pc := range o.productCommits {
+		refs = append(refs, pc.Ref)
+	}
+	return transaction.Locks{Edited: refs, EditOp: transaction.TransactionBranch}
+}
+
 func (o *operationCommit) Prepare(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	dbClient *db.Client,
+) error {
+	products, err := productEdgesForRef(ctx, opctx, dbClient, o.Ref, false)
+	if err != nil {
+		return err
+	}
+	o.productCommits = productCommitOperations(products, o.Message, o.IsSnapshot)
+	return o.prepareChanges(ctx, opctx, dbClient)
+}
+
+func (o *operationCommit) prepareChanges(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
@@ -137,7 +142,7 @@ func (o *operationCommit) Prepare(
 	}
 	o.prepared = r
 	for _, pc := range o.productCommits {
-		if err := pc.Prepare(ctx, opctx, dbClient); err != nil {
+		if err := pc.prepareChanges(ctx, opctx, dbClient); err != nil {
 			return err
 		}
 	}
@@ -378,6 +383,19 @@ func collectProductEdges(deps types.AssetDependencies) []originProduct {
 		}
 	}
 	return out
+}
+
+func productCommitOperations(products []originProduct, message string, isSnapshot bool) []*operationCommit {
+	ops := make([]*operationCommit, 0, len(products))
+	for _, p := range products {
+		ops = append(ops, &operationCommit{
+			Ref:         p.targetRef,
+			Message:     message,
+			IsSnapshot:  isSnapshot,
+			ProductName: p.name,
+		})
+	}
+	return ops
 }
 
 func appendPlan(dst, src *types.BlobUpdatePlan) {

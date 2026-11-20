@@ -59,6 +59,8 @@ import (
 // Splitting an operaiton like this also allow to combine multiple operations in a single command
 // (committing when taggin a branch for instnace)
 type Operation interface {
+	Locks() Locks
+
 	// Validate shall gather data from db (using read only access)
 	// Its puprose is:
 	//		- 1. ensure the operation is valid (mainly validate user input)
@@ -97,4 +99,10 @@ type Operation interface {
 		logger *slog.Logger,
 		p workspace.Presenter,
 	)
+}
+
+type Locks struct {
+	Created []*types.Ref
+	Edited  []*types.Ref
+	EditOp  TransactionOperation
 }

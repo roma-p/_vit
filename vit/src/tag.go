@@ -45,24 +45,13 @@ func (c *Client) Tag(ctx context.Context, path, tagfamily, message string) (*typ
 		}
 		defer dbClient.Close()
 
-		products, tt, err := discoverTagProducts(ctx, opctx, dbClient, ref)
-		if err != nil {
-			return err
-		}
-
 		op := &operationTag{
-			InputRef:       ref,
-			TagFamily:      tagfamily,
-			Message:        message,
-			productTargets: products,
+			InputRef:  ref,
+			TagFamily: tagfamily,
+			Message:   message,
 		}
 
-		refs := []*types.Ref{ref}
-		for _, p := range products {
-			refs = append(refs, p.targetRef)
-		}
-
-		if err := transaction.RunEdit(
+		if err := transaction.Run(
 			ctx,
 			transaction.Request{
 				Opctx:     opctx,
@@ -78,7 +67,6 @@ func (c *Client) Tag(ctx context.Context, path, tagfamily, message string) (*typ
 				Message:   message,
 				Ref:       ref,
 			},
-			refs, tt,
 		); err != nil {
 			return err
 		}
@@ -131,11 +119,28 @@ func (o *operationTag) Prepare(
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
 ) error {
+	var err error
+	o.productTargets, err = productEdgesForRef(ctx, opctx, dbClient, o.InputRef, false)
+	if err != nil {
+		return err
+	}
 	if o.InputRef.RefType != types.RefTypeBranch {
 		return nil
 	}
 	o.oc = o.newCommitOperation()
-	return o.oc.Prepare(ctx, opctx, dbClient)
+	return o.oc.prepareChanges(ctx, opctx, dbClient)
+}
+
+func (o *operationTag) Locks() transaction.Locks {
+	refs := []*types.Ref{o.InputRef}
+	for _, p := range o.productTargets {
+		refs = append(refs, p.targetRef)
+	}
+	op := transaction.TransactionTag
+	if o.InputRef.RefType == types.RefTypeBranch {
+		op = transaction.TransactionBranch
+	}
+	return transaction.Locks{Edited: refs, EditOp: op}
 }
 
 func (o *operationTag) Validate(
@@ -350,15 +355,11 @@ func (o *operationTag) tagProducts(
 }
 
 func (o *operationTag) newCommitOperation() *operationCommit {
-	oc := &operationCommit{Ref: o.InputRef, Message: o.Message}
-	for _, p := range o.productTargets {
-		oc.productCommits = append(oc.productCommits, &operationCommit{
-			Ref:         p.targetRef,
-			Message:     o.Message,
-			ProductName: p.name,
-		})
+	return &operationCommit{
+		Ref:            o.InputRef,
+		Message:        o.Message,
+		productCommits: productCommitOperations(o.productTargets, o.Message, false),
 	}
-	return oc
 }
 
 func presentTag(
@@ -382,18 +383,4 @@ func presentTag(
 		logger.Log(ctx, slog.LevelError, "workspace present failed", "err", err)
 	}
 	return path
-}
-
-func discoverTagProducts(
-	ctx context.Context,
-	opctx *opcontext.OperationContext,
-	dbClient *db.Client,
-	ref *types.Ref,
-) ([]originProduct, transaction.TransactionOperation, error) {
-	tt := transaction.TransactionTag
-	if ref.RefType == types.RefTypeBranch {
-		tt = transaction.TransactionBranch
-	}
-	products, err := productEdgesForRef(ctx, opctx, dbClient, ref, false)
-	return products, tt, err
 }

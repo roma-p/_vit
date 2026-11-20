@@ -40,7 +40,7 @@ func (c *Client) SourcePush(
 		restrict[r.RelativePath()] = true
 	}
 
-	op := &operationSourcePush{}
+	op := &operationSourcePush{restrict: restrict}
 
 	err = opcontext.WithOperationContext(
 		ctx,
@@ -66,23 +66,7 @@ func (c *Client) SourcePush(
 			}
 			defer dbClient.Close()
 
-			// find every object consummers before holding the transction lock.
-			// so could look like a TOCTU race but:
-			// - 1. we need it to know the list of ref we need the transaction to lock.
-			// - 2. every consumers is recheck at Validate. so, worst case scenario is
-			//      between discoverPushConsumers() and transaction lock, we missed one.
-			//      not too bad.
-			refs, subOps, err := discoverPushConsumers(ctx, opctx, dbClient, producer, restrict)
-			if err != nil {
-				return err
-			}
-			op.subOps = subOps
-
-			if len(refs) == 0 {
-				return nil
-			}
-
-			return transaction.RunEdit(
+			return transaction.Run(
 				ctx,
 				transaction.Request{
 					Opctx:     opctx,
@@ -97,7 +81,6 @@ func (c *Client) SourcePush(
 					Timestamp: opctx.TimeStamp,
 					Ref:       producer, // history subject = the producer, not a consumer
 				},
-				refs, transaction.TransactionBranch,
 			)
 		},
 	)
@@ -123,6 +106,7 @@ func (c *Client) SourcePush(
 
 type operationSourcePush struct {
 	Producer *types.Ref
+	restrict map[string]bool
 	subOps   []*operationSourcePull
 	failed   map[string]bool // consumer RelativePath -> failed
 	errs     []pushConsumerErr
@@ -148,11 +132,26 @@ func (o *operationSourcePush) HistorySummary() string {
 		updates, len(o.subOps), strings.Join(names, ", "))
 }
 
+func (o *operationSourcePush) Locks() transaction.Locks {
+	refs := make([]*types.Ref, 0, len(o.subOps))
+	for _, s := range o.subOps {
+		refs = append(refs, s.RefConsumer)
+	}
+	return transaction.Locks{Edited: refs, EditOp: transaction.TransactionBranch}
+}
+
+// Prepare finds the consumers before the lock: a consumer added in between is
+// missed, every found one is rechecked at Validate.
 func (o *operationSourcePush) Prepare(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	dbClient *db.Client,
 ) error {
+	var err error
+	o.subOps, err = discoverPushConsumers(ctx, opctx, dbClient, o.Producer, o.restrict)
+	if err != nil {
+		return err
+	}
 	for _, s := range o.subOps {
 		if err := s.Prepare(ctx, opctx, dbClient); err != nil {
 			return err
@@ -249,10 +248,10 @@ func discoverPushConsumers(
 	dbClient *db.Client,
 	producer *types.Ref,
 	restrict map[string]bool,
-) ([]*types.Ref, []*operationSourcePull, error) {
+) ([]*operationSourcePull, error) {
 	g, err := db.GetDependents(ctx, opctx, dbClient, producer)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	byConsumer := map[string]*operationSourcePull{}
 	var refs []*types.Ref
@@ -280,5 +279,5 @@ func discoverPushConsumers(
 	for _, r := range refs {
 		subOps = append(subOps, byConsumer[r.RelativePath()])
 	}
-	return refs, subOps, nil
+	return subOps, nil
 }

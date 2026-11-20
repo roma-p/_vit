@@ -18,55 +18,22 @@ import (
 	"vit/internal/workspace"
 )
 
-// RunTreeChanged drives an operation that mutates the tree (add/move/delete).
-// Conflicts with ANY existing transaction on overlapping paths.
-func RunTreeChanged(
-	ctx context.Context,
-	r Request,
-	assetPaths []string,
-) error {
-	tids := make([]TransactionID, len(assetPaths))
-	for i, p := range assetPaths {
-		tids[i] = newTransactionID(TransactionTreeChanged, types.NewRefEmpty(r.RepoPath, p))
+func Run(ctx context.Context, r Request) error {
+	if p, ok := r.Operation.(preparer); ok {
+		if err := p.Prepare(ctx, r.Opctx, r.DBClient); err != nil {
+			return err
+		}
 	}
-	return run(ctx, r, tids)
-}
-
-// RunEdit drives an operation that edits existing assets (commit/branch).
-// Conflicts with TreeChanged on overlapping paths, or same-ref operations.
-func RunEdit(
-	ctx context.Context,
-	r Request,
-	refs []*types.Ref,
-	op TransactionOperation,
-) error {
-	tids := make([]TransactionID, len(refs))
-	for i, ref := range refs {
-		tids[i] = newTransactionID(op, ref)
+	locks := r.Operation.Locks()
+	tids := make([]TransactionID, 0, len(locks.Created)+len(locks.Edited))
+	for _, ref := range locks.Created {
+		tids = append(tids, newTransactionID(TransactionTreeChanged, types.NewRefEmpty(ref.RepoPath, ref.AssetPath)))
 	}
-	return run(ctx, r, tids)
-}
-
-// RunTreeChangedAndEdit combines RunTreeChanged and RunEdit.
-func RunTreeChangedAndEdit(
-	ctx context.Context,
-	r Request,
-	createRefs []*types.Ref,
-	editRefs []*types.Ref,
-	editOp TransactionOperation,
-) error {
-	tids := make([]TransactionID, 0, len(createRefs)+len(editRefs))
-	for _, ref := range createRefs {
-		tids = append(
-			tids,
-			newTransactionID(
-				TransactionTreeChanged,
-				types.NewRefEmpty(ref.RepoPath, ref.AssetPath),
-			),
-		)
+	for _, ref := range locks.Edited {
+		tids = append(tids, newTransactionID(locks.EditOp, ref))
 	}
-	for _, ref := range editRefs {
-		tids = append(tids, newTransactionID(editOp, ref))
+	if len(tids) == 0 {
+		return nil
 	}
 	return run(ctx, r, tids)
 }
@@ -95,11 +62,6 @@ func run(
 	r Request,
 	tids []TransactionID,
 ) error {
-	if p, ok := r.Operation.(preparer); ok {
-		if err := p.Prepare(ctx, r.Opctx, r.DBClient); err != nil {
-			return err
-		}
-	}
 	err := withTransaction(ctx, tids, r.Command, r.User, r.Timestamp,
 		func() error {
 			// 0. We now hold the scan-lock(s). Any DB read taken before it
