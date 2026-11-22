@@ -147,6 +147,10 @@ type historyDescriber interface {
 	HistorySummary() string
 }
 
+type historyAttrs interface {
+	HistoryAttrs() (nodeID string, changes []types.AttrChange)
+}
+
 func recordHistory(ctx context.Context, r Request, tids []TransactionID, concurrent bool) {
 	subject := r.Ref
 	if subject == nil && len(tids) > 0 {
@@ -164,6 +168,9 @@ func recordHistory(ctx context.Context, r Request, tids []TransactionID, concurr
 	}
 	if d, ok := r.Operation.(historyDescriber); ok {
 		e.Details = d.HistorySummary()
+	}
+	if a, ok := r.Operation.(historyAttrs); ok {
+		e.NodeID, e.Attrs = a.HistoryAttrs()
 	}
 	if concurrent {
 		e.Details = strings.TrimSpace(e.Details + " (concurrent write detected)")

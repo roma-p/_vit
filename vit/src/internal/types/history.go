@@ -13,4 +13,13 @@ type HistoryEntry struct {
 	Timestamp time.Time  `json:"timestamp"`
 
 	Details string `json:"details,omitempty"` // human readable description of each operation
+
+	NodeID string       `json:"node_id,omitempty"`
+	Attrs  []AttrChange `json:"attrs,omitempty"`
+}
+
+type AttrChange struct {
+	Key     string `json:"key"`
+	Value   string `json:"value,omitempty"`
+	Removed bool   `json:"removed,omitempty"`
 }

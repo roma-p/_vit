@@ -87,7 +87,7 @@ type operationAttr struct {
 	Set      map[string]string
 	Rm       []string
 
-	// filled at DBUpdate
+	// filled at Validate, then DBUpdate
 	node *types.TreeNode
 }
 
@@ -113,6 +113,7 @@ func (o *operationAttr) Validate(
 			return newAttrErr(fmt.Sprintf("no attribute %q on %s", k, o.TreePath), []any{"key", k, "path", o.TreePath})
 		}
 	}
+	o.node = node
 	return nil
 }
 
@@ -162,6 +163,17 @@ func (o *operationAttr) HistorySummary() string {
 		parts = append(parts, "-"+k)
 	}
 	return strings.Join(parts, " ")
+}
+
+func (o *operationAttr) HistoryAttrs() (string, []types.AttrChange) {
+	changes := make([]types.AttrChange, 0, len(o.Set)+len(o.Rm))
+	for _, k := range sortedKeys(o.Set) {
+		changes = append(changes, types.AttrChange{Key: k, Value: o.Set[k]})
+	}
+	for _, k := range o.Rm {
+		changes = append(changes, types.AttrChange{Key: k, Removed: true})
+	}
+	return o.node.ID, changes
 }
 
 // -- FILE LOCAL -------------------------------------------------------------

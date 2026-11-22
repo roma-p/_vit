@@ -153,6 +153,40 @@ func TestAttrSetIsRecordedInTheLog(t *testing.T) {
 	}
 }
 
+func TestAttrHistoryCarriesTheChanges(t *testing.T) {
+	env := newLocksEnv(t)
+	env.add("seq20/sh010")
+	path := env.abs("seq20/sh010")
+	env.must(env.client.AttrSet(ctx(), path, map[string]string{"task": "mod", "dcc": "maya"}))
+	env.must(env.client.AttrRm(ctx(), path, []string{"task"}))
+	nodeID := readTreeNode(t, env, "seq20/sh010").ID
+
+	res, err := env.client.Log(ctx(), env.repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[types.VitCommand][]types.AttrChange{
+		types.CommandAttrSet: {{Key: "dcc", Value: "maya"}, {Key: "task", Value: "mod"}},
+		types.CommandAttrRm:  {{Key: "task", Removed: true}},
+	}
+	for _, e := range res.Entries {
+		changes, ok := want[e.Command]
+		if !ok {
+			if e.NodeID != "" || e.Attrs != nil {
+				t.Errorf("%s carries attr changes: %s %+v", e.Command, e.NodeID, e.Attrs)
+			}
+			continue
+		}
+		if e.NodeID != nodeID || !slices.Equal(e.Attrs, changes) {
+			t.Errorf("%s: node %q attrs %+v, want %q %+v", e.Command, e.NodeID, e.Attrs, nodeID, changes)
+		}
+		delete(want, e.Command)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing entries: %v", want)
+	}
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
 
 func attrPairs(t *testing.T, env *locksEnv, path string) []string {
