@@ -69,6 +69,33 @@ var cmdDefinition = clicore.CmdTree{
 				},
 			},
 		},
+		"attr": {
+			Name:        "Attr",
+			Description: "Manage the attributes of an asset or a directory",
+			SubCommands: map[string]*clicore.CmdTree{
+				"set": {
+					Name:        "Set attributes",
+					Description: "Set attributes (key=value) on an asset or a directory",
+					Run:         runAttrSet,
+					ArgParser:   buildAttrSetArgParser(),
+					ResultType:  types.AttrResult{},
+				},
+				"rm": {
+					Name:        "Remove attributes",
+					Description: "Remove attributes from an asset or a directory",
+					Run:         runAttrRm,
+					ArgParser:   buildAttrRmArgParser(),
+					ResultType:  types.AttrResult{},
+				},
+				"ls": {
+					Name:        "List attributes",
+					Description: "List the attributes of an asset or a directory",
+					Run:         runAttrLs,
+					ArgParser:   buildAttrLsArgParser(),
+					ResultType:  types.AttrResult{},
+				},
+			},
+		},
 		"tag": {
 			Name:        "Tag",
 			Description: "Tag a given ref",
