@@ -10,40 +10,13 @@ import (
 	"vit/internal/types"
 )
 
-// TreeNode represent either a directory or an asset in the virtual vit tree.
-// Each one of them stored in a separate JSON file.
-//
-// If it represents an asset, it contains an uuid pointing to the AssetNode
-// where all the asset data lives.
-//
-// TreeNode only store the name of the dir/asset, not the all path. And
-// a ref to the parent UID. It does not refernce children.
-// This is done so moving a TreeNode can be done by modyfing a single JSON.
-type TreeNode struct {
-	ID       string       `json:"id"`        // uuid
-	Name     string       `json:"name"`      // name of the curr leaf, not full path
-	ParentID string       `json:"parent_id"` // uuid of parent.
-	Type     TreeNodeType `json:"type"`      // tree node describes both sub dir and assets
-
-	// only filled if Type == TreeNodeTypeAsset
-	AssetID string            `json:"asset_id,omitempty"`
-	Attr    map[string]string `json:"attr,omitempty"`
-}
-
-type TreeNodeType string
-
-const (
-	TreeNodeTypeDir   TreeNodeType = "dir"
-	TreeNodeTypeAsset TreeNodeType = "asset"
-)
-
-type JSONTreeNode = fsutil.JSONHandler[TreeNode]
+type JSONTreeNode = fsutil.JSONHandler[types.TreeNode]
 
 func (c *Client) createNewJSONTreeNode(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
 	repoPath, treePath, parentID string,
-	treeNodeType TreeNodeType,
+	treeNodeType types.TreeNodeType,
 ) (*JSONTreeNode, error) {
 	name := fsutil.BaseInternal(treePath)
 
@@ -57,7 +30,7 @@ func (c *Client) createNewJSONTreeNode(
 		opctx.JSONPool,
 		treeNodeJSONPath(repoPath, uid),
 		true,
-		&TreeNode{
+		&types.TreeNode{
 			ID:       uid,
 			Name:     name,
 			ParentID: parentID,
@@ -94,7 +67,7 @@ func (c *Client) resolveJSONTreeNode(
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil, false, newTreeNodeNotFoundError(repoPath, treeNodePath, path)
 	}
-	ret, err := fsutil.ResolveHandler[TreeNode](ctx, opctx.JSONPool, path, forWrite, nil)
+	ret, err := fsutil.ResolveHandler[types.TreeNode](ctx, opctx.JSONPool, path, forWrite, nil)
 	return ret, true, err
 }
 

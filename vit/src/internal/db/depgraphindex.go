@@ -59,7 +59,7 @@ func GetDependencies(
 		return nil, err
 	}
 	if entry, ok := idx.PathToID[ref.AssetPath]; ok &&
-		entry.Type == TreeNodeTypeAsset && entry.AssetUID != "" {
+		entry.Type == types.TreeNodeTypeAsset && entry.AssetUID != "" {
 		cache, err := readGraphCache(pathDepGraph(ref.RepoPath, entry.AssetUID))
 		if err != nil {
 			return nil, err

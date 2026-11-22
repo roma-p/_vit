@@ -50,10 +50,10 @@ func (c *Client) Ls(ctx context.Context, path string) (*types.LsResult, error) {
 		}
 		if entry, ok := idx.PathToID[pInt]; ok {
 			switch entry.Type {
-			case db.TreeNodeTypeAsset:
+			case types.TreeNodeTypeAsset:
 				out, err = lsAsset(ctx, opctx, dbClient, pInt)
 				return err
-			case db.TreeNodeTypeDir:
+			case types.TreeNodeTypeDir:
 				out = lsDir(idx, pInt)
 				return nil
 			}

@@ -307,7 +307,7 @@ func productTargetState(
 		return false, false, err
 	}
 	entry, ok := idx.PathToID[ref.AssetPath]
-	if !ok || entry.Type != db.TreeNodeTypeAsset || entry.AssetUID == "" {
+	if !ok || entry.Type != types.TreeNodeTypeAsset || entry.AssetUID == "" {
 		return false, false, nil
 	}
 	asset, err := dbClient.GetJSONAssetFromRef(ctx, opctx, ref, false)

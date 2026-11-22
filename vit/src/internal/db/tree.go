@@ -26,7 +26,7 @@ func (c *Client) GetJSONAssetFromRef(
 	}
 
 	treeNode := jsonTreeNode.Data
-	if treeNode.Type == TreeNodeTypeDir {
+	if treeNode.Type == types.TreeNodeTypeDir {
 		return nil, newErrTreeNodeIsDir(ref.RepoPath, ref.AssetPath)
 	}
 
@@ -54,7 +54,7 @@ func (c *Client) assetUIDFromIndex(
 	idx *TreeIndex,
 	ref *types.Ref,
 ) (string, error) {
-	if e, ok := idx.PathToID[ref.AssetPath]; ok && e.Type == TreeNodeTypeAsset && e.AssetUID != "" {
+	if e, ok := idx.PathToID[ref.AssetPath]; ok && e.Type == types.TreeNodeTypeAsset && e.AssetUID != "" {
 		return e.AssetUID, nil
 	}
 	asset, err := c.GetJSONAssetFromRef(ctx, opctx, ref, false)
@@ -131,7 +131,7 @@ func (c *Client) IsAssetPathAvailable(
 	closer := ""
 	for p, e := range treeIndex.PathToID {
 		if strings.HasPrefix(treePath, p+"/") {
-			if e.Type == TreeNodeTypeAsset {
+			if e.Type == types.TreeNodeTypeAsset {
 				return "", newErrTreePathNotAvailableWithinAsset(repoPath, treePath, p)
 			}
 			if len(p) > len(closer) {
@@ -185,7 +185,7 @@ func (c *Client) createAssetTreeNode(
 			repoRef.Path,
 			currDir,
 			parentID,
-			TreeNodeTypeDir,
+			types.TreeNodeTypeDir,
 		)
 		if err != nil {
 			return nil, err
@@ -199,7 +199,7 @@ func (c *Client) createAssetTreeNode(
 		repoRef.Path,
 		treePath,
 		parentID,
-		TreeNodeTypeAsset,
+		types.TreeNodeTypeAsset,
 	)
 	if err != nil {
 		return nil, err

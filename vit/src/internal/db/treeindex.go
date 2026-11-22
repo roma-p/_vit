@@ -8,6 +8,7 @@ import (
 
 	"vit/internal/fsutil"
 	"vit/internal/opcontext"
+	"vit/internal/types"
 )
 
 type TreeIndex struct {
@@ -16,9 +17,9 @@ type TreeIndex struct {
 }
 
 type TreeIndexEntry struct {
-	Data     string       `json:"data"`
-	Type     TreeNodeType `json:"type"`
-	AssetUID string       `json:"asset_uid,omitempty"` // empty for dir.
+	Data     string             `json:"data"`
+	Type     types.TreeNodeType `json:"type"`
+	AssetUID string             `json:"asset_uid,omitempty"` // empty for dir.
 }
 
 func NewTreeIndex() *TreeIndex {
@@ -28,7 +29,7 @@ func NewTreeIndex() *TreeIndex {
 	}
 }
 
-func (t *TreeIndex) AddPath(path, uid string, treeNodeType TreeNodeType) {
+func (t *TreeIndex) AddPath(path, uid string, treeNodeType types.TreeNodeType) {
 	path = fsutil.PathInternal(path)
 	t.IDToPath[uid] = TreeIndexEntry{Data: path, Type: treeNodeType}
 	t.PathToID[path] = TreeIndexEntry{Data: uid, Type: treeNodeType}
@@ -177,7 +178,7 @@ func buildTreeIndexAndCache(
 	// 2. Reading all of them and storing them in a map.
 	idToTreeNode := make(idToTreeNode)
 	for _, path := range treeNodePaths {
-		treenode, err := fsutil.ResolveHandler[TreeNode](ctx, opctx.JSONPool, path, false, nil)
+		treenode, err := fsutil.ResolveHandler[types.TreeNode](ctx, opctx.JSONPool, path, false, nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -212,7 +213,7 @@ func buildTreeIndexAndCache(
 
 	// 4. Building treeCache (asset list) from resolved paths
 	for id, treenode := range idToTreeNode {
-		if treenode.Type == TreeNodeTypeAsset {
+		if treenode.Type == types.TreeNodeTypeAsset {
 			if entry, ok := treeIndex.IDToPath[id]; ok {
 				treeCache.AssetPaths = append(treeCache.AssetPaths, entry.Data)
 			}
@@ -265,7 +266,7 @@ func reccBuildIDToPath(
 	return fsutil.PathInternal(parentPath, path), nil
 }
 
-type idToTreeNode = map[string]TreeNode
+type idToTreeNode = map[string]types.TreeNode
 
 func scanAllTreeNodeFiles(repoPath string) ([]string, error) {
 	treeDir := fsutil.PathOS(repoPath, ".vit", "tree")

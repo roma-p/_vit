@@ -51,7 +51,7 @@ func (c *Client) FuzzyCandidates(ctx context.Context, path, query, selected stri
 			if p == "" || p == "." {
 				continue
 			}
-			if entry.Type == db.TreeNodeTypeDir {
+			if entry.Type == types.TreeNodeTypeDir {
 				p += "/"
 			}
 			out = append(out, p)
