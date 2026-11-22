@@ -44,6 +44,14 @@ func TestOperationLocks(t *testing.T) {
 			want: []string{"TreeChanged props/new"},
 		},
 		{
+			name: "attr",
+			path: env.branch("shot/anim"),
+			op: func(opctx *opcontext.OperationContext, _ *db.Client, _ *types.Ref) transaction.Operation {
+				return &operationAttr{RepoRef: opctx.Repo(), TreePath: "shot", Set: map[string]string{"seq": "1"}}
+			},
+			want: []string{"Attr shot"},
+		},
+		{
 			name: "snapshot with a product",
 			path: env.branch("shot/anim"),
 			op: func(_ *opcontext.OperationContext, _ *db.Client, ref *types.Ref) transaction.Operation {
