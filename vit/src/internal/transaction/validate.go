@@ -11,10 +11,11 @@ import (
 
 // scanForConflicts checks every tid against the in-progress transactions of its OWN
 // repo (tids are grouped by repo, so a multi-repo transaction is validated across
-// all involved repos). Conflict rules, unchanged:
-//   - a TreeChanged tid conflicts with ANY overlapping transaction;
-//   - an edit (Commit/Branch/Tag) conflicts with an overlapping TreeChanged, or
-//     with another edit on the SAME object.
+// all involved repos). Conflict rules:
+//   - an Attr tid conflicts with a TreeChanged on its node or an ancestor, never
+//     with one on a descendant;
+//   - a TreeChanged tid conflicts with ANY other overlapping transaction;
+//   - an edit (Commit/Branch/Tag/Attr) conflicts with another edit on the SAME object.
 func scanForConflicts(tids []TransactionID) error {
 	byRepo := map[string][]TransactionID{}
 	for i := range tids {
@@ -30,13 +31,7 @@ func scanForConflicts(tids []TransactionID) error {
 		for _, t := range group {
 			for i := range existing {
 				e := &existing[i]
-				if e.Ref == nil || !pathsOverlap(t.Ref.AssetPath, e.Ref.AssetPath) {
-					continue
-				}
-				if t.Operation == TransactionTreeChanged || e.Operation == TransactionTreeChanged {
-					return newConflictErrorFromRef(t.Ref, e)
-				}
-				if t.Ref.AssetPath == e.Ref.AssetPath && t.Ref.ObjectPath() == e.Ref.ObjectPath() {
+				if e.Ref != nil && checkConflict(t, *e) {
 					return newConflictErrorFromRef(t.Ref, e)
 				}
 			}
@@ -46,6 +41,22 @@ func scanForConflicts(tids []TransactionID) error {
 }
 
 // -- FILE LOCAL -------------------------------------------------------------
+
+func checkConflict(t, e TransactionID) bool {
+	if !pathsOverlap(t.Ref.AssetPath, e.Ref.AssetPath) {
+		return false
+	}
+	if t.Operation == TransactionAttr && e.Operation == TransactionTreeChanged {
+		return isAncestorOrSelf(e.Ref.AssetPath, t.Ref.AssetPath)
+	}
+	if e.Operation == TransactionAttr && t.Operation == TransactionTreeChanged {
+		return isAncestorOrSelf(t.Ref.AssetPath, e.Ref.AssetPath)
+	}
+	if t.Operation == TransactionTreeChanged || e.Operation == TransactionTreeChanged {
+		return true
+	}
+	return t.Ref.AssetPath == e.Ref.AssetPath && t.Ref.ObjectPath() == e.Ref.ObjectPath()
+}
 
 func scanExistingTransactions(repoPath string) ([]TransactionID, error) {
 	transactionDir := fsutil.PathOS(repoPath, ".vit", "transaction")
@@ -84,6 +95,10 @@ func pathsOverlap(a, b string) bool {
 		return true
 	}
 	return strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
+}
+
+func isAncestorOrSelf(anc, p string) bool {
+	return anc == p || strings.HasPrefix(p, anc+"/")
 }
 
 func newConflictErrorFromRef(ref *types.Ref, existing *TransactionID) error {

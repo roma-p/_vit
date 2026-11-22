@@ -20,6 +20,7 @@ const (
 	TransactionCommit      TransactionOperation = "Commit"
 	TransactionBranch      TransactionOperation = "Branch"
 	TransactionTag         TransactionOperation = "Tag"
+	TransactionAttr        TransactionOperation = "Attr"
 )
 
 func (t *TransactionID) Encode() string {
