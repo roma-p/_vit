@@ -31,6 +31,55 @@ func (c *Client) AttrSet(ctx context.Context, path string, values map[string]str
 	return c.runAttr(ctx, path, types.CommandAttrSet, values, nil)
 }
 
+func (c *Client) AttrRm(ctx context.Context, path string, keys []string) (*types.AttrResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, types.NewCancelledError(err)
+	}
+	c.logger.Info("AttrRm", "path", path, "keys", keys)
+
+	if len(keys) == 0 {
+		return nil, newAttrErr("no attribute to remove", nil)
+	}
+	for _, k := range keys {
+		if err := types.CheckAttrKey(k); err != nil {
+			return nil, err
+		}
+	}
+	return c.runAttr(ctx, path, types.CommandAttrRm, nil, keys)
+}
+
+func (c *Client) AttrLs(ctx context.Context, path string) (*types.AttrResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, types.NewCancelledError(err)
+	}
+	c.logger.Info("AttrLs", "path", path)
+
+	var out *types.AttrResult
+	err := opcontext.WithOperationContext(ctx, path, func(opctx *opcontext.OperationContext, p string) error {
+		dbClient, err := db.NewClient(ctx, opctx, c.logger)
+		if err != nil {
+			return err
+		}
+		defer dbClient.Close()
+
+		treePath, err := dbClient.ResolveAssetPath(ctx, opctx, opctx.RepoPath(), p)
+		if err != nil {
+			return err
+		}
+
+		node, err := dbClient.GetTreeNode(ctx, opctx, opctx.RepoPath(), treePath)
+		if err != nil {
+			return err
+		}
+		out = newAttrResult(treePath, node)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 type operationAttr struct {
 	// input given at init
 	RepoRef  *types.RepoRef
