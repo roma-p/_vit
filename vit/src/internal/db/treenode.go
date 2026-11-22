@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"vit/internal/fsutil"
 	"vit/internal/opcontext"
@@ -30,6 +31,22 @@ func (c *Client) GetTreeNodeForWrite(
 	repoPath, treePath string,
 ) (*JSONTreeNode, error) {
 	return c.getTreeNode(ctx, opctx, repoPath, treePath, true)
+}
+
+func (c *Client) ResolveAssetPath(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	repoPath, path string,
+) (string, error) {
+	idx, err := c.GetTreeIndex(ctx, opctx, repoPath)
+	if err != nil {
+		return "", err
+	}
+	p := fsutil.PathInternal(path)
+	if e, ok := idx.PathToID[p]; ok && e.Type == types.TreeNodeTypeAsset {
+		return p, nil
+	}
+	return "", newErrNotAnAssetPath(idx, repoPath, p)
 }
 
 func (c *Client) createNewJSONTreeNode(
@@ -128,5 +145,26 @@ func newErrNoTreeNode(repoPath, treePath string) error {
 		types.ErrDBTreeNode,
 		[]string{fmt.Sprintf("no asset or directory at: %s", fullPath)},
 		[]any{"error", "NoTreeNode", "repoPath", repoPath, "treeNode", treePath},
+	)
+}
+
+func newErrNotAnAssetPath(idx *TreeIndex, repoPath, p string) error {
+	fullPath := fsutil.PathOS(repoPath, p)
+	msg := fmt.Sprintf("no asset at: %s", fullPath)
+	if e, ok := idx.PathToID[p]; ok && e.Type == types.TreeNodeTypeDir {
+		msg = fmt.Sprintf("%s is a directory, not an asset", fullPath)
+	} else {
+		cur, _, _ := strings.Cut(p, "@")
+		for ; cur != "" && cur != "."; cur = fsutil.DirInternal(cur) {
+			if e, ok := idx.PathToID[cur]; ok && e.Type == types.TreeNodeTypeAsset {
+				msg = fmt.Sprintf("%s is not an asset path, give the asset itself: %s", fullPath, fsutil.PathOS(repoPath, cur))
+				break
+			}
+		}
+	}
+	return types.NewVitError(
+		types.ErrDBTreeNode,
+		[]string{msg},
+		[]any{"error", "NotAnAssetPath", "repoPath", repoPath, "path", p},
 	)
 }
