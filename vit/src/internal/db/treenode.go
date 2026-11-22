@@ -12,6 +12,26 @@ import (
 
 type JSONTreeNode = fsutil.JSONHandler[types.TreeNode]
 
+func (c *Client) GetTreeNode(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	repoPath, treePath string,
+) (*types.TreeNode, error) {
+	node, err := c.getTreeNode(ctx, opctx, repoPath, treePath, false)
+	if err != nil {
+		return nil, err
+	}
+	return node.Data, nil
+}
+
+func (c *Client) GetTreeNodeForWrite(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	repoPath, treePath string,
+) (*JSONTreeNode, error) {
+	return c.getTreeNode(ctx, opctx, repoPath, treePath, true)
+}
+
 func (c *Client) createNewJSONTreeNode(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
@@ -73,6 +93,22 @@ func (c *Client) resolveJSONTreeNode(
 
 // -- FILE LOCAL -------------------------------------------------------------
 
+func (c *Client) getTreeNode(
+	ctx context.Context,
+	opctx *opcontext.OperationContext,
+	repoPath, treePath string,
+	forWrite bool,
+) (*JSONTreeNode, error) {
+	node, found, err := c.resolveJSONTreeNode(ctx, opctx, repoPath, treePath, forWrite)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, newErrNoTreeNode(repoPath, treePath)
+	}
+	return node, nil
+}
+
 func treeNodeJSONPath(repoPath, uid string) string {
 	return fsutil.PathOS(repoPath, ".vit", "tree", uid[:2], uid[2:]+".json")
 }
@@ -83,5 +119,14 @@ func newTreeNodeNotFoundError(repoPath, treePath, expectedPath string) error {
 		types.ErrDBTreeNode,
 		[]string{fmt.Sprintf("tree node not found for: %s at %s", fullPath, expectedPath)},
 		[]any{"repoPath", repoPath, "treeNode", treePath, "treeNodePath", expectedPath},
+	)
+}
+
+func newErrNoTreeNode(repoPath, treePath string) error {
+	fullPath := fsutil.PathOS(repoPath, treePath)
+	return types.NewVitError(
+		types.ErrDBTreeNode,
+		[]string{fmt.Sprintf("no asset or directory at: %s", fullPath)},
+		[]any{"error", "NoTreeNode", "repoPath", repoPath, "treeNode", treePath},
 	)
 }
