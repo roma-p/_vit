@@ -66,6 +66,27 @@ func (r *HistoryLogResult) ToStringSlice() []string {
 	return out
 }
 
+// AttrResult lists the live attributes of a tree node, sorted by key -------
+type AttrResult struct {
+	Path  string      `json:"path"`
+	Attrs []AttrEntry `json:"attrs"`
+}
+
+type AttrEntry struct {
+	Key   string    `json:"key"`
+	Value string    `json:"value"`
+	User  string    `json:"user"`
+	TS    time.Time `json:"ts"`
+}
+
+func (r *AttrResult) ToStringSlice() []string {
+	out := make([]string, 0, len(r.Attrs))
+	for _, a := range r.Attrs {
+		out = append(out, fmt.Sprintf("%s=%s  %s  %s", a.Key, a.Value, a.User, a.TS.Local().Format("2006-01-02 15:04")))
+	}
+	return out
+}
+
 // LsResult ------------------------------------------------------------------
 type LsResult struct {
 	Kind        string        `json:"kind"` // "dir" | "asset" | "object"
