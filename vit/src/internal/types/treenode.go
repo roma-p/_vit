@@ -72,7 +72,7 @@ func (n *TreeNode) LiveAttrs() map[string]AttrValue {
 }
 
 func CheckAttrKey(key string) error {
-	if key == "" {
+	if key == "" || key[0] == '_' || key[0] == '.' || key[0] == '-' {
 		return newInvalidAttrKeyErr(key)
 	}
 	for _, r := range key {
@@ -98,13 +98,13 @@ func (n *TreeNode) putAttr(key string, v AttrValue) {
 }
 
 func isAttrKeyRune(r rune) bool {
-	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == '-'
+	return r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == '-'
 }
 
 func newInvalidAttrKeyErr(key string) error {
 	return NewVitError(
 		ErrAttr,
-		[]string{fmt.Sprintf("invalid attribute key %q: use letters, digits, '_', '.', '-'", key)},
+		[]string{fmt.Sprintf("invalid attribute key %q: use lowercase letters, digits, '_', '.', '-', starting with a letter or a digit", key)},
 		[]any{"key", key},
 	)
 }

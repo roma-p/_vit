@@ -67,12 +67,12 @@ func TestSetAttrRevivesARemovedKey(t *testing.T) {
 }
 
 func TestCheckAttrKey(t *testing.T) {
-	for _, key := range []string{"task", "frame_range", "dcc.version", "v-2", "Seq20"} {
+	for _, key := range []string{"task", "frame_range", "dcc.version", "v-2", "seq20", "2d"} {
 		if err := CheckAttrKey(key); err != nil {
 			t.Errorf("%q rejected: %v", key, err)
 		}
 	}
-	for _, key := range []string{"", "a=b", "a/b", "a b", "tâche"} {
+	for _, key := range []string{"", "a=b", "a/b", "a b", "tâche", "Seq20", "TASK", ".", "..", "_task", "-v"} {
 		if err := CheckAttrKey(key); !IsErrCode(err, ErrAttr) {
 			t.Errorf("%q: want %s, got %v", key, ErrAttr, err)
 		}
