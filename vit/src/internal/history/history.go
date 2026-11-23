@@ -97,7 +97,110 @@ func ReadAllSites(repoPath string) ([]types.HistoryEntry, error) {
 	return all, nil
 }
 
+type Cursor map[string]Position
+
+type Position struct {
+	Segment string `json:"segment"`
+	Line    int    `json:"line"`
+}
+
+func ReadSince(repoPath string, c Cursor) ([]types.HistoryEntry, Cursor, error) {
+	var out []types.HistoryEntry
+	next, err := walkStreams(repoPath, c, func(site string, segs []string, siteDir string) (Position, error) {
+		pos := c[site]
+		for _, seg := range segs {
+			if seg < pos.Segment {
+				continue
+			}
+			lines, err := completeLines(fsutil.PathOS(siteDir, seg))
+			if err != nil {
+				return Position{}, err
+			}
+			start := 0
+			if seg == pos.Segment {
+				start = min(pos.Line, len(lines))
+			}
+			out = append(out, parseLines(lines[start:])...)
+			pos = Position{Segment: seg, Line: len(lines)}
+		}
+		return pos, nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return out, next, nil
+}
+
+func Head(repoPath string) (Cursor, error) {
+	return walkStreams(repoPath, nil, func(_ string, segs []string, siteDir string) (Position, error) {
+		last := segs[len(segs)-1]
+		lines, err := completeLines(fsutil.PathOS(siteDir, last))
+		return Position{Segment: last, Line: len(lines)}, err
+	})
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
+
+func walkStreams(
+	repoPath string,
+	c Cursor,
+	visit func(site string, segs []string, siteDir string) (Position, error),
+) (Cursor, error) {
+	base := fsutil.PathOS(repoPath, ".vit", dirName)
+	sites, err := os.ReadDir(base)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	next := Cursor{}
+	for site, pos := range c {
+		next[site] = pos
+	}
+	for _, s := range sites {
+		if !s.IsDir() {
+			continue
+		}
+		siteDir := fsutil.PathOS(base, s.Name())
+		segs, err := listSegments(siteDir)
+		if err != nil {
+			return nil, err
+		}
+		if len(segs) == 0 {
+			continue
+		}
+		pos, err := visit(s.Name(), segs, siteDir)
+		if err != nil {
+			return nil, err
+		}
+		next[s.Name()] = pos
+	}
+	return next, nil
+}
+
+func completeLines(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	all := strings.Split(string(data), "\n")
+	var out []string
+	for _, line := range all[:len(all)-1] {
+		if strings.TrimSpace(line) != "" {
+			out = append(out, line)
+		}
+	}
+	return out, nil
+}
+
+func parseLines(lines []string) []types.HistoryEntry {
+	var out []types.HistoryEntry
+	for _, line := range lines {
+		var e types.HistoryEntry
+		if err := json.Unmarshal([]byte(line), &e); err == nil {
+			out = append(out, e)
+		}
+	}
+	return out
+}
 
 func streamDir(repoPath, siteUID string) string {
 	return fsutil.PathOS(repoPath, ".vit", dirName, siteKey(siteUID))
@@ -195,16 +298,5 @@ func readSegment(path string) ([]types.HistoryEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []types.HistoryEntry
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		var e types.HistoryEntry
-		if err := json.Unmarshal([]byte(line), &e); err != nil {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out, nil
+	return parseLines(strings.Split(string(data), "\n")), nil
 }
