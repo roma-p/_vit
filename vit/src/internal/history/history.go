@@ -97,6 +97,9 @@ func ReadAllSites(repoPath string) ([]types.HistoryEntry, error) {
 	return all, nil
 }
 
+// Cursor is a cross site position on a history.
+// <site> : cursor position on the history on that site.
+// (segment id, line number on that segment)
 type Cursor map[string]Position
 
 type Position struct {
