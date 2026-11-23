@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"slices"
+	"strings"
 
 	"vit/internal/fsutil"
 	"vit/internal/history"
@@ -19,9 +20,9 @@ type AttrIndex struct {
 	shards   map[string]*attrShard
 }
 
-// attrShard holds all assets uiids which have a common attributes, sharded by their other attribute.
-// Cursor : last up to date.
-// Values format is map <other key>: [<list of all uids which have this parm.>]
+// attrShard is the inverted index of one attribute key.
+// Cursor: the history position the shard is up to date at.
+// Values: value of that key -> sorted uids of the assets having it.
 type attrShard struct {
 	Cursor history.Cursor      `json:"cursor"`
 	Values map[string][]string `json:"values"`
@@ -112,11 +113,31 @@ func buildAttrIndex(ctx context.Context, repoPath string) (*attrIndexBuild, erro
 			return nil, newErrDBInternal(err, "failed to write attribute shard "+k)
 		}
 	}
+	if err := removeStaleAttrShards(repoPath, shards); err != nil {
+		return nil, err
+	}
 	build := &attrIndexBuild{Cursor: cursor}
 	if err := fsutil.NewJSONHandlerFromPath(pathAttrIndexBuild(repoPath), build).Write(); err != nil {
 		return nil, newErrDBInternal(err, "failed to write the attribute index build")
 	}
 	return build, nil
+}
+
+func removeStaleAttrShards(repoPath string, keep map[string]*attrShard) error {
+	entries, err := os.ReadDir(pathAttrIndex(repoPath))
+	if err != nil && !os.IsNotExist(err) {
+		return newErrDBInternal(err, "failed to list the attribute index")
+	}
+	for _, e := range entries {
+		key, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || keep[key] != nil || types.CheckAttrKey(key) != nil {
+			continue
+		}
+		if err := os.Remove(pathAttrShard(repoPath, key)); err != nil && !os.IsNotExist(err) {
+			return newErrDBInternal(err, "failed to remove attribute shard "+key)
+		}
+	}
+	return nil
 }
 
 func readAttrIndexFile[T any](path string) (*T, error) {

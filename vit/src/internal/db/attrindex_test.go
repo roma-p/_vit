@@ -89,6 +89,24 @@ func TestAttrIndexIsNotRebuiltOnceBuilt(t *testing.T) {
 	}
 }
 
+func TestAttrIndexRebuildRemovesStaleShards(t *testing.T) {
+	repo := t.TempDir()
+	writeNode(t, repo, "u1", types.TreeNodeTypeAsset, map[string]string{"task": "mod"})
+	stale := pathAttrShard(repo, "old")
+	if err := fsutil.NewJSONHandlerFromPath(stale, &attrShard{}).Write(); err != nil {
+		t.Fatal(err)
+	}
+
+	mustShards(t, repo, "task")
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale shard kept: %v", err)
+	}
+	if _, err := os.Stat(pathAttrIndexBuild(repo)); err != nil {
+		t.Fatalf("build marker: %v", err)
+	}
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
 
 func writeNode(t *testing.T, repo, id string, typ types.TreeNodeType, attrs map[string]string) *types.TreeNode {
