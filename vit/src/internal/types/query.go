@@ -4,7 +4,6 @@ type QueryRequest struct {
 	With     []string          `json:"with,omitempty"`
 	Without  []string          `json:"without,omitempty"`
 	Eq       map[string]string `json:"eq,omitempty"`
-	Under    string            `json:"under,omitempty"`
 	Fetch    []string          `json:"fetch,omitempty"`
 	Asset    bool              `json:"asset,omitempty"`
 	Distinct bool              `json:"distinct,omitempty"`

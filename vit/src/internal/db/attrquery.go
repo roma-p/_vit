@@ -22,7 +22,7 @@ func (c *Client) GetAttrIndex(repoPath string) *AttrIndex {
 func (c *Client) Query(
 	ctx context.Context,
 	opctx *opcontext.OperationContext,
-	repoPath string,
+	repoPath, under string,
 	req types.QueryRequest,
 ) (*types.QueryResult, error) {
 	keys := slices.Concat(req.With, req.Without, req.Fetch, slices.Collect(maps.Keys(req.Eq)))
@@ -34,13 +34,13 @@ func (c *Client) Query(
 	if err != nil {
 		return nil, err
 	}
-	return evaluateQuery(req, shards, tree), nil
+	return evaluateQuery(req, under, shards, tree), nil
 }
 
 // -- FILE LOCAL -------------------------------------------------------------
 
-func evaluateQuery(req types.QueryRequest, shards map[string]*attrShard, tree *TreeIndex) *types.QueryResult {
-	uids := matchingUIDs(req, shards, tree)
+func evaluateQuery(req types.QueryRequest, under string, shards map[string]*attrShard, tree *TreeIndex) *types.QueryResult {
+	uids := matchingUIDs(req, under, shards, tree)
 	if req.Set {
 		out := &types.QueryResult{Sets: make(map[string][]string, len(req.Fetch))}
 		for _, k := range req.Fetch {
@@ -55,7 +55,7 @@ func evaluateQuery(req types.QueryRequest, shards map[string]*attrShard, tree *T
 	return &types.QueryResult{Rows: rows}
 }
 
-func matchingUIDs(req types.QueryRequest, shards map[string]*attrShard, tree *TreeIndex) []string {
+func matchingUIDs(req types.QueryRequest, under string, shards map[string]*attrShard, tree *TreeIndex) []string {
 	var sets [][]string
 	for k, v := range req.Eq {
 		sets = append(sets, shards[k].Values[v])
@@ -83,7 +83,7 @@ func matchingUIDs(req types.QueryRequest, shards map[string]*attrShard, tree *Tr
 	}
 	out = slices.DeleteFunc(out, func(uid string) bool {
 		e, ok := tree.IDToPath[uid]
-		return !ok || !isUnder(e.Data, req.Under) || slices.ContainsFunc(without, func(s []string) bool { return contains(s, uid) })
+		return !ok || !isUnder(e.Data, under) || slices.ContainsFunc(without, func(s []string) bool { return contains(s, uid) })
 	})
 	slices.SortFunc(out, func(a, b string) int { return strings.Compare(tree.IDToPath[a].Data, tree.IDToPath[b].Data) })
 	return out

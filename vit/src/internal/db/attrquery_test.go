@@ -11,25 +11,26 @@ import (
 
 func TestQueryFilters(t *testing.T) {
 	cases := []struct {
-		name string
-		req  types.QueryRequest
-		want []string
+		name  string
+		req   types.QueryRequest
+		under string
+		want  []string
 	}{
-		{"eq", types.QueryRequest{Eq: map[string]string{"seq": "20"}}, []string{"s20/sh010/lgt", "s20/sh010/mod", "s20/sh020/mod"}},
-		{"two eq", types.QueryRequest{Eq: map[string]string{"seq": "20", "task": "mod"}}, []string{"s20/sh010/mod", "s20/sh020/mod"}},
-		{"unknown value", types.QueryRequest{Eq: map[string]string{"seq": "99"}}, nil},
-		{"with", types.QueryRequest{With: []string{"shot"}}, []string{"s20/sh010/lgt", "s20/sh010/mod", "s20/sh020/mod", "s30/sh010/mod"}},
-		{"with without", types.QueryRequest{With: []string{"task"}, Without: []string{"shot"}}, []string{"s30/env"}},
-		{"without only", types.QueryRequest{Without: []string{"task"}}, []string{"lib/tree"}},
-		{"under", types.QueryRequest{Under: "s20/sh010"}, []string{"s20/sh010/lgt", "s20/sh010/mod"}},
-		{"under slash", types.QueryRequest{With: []string{"task"}, Under: "s30/"}, []string{"s30/env", "s30/sh010/mod"}},
-		{"under is not a prefix", types.QueryRequest{With: []string{"task"}, Under: "s2"}, nil},
-		{"under an asset", types.QueryRequest{Under: "s30/env"}, []string{"s30/env"}},
+		{"eq", types.QueryRequest{Eq: map[string]string{"seq": "20"}}, "", []string{"s20/sh010/lgt", "s20/sh010/mod", "s20/sh020/mod"}},
+		{"two eq", types.QueryRequest{Eq: map[string]string{"seq": "20", "task": "mod"}}, "", []string{"s20/sh010/mod", "s20/sh020/mod"}},
+		{"unknown value", types.QueryRequest{Eq: map[string]string{"seq": "99"}}, "", nil},
+		{"with", types.QueryRequest{With: []string{"shot"}}, "", []string{"s20/sh010/lgt", "s20/sh010/mod", "s20/sh020/mod", "s30/sh010/mod"}},
+		{"with without", types.QueryRequest{With: []string{"task"}, Without: []string{"shot"}}, "", []string{"s30/env"}},
+		{"without only", types.QueryRequest{Without: []string{"task"}}, "", []string{"lib/tree"}},
+		{"under", types.QueryRequest{}, "s20/sh010", []string{"s20/sh010/lgt", "s20/sh010/mod"}},
+		{"under slash", types.QueryRequest{With: []string{"task"}}, "s30/", []string{"s30/env", "s30/sh010/mod"}},
+		{"under is not a prefix", types.QueryRequest{With: []string{"task"}}, "s2", nil},
+		{"under an asset", types.QueryRequest{}, "s30/env", []string{"s30/env"}},
 	}
 	for _, c := range cases {
 		c.req.Asset = true
 		var got []string
-		for _, r := range evaluateQuery(c.req, queryShards(), queryTree()).Rows {
+		for _, r := range evaluateQuery(c.req, c.under, queryShards(), queryTree()).Rows {
 			got = append(got, r.Asset)
 		}
 		if !slices.Equal(got, c.want) {
@@ -41,7 +42,7 @@ func TestQueryFilters(t *testing.T) {
 func TestQueryFetch(t *testing.T) {
 	req := types.QueryRequest{Eq: map[string]string{"shot": "010"}, Fetch: []string{"seq", "task"}}
 
-	got := evaluateQuery(req, queryShards(), queryTree()).Rows
+	got := evaluateQuery(req, "", queryShards(), queryTree()).Rows
 	want := []types.QueryRow{
 		{Attrs: map[string]string{"seq": "20", "task": "lgt"}},
 		{Attrs: map[string]string{"seq": "20", "task": "mod"}},
@@ -52,7 +53,7 @@ func TestQueryFetch(t *testing.T) {
 	}
 
 	req.Asset = true
-	if got := evaluateQuery(req, queryShards(), queryTree()).Rows; got[2].Asset != "s30/sh010/mod" || got[2].Attrs["task"] != "mod" {
+	if got := evaluateQuery(req, "", queryShards(), queryTree()).Rows; got[2].Asset != "s30/sh010/mod" || got[2].Attrs["task"] != "mod" {
 		t.Fatalf("with asset: %+v", got)
 	}
 }
@@ -60,7 +61,7 @@ func TestQueryFetch(t *testing.T) {
 func TestQueryDistinct(t *testing.T) {
 	req := types.QueryRequest{With: []string{"task"}, Fetch: []string{"task", "seq"}, Distinct: true}
 
-	got := evaluateQuery(req, queryShards(), queryTree()).Rows
+	got := evaluateQuery(req, "", queryShards(), queryTree()).Rows
 	want := []types.QueryRow{
 		{Attrs: map[string]string{"task": "lgt", "seq": "20"}},
 		{Attrs: map[string]string{"task": "mod", "seq": "20"}},
@@ -71,7 +72,7 @@ func TestQueryDistinct(t *testing.T) {
 	}
 
 	req.Fetch = []string{"task"}
-	got = evaluateQuery(req, queryShards(), queryTree()).Rows
+	got = evaluateQuery(req, "", queryShards(), queryTree()).Rows
 	want = []types.QueryRow{{Attrs: map[string]string{"task": "lay"}}, {Attrs: map[string]string{"task": "lgt"}}, {Attrs: map[string]string{"task": "mod"}}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("one key: got %+v", got)
@@ -81,7 +82,7 @@ func TestQueryDistinct(t *testing.T) {
 func TestQuerySet(t *testing.T) {
 	req := types.QueryRequest{Eq: map[string]string{"seq": "20"}, Fetch: []string{"shot", "task"}, Set: true}
 
-	got := evaluateQuery(req, queryShards(), queryTree())
+	got := evaluateQuery(req, "", queryShards(), queryTree())
 	want := map[string][]string{"shot": {"010", "020"}, "task": {"lgt", "mod"}}
 	if got.Rows != nil || !maps.EqualFunc(got.Sets, want, slices.Equal) {
 		t.Fatalf("got %+v", got)
