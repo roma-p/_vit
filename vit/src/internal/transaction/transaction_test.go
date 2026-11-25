@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -249,15 +250,20 @@ func TestAttrEntryIsRecordedBeforeTheWrite(t *testing.T) {
 	doc := filepath.Join(repo, "asset.json")
 	writeDoc(t, doc, "before")
 	var atWrite []types.HistoryEntry
+	var tidsAtWrite []string
 	op := &attrDocOperation{&docOperation{path: doc, value: "after", duringWrite: func() {
 		atWrite, _ = history.ReadAll(repo, "")
+		tidsAtWrite = tidFiles(t, repo)
 	}}}
 
 	if err := runDoc(t, repo, op); err != nil {
 		t.Fatal(err)
 	}
-	if len(atWrite) != 1 || atWrite[0].NodeID != "uid" {
+	if len(atWrite) != 1 || atWrite[0].NodeID != "uid" || atWrite[0].Tx == "" {
 		t.Fatalf("history at write: %+v", atWrite)
+	}
+	if !slices.ContainsFunc(tidsAtWrite, func(f string) bool { return types.TransactionFileToken(filepath.Base(f)) == atWrite[0].Tx }) {
+		t.Fatalf("entry token %q matches no live transaction file: %v", atWrite[0].Tx, tidsAtWrite)
 	}
 	if entries, _ := history.ReadAll(repo, ""); len(entries) != 1 {
 		t.Fatalf("history after: %+v", entries)

@@ -85,14 +85,28 @@ func (i *AttrIndex) get(ctx context.Context, keys []string) (map[string]*attrSha
 
 func (i *AttrIndex) refreshShardsFromHistory(shards map[string]*attrShard) error {
 	// 1. read the history once from the oldest cursor.
-	entries, next, err := history.ReadSince(i.repoPath, oldestCursor(shards))
+	located, next, err := history.ReadSinceAt(i.repoPath, oldestCursor(shards))
 	if err != nil {
 		return newErrDBInternal(err, "failed to read the history")
 	}
 
-	// 2. collect each touched uid with the asked keys it touches
+	// 2. keep the cursor before an entry whose transaction still runs: its node may not be written yet.
+	live, err := liveTransactionTokens(i.repoPath)
+	if err != nil {
+		return err
+	}
+	held := map[string]bool{}
+	for _, l := range located {
+		if l.Entry.Tx != "" && live[l.Entry.Tx] && !held[l.Site] {
+			held[l.Site] = true
+			next[l.Site] = l.At
+		}
+	}
+
+	// 3. collect each touched uid with the asked keys it touches
 	touched := map[string][]string{}
-	for _, e := range entries {
+	for _, l := range located {
+		e := l.Entry
 		if len(e.NodeID) < 2 {
 			continue
 		}
@@ -103,7 +117,7 @@ func (i *AttrIndex) refreshShardsFromHistory(shards map[string]*attrShard) error
 		}
 	}
 
-	// 3. read each relevant tree node
+	// 4. read each relevant tree node
 	for uid, keys := range touched {
 		node, err := readAttrIndexFile[types.TreeNode](treeNodeJSONPath(i.repoPath, uid))
 		if err != nil {
@@ -116,7 +130,7 @@ func (i *AttrIndex) refreshShardsFromHistory(shards map[string]*attrShard) error
 			live = node.LiveAttrs()
 		}
 
-		// 4. update with live value.
+		// 5. update with live value.
 		for _, k := range keys {
 			shards[k].drop(uid)
 			if v, ok := live[k]; ok {
@@ -125,7 +139,7 @@ func (i *AttrIndex) refreshShardsFromHistory(shards map[string]*attrShard) error
 		}
 	}
 
-	// 5. move every asked shard to the same cursor.
+	// 6. move every asked shard to the same cursor.
 	for k, s := range shards {
 		if maps.Equal(s.Cursor, next) {
 			continue
@@ -134,6 +148,20 @@ func (i *AttrIndex) refreshShardsFromHistory(shards map[string]*attrShard) error
 		storeAttrShard(i.repoPath, k, s)
 	}
 	return nil
+}
+
+func liveTransactionTokens(repoPath string) (map[string]bool, error) {
+	entries, err := os.ReadDir(fsutil.PathOS(repoPath, ".vit", "transaction"))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, newErrDBInternal(err, "failed to list the transactions")
+	}
+	live := map[string]bool{}
+	for _, e := range entries {
+		if token := types.TransactionFileToken(e.Name()); token != "" {
+			live[token] = true
+		}
+	}
+	return live, nil
 }
 
 func (s *attrShard) insert(value, uid string) {

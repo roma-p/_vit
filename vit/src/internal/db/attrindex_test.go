@@ -270,6 +270,36 @@ func TestAttrIndexInTheOldFormatIsRebuilt(t *testing.T) {
 	}
 }
 
+func TestAttrIndexRefreshWaitsForTheWriteOfALiveTransaction(t *testing.T) {
+	repo := t.TempDir()
+	writeNode(t, repo, "u1", types.TreeNodeTypeAsset, map[string]string{"task": "anim"})
+	mustShards(t, repo, "task")
+	tidFile := fsutil.PathOS(repo, ".vit", "transaction", "u1---Attr"+types.TransactionTokenSeparator+"tok1")
+	if err := os.MkdirAll(fsutil.DirOS(tidFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tidFile, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := attrEntry("u1", "task")
+	e.Tx = "tok1"
+	if err := history.Record(context.Background(), repo, "", e); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := mustShards(t, repo, "task")["task"].Values; !maps.EqualFunc(got, map[string][]string{"anim": {"u1"}}, slices.Equal) {
+		t.Fatalf("before the write: %v", got)
+	}
+	writeNode(t, repo, "u1", types.TreeNodeTypeAsset, map[string]string{"task": "mod"})
+	if err := os.Remove(tidFile); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := mustShards(t, repo, "task")["task"].Values; !maps.EqualFunc(got, map[string][]string{"mod": {"u1"}}, slices.Equal) {
+		t.Fatalf("after the write: %v", got)
+	}
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
 
 func writeNode(t *testing.T, repo, id string, typ types.TreeNodeType, attrs map[string]string) *types.TreeNode {

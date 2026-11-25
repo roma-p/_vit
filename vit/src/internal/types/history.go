@@ -1,6 +1,9 @@
 package types
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type HistoryEntry struct {
 	UID       string     `json:"uid"`
@@ -18,6 +21,17 @@ type HistoryEntry struct {
 	Attrs  []AttrChange `json:"attrs,omitempty"`
 
 	Aborted string `json:"aborted,omitempty"` // uid of an entry whose change failed
+	Tx      string `json:"tx,omitempty"`      // token of the transaction, on an entry recorded before its write
+}
+
+// TransactionTokenSeparator ends a transaction file name, before the token of its transaction.
+const TransactionTokenSeparator = "---tx="
+
+func TransactionFileToken(name string) string {
+	if i := strings.LastIndex(name, TransactionTokenSeparator); i >= 0 {
+		return name[i+len(TransactionTokenSeparator):]
+	}
+	return ""
 }
 
 type AttrChange struct {

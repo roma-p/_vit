@@ -36,7 +36,7 @@ func (t *TransactionID) fileName(token string) string {
 	return t.Encode() + tokenSeparator + token
 }
 
-const tokenSeparator = "---tx="
+const tokenSeparator = types.TransactionTokenSeparator
 
 func newTransactionID(op TransactionOperation, ref *types.Ref) TransactionID {
 	return TransactionID{

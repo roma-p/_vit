@@ -106,7 +106,7 @@ func run(
 			if err := tx.ensureStillValid(); err != nil {
 				return err
 			}
-			if attrEntry, err = recordAttrEntry(ctx, r, tids); err != nil {
+			if attrEntry, err = recordAttrEntry(ctx, r, tids, tx.token); err != nil {
 				return err
 			}
 			flushErr := r.Opctx.JSONPool.FlushForWrite()
@@ -172,7 +172,7 @@ func recordHistory(ctx context.Context, r Request, tids []TransactionID, concurr
 	}
 }
 
-func recordAttrEntry(ctx context.Context, r Request, tids []TransactionID) (*types.HistoryEntry, error) {
+func recordAttrEntry(ctx context.Context, r Request, tids []TransactionID, token string) (*types.HistoryEntry, error) {
 	a, ok := r.Operation.(historyAttrs)
 	if !ok {
 		return nil, nil
@@ -180,6 +180,7 @@ func recordAttrEntry(ctx context.Context, r Request, tids []TransactionID) (*typ
 	e := newHistoryEntry(r, tids)
 	e.UID = fsutil.GenerateUID(8)
 	e.NodeID, e.Attrs = a.HistoryAttrs()
+	e.Tx = token
 	if err := history.Record(ctx, r.RepoPath, r.Opctx.Site(), e); err != nil {
 		return nil, newErrHistoryRecord(err)
 	}
@@ -293,7 +294,7 @@ func withTransaction(
 	done := make(chan struct{})
 	go touchFilesLoop(opCtx, transactionFiles, done, cancel)
 
-	tx := &activeTransaction{files: transactionFiles, stop: func() { close(done) }}
+	tx := &activeTransaction{files: transactionFiles, stop: func() { close(done) }, token: token}
 	defer tx.finish()
 
 	// 4. Do the actual work.
@@ -393,6 +394,7 @@ func cleanOrphanedTransactions(transactionDir string) {
 type activeTransaction struct {
 	files []string
 	stop  func()
+	token string
 }
 
 func (t *activeTransaction) ensureStillValid() error {
