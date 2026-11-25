@@ -164,7 +164,7 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 	// Add positional parameters (required)
 	for _, posArg := range c.ArgParser.PosArgs {
 		method.Params = append(method.Params, pythonParam{
-			Name:         posArg,
+			Name:         pythonIdent(posArg),
 			Type:         "str",
 			Optional:     false,
 			IsPositional: true,
@@ -176,7 +176,7 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 	// Add optional positional parameters
 	for _, optArg := range c.ArgParser.OptionalPosArgs {
 		method.Params = append(method.Params, pythonParam{
-			Name:         optArg,
+			Name:         pythonIdent(optArg),
 			Type:         "Optional[str]",
 			Default:      "None",
 			Optional:     true,
@@ -191,7 +191,7 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 	// A variadic forbids optionals, so there are none between them.
 	if c.ArgParser.variadicDefined {
 		method.Params = append(method.Params, pythonParam{
-			Name:         c.ArgParser.variadicDef.name,
+			Name:         pythonIdent(c.ArgParser.variadicDef.name),
 			Type:         "str",
 			Optional:     false,
 			IsPositional: false,
@@ -204,7 +204,7 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 	// Add flag parameters
 	for _, flagName := range c.ArgParser.apiFlagNames() {
 		flagDef := c.ArgParser.flagDefs[flagName]
-		pythonFlagName := strings.ReplaceAll(flagName, "-", "_")
+		pythonFlagName := pythonIdent(flagName)
 
 		switch flagDef.flagType {
 		// TODO(cli): implement other types... int !
@@ -245,4 +245,20 @@ func (c *CmdTree) collectSingleMethod(pythonName string, cmdParts []string, meth
 	}
 
 	*methods = append(*methods, method)
+}
+
+var pythonKeywords = map[string]bool{
+	"False": true, "None": true, "True": true, "and": true, "as": true, "assert": true, "async": true,
+	"await": true, "break": true, "class": true, "continue": true, "def": true, "del": true, "elif": true,
+	"else": true, "except": true, "finally": true, "for": true, "from": true, "global": true, "if": true,
+	"import": true, "in": true, "is": true, "lambda": true, "nonlocal": true, "not": true, "or": true,
+	"pass": true, "raise": true, "return": true, "try": true, "while": true, "with": true, "yield": true,
+}
+
+func pythonIdent(name string) string {
+	name = strings.ReplaceAll(name, "-", "_")
+	if pythonKeywords[name] {
+		return name + "_"
+	}
+	return name
 }
