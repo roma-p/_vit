@@ -58,10 +58,13 @@ func Main() int {
 	}
 
 	cliResult, err := findRet.CmdFunc(ctx, client, subcmdparser)
+	client.Dispose()
+	if usageErr, ok := err.(*clicore.UsageError); ok {
+		return handleCmdError(output, usageErr)
+	}
 	if err != nil {
 		err = clicore.NewCliError(findRet.CmdName, err)
 	}
-	client.Dispose()
 	output.Paged = subcmdparser.UsePager // run func may have requested paging
 	return output.Process(cliResult, err)
 }

@@ -55,8 +55,8 @@ func NewUsageError(name string, args []string, errType UsageErrorType, nestedErr
 		ret.Message = messageRoot + "not enough positional arguments"
 	case errUnknownSubCommand:
 		ret.Message = messageRoot + "unknown subcommands"
-	case errInvalidFlags:
-		ret.Message = fmt.Sprintf("%s %s", messageRoot, ret.NestedErr.Error())
+	case errInvalidFlags, ErrInvalidCommand:
+		ret.Message = messageRoot + ret.NestedErr.Error()
 	}
 	return &ret
 }
