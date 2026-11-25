@@ -30,6 +30,8 @@ func AcquireExclusiveLock(ctx context.Context, lockPath string) (string, error) 
 
 	backoff := initialBackoff
 	attempts := 0
+	start := time.Now()
+	defer func() { recordLockWait(lockPath, start, attempts) }()
 
 	for {
 		attempts++
@@ -118,7 +120,11 @@ func WaitForLockRelease(ctx context.Context, lockPath string) error {
 	defer cancel()
 
 	backoff := initialBackoff
+	attempts := 0
+	start := time.Now()
+	defer func() { recordLockWait(lockPath, start, attempts) }()
 	for {
+		attempts++
 		_, err := os.Stat(lockDir)
 		if os.IsNotExist(err) {
 			return nil

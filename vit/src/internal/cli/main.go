@@ -11,6 +11,7 @@ import (
 
 	"vit"
 	"vit/internal/cli/clicore"
+	"vit/internal/fsutil"
 )
 
 // Main runs the CLI and returns an exit code
@@ -58,6 +59,7 @@ func Main() int {
 	}
 
 	cliResult, err := findRet.CmdFunc(ctx, client, subcmdparser)
+	output.Logger.Debug("lock waits", "waits", fsutil.LockWaits())
 	client.Dispose()
 	if usageErr, ok := err.(*clicore.UsageError); ok {
 		return handleCmdError(output, usageErr)
