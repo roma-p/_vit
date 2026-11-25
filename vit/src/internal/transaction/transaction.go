@@ -177,6 +177,11 @@ func recordHistory(ctx context.Context, r Request, tids []TransactionID, concurr
 	}
 	if err := history.Record(ctx, r.RepoPath, r.Opctx.Site(), e); err != nil {
 		r.Logger.Warn("history: failed to record entry", "command", r.Command, "err", err)
+		if len(e.Attrs) > 0 {
+			if err := db.InvalidateAttrIndex(r.RepoPath); err != nil {
+				r.Logger.Warn("history: failed to invalidate the attribute index", "err", err)
+			}
+		}
 	}
 }
 

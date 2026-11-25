@@ -187,6 +187,31 @@ func TestAttrHistoryCarriesTheChanges(t *testing.T) {
 	}
 }
 
+func TestAttrSetInvalidatesTheAttrIndexWhenTheLogFails(t *testing.T) {
+	env := newLocksEnv(t)
+	env.add("seq20/sh010")
+	build := filepath.Join(env.repoPath, ".vit", "cache", "attrindex", "_build.json")
+	if err := os.MkdirAll(filepath.Dir(build), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(build, []byte(`{"cursor":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logDir := filepath.Join(env.repoPath, ".vit", "history")
+	if err := os.RemoveAll(logDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(logDir, nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+
+	env.must(env.client.AttrSet(ctx(), env.abs("seq20/sh010"), map[string]string{"task": "mod"}))
+
+	if _, err := os.Stat(build); !os.IsNotExist(err) {
+		t.Fatalf("attr index still built after a failed log: %v", err)
+	}
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
 
 func attrPairs(t *testing.T, env *locksEnv, path string) []string {

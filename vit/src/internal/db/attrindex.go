@@ -72,6 +72,13 @@ func (i *AttrIndex) get(ctx context.Context, keys []string) (map[string]*attrSha
 	return out, nil
 }
 
+func InvalidateAttrIndex(repoPath string) error {
+	if err := os.Remove(pathAttrIndexBuild(repoPath)); err != nil && !os.IsNotExist(err) {
+		return newErrDBInternal(err, "failed to invalidate the attribute index")
+	}
+	return nil
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
 
 func (i *AttrIndex) refreshShardsFromHistory(shards map[string]*attrShard) error {

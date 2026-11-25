@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-const logDisabled = slog.LevelError + 1
-
 type customLogHandler struct {
 	w         io.Writer
 	level     slog.Level
@@ -51,7 +49,7 @@ func (h *customLogHandler) WithGroup(name string) slog.Handler {
 }
 
 func newCliLogger(opt OutputOpt) *slog.Logger {
-	level := logDisabled
+	level := slog.LevelWarn
 	if opt.Debug {
 		level = slog.LevelDebug
 	} else if opt.Verbose {
