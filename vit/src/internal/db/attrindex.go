@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -65,10 +66,110 @@ func (i *AttrIndex) get(ctx context.Context, keys []string) (map[string]*attrSha
 		}
 		out[k] = s
 	}
+	if err := i.refreshShardsFromHistory(out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
 // -- FILE LOCAL -------------------------------------------------------------
+
+func (i *AttrIndex) refreshShardsFromHistory(shards map[string]*attrShard) error {
+	// 1. read the history once from the oldest cursor.
+	entries, next, err := history.ReadSince(i.repoPath, oldestCursor(shards))
+	if err != nil {
+		return newErrDBInternal(err, "failed to read the history")
+	}
+
+	// 2. collect each touched uid with the asked keys it touches
+	touched := map[string][]string{}
+	for _, e := range entries {
+		if len(e.NodeID) < 2 {
+			continue
+		}
+		for _, c := range e.Attrs {
+			if shards[c.Key] != nil && !slices.Contains(touched[e.NodeID], c.Key) {
+				touched[e.NodeID] = append(touched[e.NodeID], c.Key)
+			}
+		}
+	}
+
+	// 3. read each relevant tree node
+	for uid, keys := range touched {
+		node, err := readAttrIndexFile[types.TreeNode](treeNodeJSONPath(i.repoPath, uid))
+		if err != nil {
+			return err
+		}
+
+		// a deleted asset (nil) or a removed key (tombstone) has no live value
+		live := map[string]types.AttrValue{}
+		if node != nil && node.Type == types.TreeNodeTypeAsset {
+			live = node.LiveAttrs()
+		}
+
+		// 4. update with live value.
+		for _, k := range keys {
+			shards[k].drop(uid)
+			if v, ok := live[k]; ok {
+				shards[k].insert(v.Value, uid)
+			}
+		}
+	}
+
+	// 5. move every asked shard to the same cursor.
+	for k, s := range shards {
+		if maps.Equal(s.Cursor, next) {
+			continue
+		}
+		s.Cursor = next
+		storeAttrShard(i.repoPath, k, s)
+	}
+	return nil
+}
+
+func (s *attrShard) insert(value, uid string) {
+	uids := s.Values[value]
+	if at, found := slices.BinarySearch(uids, uid); !found {
+		s.Values[value] = slices.Insert(uids, at, uid)
+	}
+}
+
+func (s *attrShard) drop(uid string) {
+	for v, uids := range s.Values {
+		if at, found := slices.BinarySearch(uids, uid); found {
+			if uids = slices.Delete(uids, at, at+1); len(uids) == 0 {
+				delete(s.Values, v)
+			} else {
+				s.Values[v] = uids
+			}
+		}
+	}
+}
+
+func oldestCursor(shards map[string]*attrShard) history.Cursor {
+	sites := map[string]bool{}
+	for _, s := range shards {
+		for site := range s.Cursor {
+			sites[site] = true
+		}
+	}
+	out := history.Cursor{}
+	for site := range sites {
+		var oldest *history.Position
+		for _, s := range shards {
+			p := s.Cursor[site]
+			if oldest == nil || p.Segment < oldest.Segment || p.Segment == oldest.Segment && p.Line < oldest.Line {
+				oldest = &p
+			}
+		}
+		out[site] = *oldest
+	}
+	return out
+}
+
+func storeAttrShard(repoPath, key string, s *attrShard) {
+	_ = fsutil.NewJSONHandlerFromPath(pathAttrShard(repoPath, key), s).Write()
+}
 
 func buildAttrIndex(ctx context.Context, repoPath string) (*attrIndexBuild, error) {
 	stop, err := fsutil.AcquireExclusiveLockWithKeepalive(ctx, pathAttrIndexRebuild(repoPath))
