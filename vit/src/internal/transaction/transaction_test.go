@@ -488,3 +488,27 @@ func readDoc(t *testing.T, path string) string {
 	}
 	return (*h.Data)["v"]
 }
+
+func TestTransactionReapsOrphanedTransactionFiles(t *testing.T) {
+	repo := t.TempDir()
+	doc := filepath.Join(repo, "asset.json")
+	writeDoc(t, doc, "before")
+	orphan := filepath.Join(repo, ".vit", "transaction", "other---Tag---tx=dead")
+	if err := os.MkdirAll(filepath.Dir(orphan), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(orphan, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * fsutil.LockAcquireTimeout)
+	if err := os.Chtimes(orphan, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runDoc(t, repo, &docOperation{path: doc, value: "after"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Fatalf("orphan still there: %v", err)
+	}
+}

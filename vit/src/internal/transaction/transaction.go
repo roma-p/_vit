@@ -267,6 +267,12 @@ func withTransaction(
 	repos := listRepoPathsFromTids(tids)
 	token := fsutil.GenerateUID(8)
 
+	// 0. Reap orphaned transaction files before taking any scan-lock: their owners stopped keeping them
+	//    alive long ago, removing them needs no lock, and it keeps the locked window short.
+	for _, repo := range repos {
+		cleanOrphanedTransactions(fsutil.PathOS(repo, ".vit", "transaction"))
+	}
+
 	// 1. Lock every involved repo's transaction scan-lock, for a short time, so no
 	//    new transaction is created in any of them while we scan for conflicts and
 	//    stake our tids. They are acquired in a canonical (sorted) order so two
@@ -281,10 +287,6 @@ func withTransaction(
 
 	var transactionFiles []string
 	err = func() error {
-		for _, repo := range repos {
-			cleanOrphanedTransactions(fsutil.PathOS(repo, ".vit", "transaction"))
-		}
-
 		if verr := validate(); verr != nil {
 			return verr
 		}
