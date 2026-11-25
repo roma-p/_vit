@@ -120,15 +120,15 @@ func TestAttrSetDoesNotMarkTheTreeStale(t *testing.T) {
 	env := newLocksEnv(t)
 	env.add("seq20/sh010")
 	env.must(env.client.AttrLs(ctx(), env.abs("seq20/sh010")))
-	stale := filepath.Join(env.repoPath, ".vit", "cache", ".tree_stale")
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Fatalf("tree stale before the set: %v", err)
+	stale := filepath.Join(env.repoPath, ".vit", "cache", "tree_stale")
+	if markers, _ := os.ReadDir(stale); len(markers) != 0 {
+		t.Fatalf("tree stale before the set: %v", markers)
 	}
 
 	env.must(env.client.AttrSet(ctx(), env.abs("seq20/sh010"), map[string]string{"task": "mod"}))
 
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Fatalf("attr set marked the tree stale: %v", err)
+	if markers, _ := os.ReadDir(stale); len(markers) != 0 {
+		t.Fatalf("attr set marked the tree stale: %v", markers)
 	}
 }
 

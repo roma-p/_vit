@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"log/slog"
-	"os"
 
 	"vit/internal/opcontext"
 	"vit/internal/types"
@@ -43,7 +42,7 @@ func (c *Client) Close() {
 		if !s {
 			continue
 		}
-		if err := os.WriteFile(pathTreeStale(p), []byte{}, 0o644); err != nil {
+		if err := markTreeStale(p); err != nil {
 			c.Logger.Error("Error invalidating tree caches", "repo", p)
 		}
 	}

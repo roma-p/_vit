@@ -69,7 +69,7 @@ func getTreeIndex(
 		var syntaxErr *json.SyntaxError
 		var typeErr *json.UnmarshalTypeError
 		if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) {
-			if err := os.WriteFile(pathTreeStale(repoPath), nil, 0o644); err != nil {
+			if err := markTreeStale(repoPath); err != nil {
 				return nil, newErrDBInternal(err, "failed to invalidate tree index")
 			}
 			treeIndex, _, err := buildTreeIndexAndCache(ctx, opctx, repoPath)
@@ -123,15 +123,17 @@ func istreeCacheToRebuild(
 }
 
 func istreeCacheStale(repoPath string) (bool, error) {
-	stalePath := pathTreeStale(repoPath)
 	indexPath := pathTreeIndex(repoPath)
 	assetListPath := pathAssetList(repoPath)
 
-	_, staleErr := os.Stat(stalePath)
+	markers, err := treeStaleMarkers(repoPath)
+	if err != nil {
+		return false, err
+	}
 	_, indexErr := os.Stat(indexPath)
 	_, assetListErr := os.Stat(assetListPath)
 
-	if staleErr == nil {
+	if len(markers) > 0 {
 		return true, nil
 	}
 
@@ -172,6 +174,11 @@ func buildTreeIndexAndCache(
 			return nil, nil, newErrDBInternal(err, "failed to read tree cache after rebuild")
 		}
 		return idx, cache.Data, nil
+	}
+
+	markers, err := treeStaleMarkers(repoPath)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	treeIndex := NewTreeIndex()
@@ -244,7 +251,9 @@ func buildTreeIndexAndCache(
 		return nil, nil, newErrDBInternal(err, "failed to write tree cache")
 	}
 
-	os.Remove(pathTreeStale(repoPath))
+	for _, m := range markers {
+		_ = os.Remove(m)
+	}
 	return treeIndex, treeCache, nil
 }
 
@@ -350,7 +359,34 @@ func pathAssetList(repoPath string) string {
 	return fsutil.PathOS(repoPath, ".vit", "cache", "asset_list.json")
 }
 
-func pathTreeStale(repoPath string) string {
+func markTreeStale(repoPath string) error {
+	dir := pathTreeStaleMarkers(repoPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(fsutil.PathOS(dir, fsutil.GenerateUID(16)), nil, 0o644)
+}
+
+func treeStaleMarkers(repoPath string) ([]string, error) {
+	var out []string
+	if _, err := os.Stat(pathLegacyTreeStale(repoPath)); err == nil {
+		out = append(out, pathLegacyTreeStale(repoPath))
+	}
+	entries, err := os.ReadDir(pathTreeStaleMarkers(repoPath))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, newErrDBInternal(err, "failed to list tree stale markers")
+	}
+	for _, e := range entries {
+		out = append(out, fsutil.PathOS(pathTreeStaleMarkers(repoPath), e.Name()))
+	}
+	return out, nil
+}
+
+func pathTreeStaleMarkers(repoPath string) string {
+	return fsutil.PathOS(repoPath, ".vit", "cache", "tree_stale")
+}
+
+func pathLegacyTreeStale(repoPath string) string {
 	return fsutil.PathOS(repoPath, ".vit", "cache", ".tree_stale")
 }
 

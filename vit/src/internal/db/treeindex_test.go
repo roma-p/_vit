@@ -2,9 +2,12 @@ package db
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"maps"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"vit/internal/fsutil"
@@ -97,5 +100,85 @@ func TestTreeScanSurvivesLocksComingAndGoing(t *testing.T) {
 		if len(paths) != 3 {
 			t.Fatalf("paths = %v", paths)
 		}
+	}
+}
+
+func TestTreeIndexKeepsAnInvalidationPostedDuringItsRebuild(t *testing.T) {
+	repo := t.TempDir()
+	const n = 200
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		for i := range n {
+			id := fmt.Sprintf("u%03dabcdef", i)
+			data, _ := json.Marshal(types.TreeNode{ID: id, Name: id, Type: types.TreeNodeTypeAsset})
+			path := treeNodeJSONPath(repo, id)
+			if err := os.MkdirAll(fsutil.DirOS(path), 0o755); err != nil {
+				t.Error(err)
+				return
+			}
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Error(err)
+				return
+			}
+			if err := markTreeStale(repo); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	readIndex := func() *TreeIndex {
+		opctx := &opcontext.OperationContext{JSONPool: fsutil.NewJSONHandlerPool()}
+		defer opctx.Close()
+		idx, err := getTreeIndex(context.Background(), opctx, repo)
+		if err != nil {
+			t.Error(err)
+		}
+		return idx
+	}
+	var readers sync.WaitGroup
+	for range 3 {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-writerDone:
+					return
+				default:
+					readIndex()
+				}
+			}
+		}()
+	}
+	readers.Wait()
+
+	if idx := readIndex(); idx == nil || len(idx.IDToPath) != n {
+		t.Fatalf("index has %d of %d nodes", len(idx.IDToPath), n)
+	}
+}
+
+func TestTreeIndexRebuildsOnTheLegacyStaleFile(t *testing.T) {
+	repo := t.TempDir()
+	writeNode(t, repo, "u1abcdef", types.TreeNodeTypeAsset, nil)
+	opctx := &opcontext.OperationContext{JSONPool: fsutil.NewJSONHandlerPool()}
+	t.Cleanup(opctx.Close)
+	if _, err := getTreeIndex(context.Background(), opctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	writeNode(t, repo, "u2abcdef", types.TreeNodeTypeAsset, nil)
+	if err := os.WriteFile(pathLegacyTreeStale(repo), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := getTreeIndex(context.Background(), opctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := idx.IDToPath["u2abcdef"]; !ok {
+		t.Fatalf("index = %v", idx.IDToPath)
+	}
+	if _, err := os.Stat(pathLegacyTreeStale(repo)); !os.IsNotExist(err) {
+		t.Fatalf("legacy stale file left: %v", err)
 	}
 }
