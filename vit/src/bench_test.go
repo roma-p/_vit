@@ -41,6 +41,46 @@ func BenchmarkAttrQuery(b *testing.B) {
 	}
 }
 
+func BenchmarkAttrQueryRebuild(b *testing.B) {
+	client, repo := benchRepo(b)
+	req := types.QueryRequest{Eq: map[string]string{"seq": "seq20"}, Fetch: []string{"shot"}, Set: true}
+	for b.Loop() {
+		b.StopTimer()
+		if err := os.Remove(filepath.Join(repo, ".vit", "cache", "attrindex", "_build.json")); err != nil && !os.IsNotExist(err) {
+			b.Fatal(err)
+		}
+		b.StartTimer()
+		if _, err := client.Query(ctx(), repo, req); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkAttrQueryRefresh(b *testing.B) {
+	for _, changes := range []int{100, 1000} {
+		b.Run(fmt.Sprintf("%d changes", changes), func(b *testing.B) {
+			client, repo := benchRepo(b)
+			req := types.QueryRequest{With: []string{"status"}, Fetch: []string{"status"}, Set: true}
+			for i := 0; b.Loop(); i++ {
+				b.StopTimer()
+				if _, err := client.Query(ctx(), repo, req); err != nil {
+					b.Fatal(err)
+				}
+				for c := range changes {
+					path := filepath.Join(repo, fmt.Sprintf("seq%02d", 10+c%50), fmt.Sprintf("sh%03d", 10*(1+c/50%20)), "mod_v1")
+					if _, err := client.AttrSet(ctx(), path, map[string]string{"status": fmt.Sprintf("s%d", i)}); err != nil {
+						b.Fatal(err)
+					}
+				}
+				b.StartTimer()
+				if _, err := client.Query(ctx(), repo, req); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
 
 var (
