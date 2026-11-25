@@ -1,3 +1,6 @@
 
 vit/bin
 vit/vendor-bins
+
+# 50k-asset fixture from the attribute query benchmark (VIT_BENCH_REPO)
+/repo_bench/
