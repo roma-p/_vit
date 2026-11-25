@@ -1,6 +1,7 @@
 package transaction
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -301,6 +302,39 @@ func TestAttrEntryIsAbortedWhenTheWriteFails(t *testing.T) {
 	}
 	if len(entries) != 2 || change == nil || abort == nil || abort.Aborted != change.UID {
 		t.Fatalf("history: %+v", entries)
+	}
+}
+
+func TestTransactionLogsItsPhases(t *testing.T) {
+	repo := t.TempDir()
+	doc := filepath.Join(repo, "asset.json")
+	writeDoc(t, doc, "before")
+	var logs bytes.Buffer
+	opctx := &opcontext.OperationContext{User: "tester", TimeStamp: time.Now(), JSONPool: fsutil.NewJSONHandlerPool()}
+	t.Cleanup(opctx.Close)
+
+	err := Run(context.Background(), Request{
+		Opctx:     opctx,
+		Operation: &attrDocOperation{&docOperation{path: doc, value: "after"}},
+		Logger:    slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Command:   types.CommandAttrSet,
+		User:      opctx.User,
+		RepoPath:  repo,
+		Timestamp: opctx.TimeStamp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var line map[string]any
+	for _, l := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(l, `"transaction phases"`) {
+			_ = json.Unmarshal([]byte(l), &line)
+		}
+	}
+	for _, phase := range []string{"scan_lock", "validate", "stake", "blob", "db_update", "history_entry", "flush", "finish"} {
+		if _, ok := line[phase+"_ms"].(float64); !ok {
+			t.Errorf("no %s_ms in %v", phase, line)
+		}
 	}
 }
 

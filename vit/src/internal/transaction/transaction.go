@@ -63,8 +63,11 @@ func run(
 	tids []TransactionID,
 ) error {
 	var attrEntry *types.HistoryEntry
+	phases := newPhaseTimer()
+	defer func() { r.Logger.Debug("transaction phases", append([]any{"command", r.Command}, phases.attrs...)...) }()
 	err := withTransaction(ctx, tids, r.Command, r.User, r.Timestamp,
 		func() error {
+			phases.mark("scan_lock")
 			// 0. We now hold the scan-lock(s). Any DB read taken before it
 			//    may be stale, so evict the read cache:
 			//     Validate must re-parse the source of truth under the
@@ -81,9 +84,11 @@ func run(
 			if err := r.Operation.Validate(ctx, r.Opctx, r.DBClient); err != nil {
 				return err
 			}
+			phases.mark("validate")
 			return nil
 		},
 		func(ctx context.Context, tx *activeTransaction) error {
+			phases.mark("stake")
 			// 2. Plan the blob object to copy (plan only, do nothing), then execute them
 			//    (copy blobs, write content nodes + manifests).
 			plan, err := r.Operation.PlanBlobUpdate(ctx, r.Opctx)
@@ -97,18 +102,21 @@ func run(
 					return err
 				}
 			}
+			phases.mark("blob")
 
 			// 3. run the function responsible for updating the data, and write all of them on disk.
 			//    Write lock on DB only hold here!
 			if err := r.Operation.DBUpdate(ctx, r.Opctx, r.DBClient); err != nil {
 				return err
 			}
+			phases.mark("db_update")
 			if err := tx.ensureStillValid(); err != nil {
 				return err
 			}
 			if attrEntry, err = recordAttrEntry(ctx, r, tids, tx.token); err != nil {
 				return err
 			}
+			phases.mark("history_entry")
 			flushErr := r.Opctx.JSONPool.FlushForWrite()
 			if errors.Is(flushErr, fsutil.ErrLockLost) {
 				return newErrTransactionLost(flushErr)
@@ -119,10 +127,12 @@ func run(
 			if flushErr == nil {
 				flushErr = tx.ensureStillValid()
 			}
+			phases.mark("flush")
 
 			// 4. Best effort finish: presentation, cache update.
 			//    all of what is done here should be re-derivable using a vit gc (todo)
 			r.Operation.Finish(ctx, r.Opctx, r.DBClient, r.Logger, r.Presenter)
+			phases.mark("finish")
 
 			if flushErr != nil {
 				return newErrConcurrentWrite(flushErr)
@@ -144,8 +154,23 @@ func run(
 	// 5. Record the operation in the activity log — after a successful flush,
 	//    outside the repo transaction lock, best-effort
 	//    (attribute changes are recorded before the flush, by recordAttrEntry)
+	phases.mark("release")
 	recordHistory(ctx, r, tids, concurrent)
+	phases.mark("history")
 	return err
+}
+
+type phaseTimer struct {
+	last  time.Time
+	attrs []any
+}
+
+func newPhaseTimer() *phaseTimer { return &phaseTimer{last: time.Now()} }
+
+func (p *phaseTimer) mark(phase string) {
+	now := time.Now()
+	p.attrs = append(p.attrs, phase+"_ms", float64(now.Sub(p.last).Microseconds())/1000)
+	p.last = now
 }
 
 type preparer interface {
