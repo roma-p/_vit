@@ -2,9 +2,13 @@ package db
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"vit/internal/fsutil"
 	"vit/internal/opcontext"
@@ -60,11 +64,20 @@ func getTreeIndex(
 			return treeIndex, nil
 		}
 	} else {
-		handler, err := fsutil.NewJSONHandlerFromFile[TreeIndex](pathTreeIndex(repoPath))
+		treeIndex, err := readTreeIndex(repoPath)
+		var syntaxErr *json.SyntaxError
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) {
+			if err := os.WriteFile(pathTreeStale(repoPath), nil, 0o644); err != nil {
+				return nil, newErrDBInternal(err, "failed to invalidate tree index")
+			}
+			treeIndex, _, err := buildTreeIndexAndCache(ctx, opctx, repoPath)
+			return treeIndex, err
+		}
 		if err != nil {
 			return nil, newErrDBInternal(err, "failed to read tree index")
 		}
-		return handler.Data, nil
+		return treeIndex, nil
 	}
 }
 
@@ -149,7 +162,7 @@ func buildTreeIndexAndCache(
 		return nil, nil, err
 	}
 	if !doRebuild {
-		idx, err := fsutil.NewJSONHandlerFromFile[TreeIndex](pathTreeIndex(repoPath))
+		idx, err := readTreeIndex(repoPath)
 		if err != nil {
 			return nil, nil, newErrDBInternal(err, "failed to read tree index after rebuild")
 		}
@@ -157,7 +170,7 @@ func buildTreeIndexAndCache(
 		if err != nil {
 			return nil, nil, newErrDBInternal(err, "failed to read tree cache after rebuild")
 		}
-		return idx.Data, cache.Data, nil
+		return idx, cache.Data, nil
 	}
 
 	treeIndex := NewTreeIndex()
@@ -221,8 +234,7 @@ func buildTreeIndexAndCache(
 	}
 
 	// 5. Write to disk.
-	indexPath := pathTreeIndex(repoPath)
-	if err := fsutil.NewJSONHandlerFromPath(indexPath, treeIndex).Write(); err != nil {
+	if err := writeTreeIndex(repoPath, treeIndex); err != nil {
 		return nil, nil, newErrDBInternal(err, "failed to write tree index")
 	}
 
@@ -267,6 +279,38 @@ func reccBuildIDToPath(
 }
 
 type idToTreeNode = map[string]types.TreeNode
+
+func readTreeIndex(repoPath string) (*TreeIndex, error) {
+	data, err := os.ReadFile(pathTreeIndex(repoPath))
+	if err != nil {
+		return nil, err
+	}
+	var rows [][4]string
+	if err := json.Unmarshal(data, &rows); err != nil {
+		return nil, err
+	}
+	t := &TreeIndex{
+		IDToPath: make(map[string]TreeIndexEntry, len(rows)),
+		PathToID: make(map[string]TreeIndexEntry, len(rows)),
+	}
+	for _, r := range rows {
+		typ := types.TreeNodeType(r[1])
+		t.IDToPath[r[0]] = TreeIndexEntry{Data: r[2], Type: typ, AssetUID: r[3]}
+		t.PathToID[r[2]] = TreeIndexEntry{Data: r[0], Type: typ, AssetUID: r[3]}
+	}
+	return t, nil
+}
+
+func writeTreeIndex(repoPath string, t *TreeIndex) error {
+	rows := make([][4]string, 0, len(t.IDToPath))
+	for id, e := range t.IDToPath {
+		rows = append(rows, [4]string{id, string(e.Type), e.Data, e.AssetUID})
+	}
+	slices.SortFunc(rows, func(a, b [4]string) int { return strings.Compare(a[2], b[2]) })
+	return fsutil.WriteFileAtomic(pathTreeIndex(repoPath), 0o644, func(f *os.File) error {
+		return json.NewEncoder(f).Encode(rows)
+	})
+}
 
 func scanAllTreeNodeFiles(repoPath string) ([]string, error) {
 	treeDir := fsutil.PathOS(repoPath, ".vit", "tree")
