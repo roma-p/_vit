@@ -23,6 +23,14 @@ func TestQueryFetchesTheAttributes(t *testing.T) {
 	if !reflect.DeepEqual(res.Rows, want) {
 		t.Fatalf("rows = %+v", res.Rows)
 	}
+
+	res, err = env.client.Query(ctx(), env.abs("s20/sh010/mod"), types.QueryRequest{Fetch: []string{"task", "seq"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.ToStringSlice(); !slices.Equal(got, []string{"task=mod  seq=20"}) {
+		t.Fatalf("readable = %q", got)
+	}
 }
 
 func TestQuerySeesTheChangesAfterTheFirstQuery(t *testing.T) {
