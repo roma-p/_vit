@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -322,6 +323,9 @@ func scanAllTreeNodeFiles(repoPath string) ([]string, error) {
 	var paths []string
 
 	err := filepath.WalkDir(treeDir, func(path string, d os.DirEntry, err error) error {
+		if errors.Is(err, fs.ErrNotExist) && path != treeDir {
+			return nil
+		}
 		if err != nil {
 			return err
 		}

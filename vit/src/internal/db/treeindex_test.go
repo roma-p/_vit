@@ -65,3 +65,37 @@ func TestTreeIndexInTheOldFormatIsRebuilt(t *testing.T) {
 		t.Fatalf("rewritten as %s", data)
 	}
 }
+
+func TestTreeScanSurvivesLocksComingAndGoing(t *testing.T) {
+	repo := t.TempDir()
+	for _, id := range []string{"u1abcdef", "u2abcdef", "u3abcdef"} {
+		writeNode(t, repo, id, types.TreeNodeTypeAsset, nil)
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		lock := fsutil.PathOS(repo, ".vit", "tree", "u1", ".abcdef.json.lock")
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = os.Mkdir(lock, 0o755)
+				_ = os.WriteFile(fsutil.PathOS(lock, "owner"), nil, 0o644)
+				_ = os.RemoveAll(lock)
+			}
+		}
+	}()
+	defer func() { close(stop); <-done }()
+
+	for range 2000 {
+		paths, err := scanAllTreeNodeFiles(repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(paths) != 3 {
+			t.Fatalf("paths = %v", paths)
+		}
+	}
+}
