@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -297,6 +298,78 @@ func TestAttrIndexRefreshWaitsForTheWriteOfALiveTransaction(t *testing.T) {
 
 	if got := mustShards(t, repo, "task")["task"].Values; !maps.EqualFunc(got, map[string][]string{"mod": {"u1"}}, slices.Equal) {
 		t.Fatalf("after the write: %v", got)
+	}
+}
+
+func TestAttrIndexRebuildsALostShardInsteadOfEmptyingIt(t *testing.T) {
+	repo := t.TempDir()
+	writeNode(t, repo, "u1", types.TreeNodeTypeAsset, map[string]string{"task": "mod", "seq": "20"})
+	mustShards(t, repo, "task", "seq")
+	if err := os.Remove(pathAttrShard(repo, "task")); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := mustShards(t, repo, "task")["task"].Values; !maps.EqualFunc(got, map[string][]string{"mod": {"u1"}}, slices.Equal) {
+		t.Fatalf("values = %v", got)
+	}
+	disk, err := readAttrShard(repo, "task", 1)
+	if err != nil || disk == nil || !slices.Equal(disk.Values["mod"], []string{"u1"}) {
+		t.Fatalf("disk = %+v (%v)", disk, err)
+	}
+}
+
+func TestAttrIndexUnknownKeyStartsEmptyWithoutRebuilding(t *testing.T) {
+	repo := t.TempDir()
+	writeNode(t, repo, "u1", types.TreeNodeTypeAsset, map[string]string{"task": "mod"})
+	mustShards(t, repo, "task")
+	before, err := os.ReadFile(pathAttrIndexBuild(repo))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := mustShards(t, repo, "variant")["variant"].Values; len(got) != 0 {
+		t.Fatalf("variant = %v", got)
+	}
+	if after, _ := os.ReadFile(pathAttrIndexBuild(repo)); string(after) != string(before) {
+		t.Fatalf("index rebuilt for an unknown key:\n%s\n%s", before, after)
+	}
+}
+
+func TestAttrIndexRefreshKeepsANodeBeingReplaced(t *testing.T) {
+	repo := t.TempDir()
+	n := writeNode(t, repo, "u1", types.TreeNodeTypeAsset, map[string]string{"task": "mod"})
+	mustShards(t, repo, "task")
+	recordAttr(t, repo, "u1", "task")
+	if err := os.Remove(treeNodeJSONPath(repo, "u1")); err != nil {
+		t.Fatal(err)
+	}
+	back := make(chan struct{})
+	go func() {
+		defer close(back)
+		time.Sleep(10 * time.Millisecond)
+		data, _ := json.Marshal(n)
+		_ = os.WriteFile(treeNodeJSONPath(repo, "u1"), data, 0o644)
+	}()
+
+	got := mustShards(t, repo, "task")["task"].Values
+	<-back
+	if !maps.EqualFunc(got, map[string][]string{"mod": {"u1"}}, slices.Equal) {
+		t.Fatalf("values = %v", got)
+	}
+}
+
+func TestReadConfirmedSeesAFileBackMeanwhile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "n.json")
+	if v, err := readAttrIndexFileTries[map[string]string](path, 1); v != nil || err != nil {
+		t.Fatalf("single read = %v %v", v, err)
+	}
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		_ = os.WriteFile(path, []byte(`{"a":"b"}`), 0o644)
+	}()
+	v, err := readAttrIndexFileTries[map[string]string](path, 3)
+	if err != nil || v == nil || (*v)["a"] != "b" {
+		t.Fatalf("confirmed read = %v %v", v, err)
 	}
 }
 
