@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"time"
 
@@ -14,7 +15,7 @@ const (
 	LockAcquireTimeout = 60 * time.Second
 	KeepaliveInterval  = 2 * time.Second
 	initialBackoff     = 50 * time.Millisecond
-	maxBackoff         = 1 * time.Second
+	maxBackoff         = 100 * time.Millisecond
 )
 
 // AcquireExclusiveLock acquires an exclusive lock using os.Mkdir (atomic on NFS).
@@ -58,7 +59,7 @@ func AcquireExclusiveLock(ctx context.Context, lockPath string) (string, error) 
 		select {
 		case <-ctx.Done():
 			return "", newErrLockAcquireTimeout(ctx, lockPath, attempts)
-		case <-time.After(backoff):
+		case <-time.After(jitter(backoff)):
 			backoff = min(backoff*2, maxBackoff)
 		}
 	}
@@ -153,7 +154,7 @@ func WaitForLockRelease(ctx context.Context, lockPath string) error {
 		select {
 		case <-ctx.Done():
 			return newErrLockAcquireTimeout(ctx, lockPath, 0)
-		case <-time.After(backoff):
+		case <-time.After(jitter(backoff)):
 			backoff = min(backoff*2, maxBackoff)
 		}
 	}
@@ -197,6 +198,10 @@ func releaseOwnedLock(lockDir string, id os.FileInfo) {
 	if holdsLock(lockDir, id) {
 		ReleaseExclusiveLock(lockDir)
 	}
+}
+
+func jitter(d time.Duration) time.Duration {
+	return d/2 + rand.N(d/2+1)
 }
 
 func lockDirPath(lockPath string) string {

@@ -48,6 +48,14 @@ func TestLockWaitsSumTheTimeHeld(t *testing.T) {
 	}
 }
 
+func TestJitterStaysBetweenHalfAndFull(t *testing.T) {
+	for range 1000 {
+		if d := jitter(100 * time.Millisecond); d < 50*time.Millisecond || d > 100*time.Millisecond {
+			t.Fatalf("jitter = %s", d)
+		}
+	}
+}
+
 func TestLockWaitKinds(t *testing.T) {
 	for path, want := range map[string]string{
 		"/r/.vit/transaction.lock": "transaction.lock", "/r/.vit/history/.lock": ".lock",
