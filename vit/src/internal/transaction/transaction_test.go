@@ -92,28 +92,72 @@ func TestTransactionLostWhenTheDocLockIsStolen(t *testing.T) {
 	}
 }
 
-func TestScanLockKeptAliveDuringValidate(t *testing.T) {
+func TestValidateRunsStakedButOutsideTheScanLock(t *testing.T) {
 	repo := t.TempDir()
 	doc := filepath.Join(repo, "asset.json")
 	writeDoc(t, doc, "before")
 
 	lockDir := filepath.Join(repo, ".vit", ".transaction.lock.lock")
 	op := &docOperation{path: doc, value: "after", duringValidate: func() {
+		if _, err := os.Stat(lockDir); !os.IsNotExist(err) {
+			t.Errorf("scan-lock held during Validate: %v", err)
+		}
+		files := tidFiles(t, repo)
+		if len(files) != 1 {
+			t.Fatalf("tids during Validate: %v", files)
+		}
 		old := time.Now().Add(-time.Hour)
-		if err := os.Chtimes(lockDir, old, old); err != nil {
+		if err := os.Chtimes(files[0], old, old); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(fsutil.KeepaliveInterval + 500*time.Millisecond)
-		info, err := os.Stat(lockDir)
+		info, err := os.Stat(files[0])
 		if err != nil {
 			t.Fatal(err)
 		}
 		if age := time.Since(info.ModTime()); age > fsutil.LockAcquireTimeout {
-			t.Fatalf("scan-lock not refreshed: %s old", age)
+			t.Fatalf("tid not kept alive during Validate: %s old", age)
 		}
 	}}
 	if err := runDoc(t, repo, op); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestConflictDetectedWhileTheOtherValidates(t *testing.T) {
+	repo := t.TempDir()
+	doc := filepath.Join(repo, "asset.json")
+	writeDoc(t, doc, "before")
+	var second error
+	first := &docOperation{path: doc, value: "first", duringValidate: func() {
+		second = runDoc(t, repo, &docOperation{path: doc, value: "second"})
+	}}
+
+	if err := runDoc(t, repo, first); err != nil {
+		t.Fatal(err)
+	}
+	if !isVitError(second, types.ErrTransactionConflict) {
+		t.Fatalf("second transaction: want %s, got %v", types.ErrTransactionConflict, second)
+	}
+	if got := readDoc(t, doc); got != "first" {
+		t.Fatalf("doc = %q", got)
+	}
+}
+
+func TestValidateFailureRemovesTheTids(t *testing.T) {
+	repo := t.TempDir()
+	doc := filepath.Join(repo, "asset.json")
+	writeDoc(t, doc, "before")
+
+	err := runDoc(t, repo, &docOperation{path: doc, value: "after", validateErr: errors.New("refused")})
+	if err == nil || err.Error() != "refused" {
+		t.Fatalf("err = %v", err)
+	}
+	if files := tidFiles(t, repo); len(files) != 0 {
+		t.Fatalf("tids left: %v", files)
+	}
+	if got := readDoc(t, doc); got != "before" {
+		t.Fatalf("doc = %q", got)
 	}
 }
 
@@ -339,7 +383,7 @@ func TestTransactionLogsItsPhases(t *testing.T) {
 			_ = json.Unmarshal([]byte(l), &line)
 		}
 	}
-	for _, phase := range []string{"scan_lock", "validate", "stake", "blob", "db_update", "history_entry", "flush", "finish"} {
+	for _, phase := range []string{"scan_lock", "validate", "blob", "db_update", "history_entry", "flush", "finish"} {
 		if _, ok := line[phase+"_ms"].(float64); !ok {
 			t.Errorf("no %s_ms in %v", phase, line)
 		}
@@ -352,6 +396,7 @@ type docOperation struct {
 	path           string
 	value          string
 	duringValidate func()
+	validateErr    error
 	duringDBUpdate func()
 	duringWrite    func()
 	waitForCancel  bool
@@ -366,7 +411,7 @@ func (o *docOperation) Validate(context.Context, *opcontext.OperationContext, *d
 	if o.duringValidate != nil {
 		o.duringValidate()
 	}
-	return nil
+	return o.validateErr
 }
 
 func (o *docOperation) PlanBlobUpdate(

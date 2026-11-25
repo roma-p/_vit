@@ -69,19 +69,15 @@ func run(
 	err := withTransaction(ctx, tids, r.Command, r.User, r.Timestamp,
 		func() error {
 			phases.mark("scan_lock")
-			// 0. We now hold the scan-lock(s). Any DB read taken before it
-			//    may be stale, so evict the read cache:
-			//     Validate must re-parse the source of truth under the
-			//    lock, not reuse a pre-lock parse.
+			// 0. Our tids are now staked: no conflicting transaction runs or can start. Any DB read
+			//    taken before may be stale, so evict the read cache: Validate must re-parse the
+			//    source of truth, not reuse an earlier parse.
 			r.Opctx.JSONPool.DropReadCache()
 			if r.DBClient != nil {
 				r.DBClient.DropTreeCache()
 			}
 
-			// 1. check for on going transaction conflict, then run operation validate.
-			if err := scanForConflicts(tids); err != nil {
-				return err
-			}
+			// 1. run operation validate.
 			if err := r.Operation.Validate(ctx, r.Opctx, r.DBClient); err != nil {
 				return err
 			}
@@ -89,7 +85,6 @@ func run(
 			return nil
 		},
 		func(ctx context.Context, tx *activeTransaction) error {
-			phases.mark("stake")
 			// 2. Plan the blob object to copy (plan only, do nothing), then execute them
 			//    (copy blobs, write content nodes + manifests).
 			plan, err := r.Operation.PlanBlobUpdate(ctx, r.Opctx)
@@ -251,10 +246,10 @@ func newHistoryEntry(r Request, tids []TransactionID) types.HistoryEntry {
 // Vit (for now) has no queue system: either there is no conflicting operation going on
 // Or it fails and user has to wait and retry.
 //
-// It works by declaring all the object that will be modified (using tids TransactionIDs)
-// Running a validate() function. In case of success, transaction files will be written
-// and keepalive for the duration of operation(), serving as defacto lockfile that can be
-// used by the validate() method of other transaction.
+// It works by declaring all the object that will be modified (using tids TransactionIDs),
+// scanning for conflicting transactions and writing transaction files under a short scan-lock.
+// The files are kept alive while validate() then operation() run, serving as defacto lockfile
+// seen by the conflict scan of other transactions.
 func withTransaction(
 	ctx context.Context,
 	tids []TransactionID,
@@ -287,8 +282,8 @@ func withTransaction(
 
 	var transactionFiles []string
 	err = func() error {
-		if verr := validate(); verr != nil {
-			return verr
+		if cerr := scanForConflicts(tids); cerr != nil {
+			return cerr
 		}
 
 		for _, tid := range tids {
@@ -325,7 +320,13 @@ func withTransaction(
 	tx := &activeTransaction{files: transactionFiles, stop: func() { close(done) }, token: token}
 	defer tx.finish()
 
-	// 4. Do the actual work.
+	// 4. Validate, outside the scan-lock: our tids are staked, so a conflicting transaction can no
+	//    longer start, and none was running when we scanned. A failure removes our tids (finish).
+	if err := validate(); err != nil {
+		return err
+	}
+
+	// 5. Do the actual work.
 	if err := operation(opCtx, tx); err != nil {
 		if lost := transactionLostCause(opCtx); lost != nil && !isVitError(err, types.ErrConcurrentWrite) {
 			return lost
