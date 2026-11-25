@@ -244,6 +244,60 @@ func TestTransactionIDFromNameIgnoresToken(t *testing.T) {
 	}
 }
 
+func TestAttrEntryIsRecordedBeforeTheWrite(t *testing.T) {
+	repo := t.TempDir()
+	doc := filepath.Join(repo, "asset.json")
+	writeDoc(t, doc, "before")
+	var atWrite []types.HistoryEntry
+	op := &attrDocOperation{&docOperation{path: doc, value: "after", duringWrite: func() {
+		atWrite, _ = history.ReadAll(repo, "")
+	}}}
+
+	if err := runDoc(t, repo, op); err != nil {
+		t.Fatal(err)
+	}
+	if len(atWrite) != 1 || atWrite[0].NodeID != "uid" {
+		t.Fatalf("history at write: %+v", atWrite)
+	}
+	if entries, _ := history.ReadAll(repo, ""); len(entries) != 1 {
+		t.Fatalf("history after: %+v", entries)
+	}
+}
+
+func TestAttrEntryIsAbortedWhenTheWriteFails(t *testing.T) {
+	repo := t.TempDir()
+	doc := filepath.Join(repo, "asset.json")
+	writeDoc(t, doc, "before")
+	op := &attrDocOperation{&docOperation{path: doc, value: "after", duringDBUpdate: func() {
+		lockDir := filepath.Join(repo, ".asset.json.lock")
+		if err := os.Remove(lockDir); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(lockDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}}}
+
+	if err := runDoc(t, repo, op); !isVitError(err, types.ErrTransactionLost) {
+		t.Fatalf("want %s, got %v", types.ErrTransactionLost, err)
+	}
+	entries, err := history.ReadAll(repo, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var change, abort *types.HistoryEntry
+	for i := range entries {
+		if entries[i].Aborted != "" {
+			abort = &entries[i]
+		} else {
+			change = &entries[i]
+		}
+	}
+	if len(entries) != 2 || change == nil || abort == nil || abort.Aborted != change.UID {
+		t.Fatalf("history: %+v", entries)
+	}
+}
+
 // -- FILE LOCAL -------------------------------------------------------------
 
 type docOperation struct {
@@ -300,6 +354,14 @@ func (o *docOperation) Finish(
 	context.Context, *opcontext.OperationContext, *db.Client, *slog.Logger, workspace.Presenter,
 ) {
 	o.finished = true
+}
+
+type attrDocOperation struct {
+	*docOperation
+}
+
+func (o *attrDocOperation) HistoryAttrs() (string, []types.AttrChange) {
+	return "uid", []types.AttrChange{{Key: "task", Value: o.value}}
 }
 
 type preparedDocOperation struct {

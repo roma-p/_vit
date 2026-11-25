@@ -123,3 +123,12 @@ func readSince(t *testing.T, repo string, c Cursor) ([]string, Cursor) {
 	}
 	return uids, next
 }
+
+func TestDropAbortedHidesTheEntryAndItsAbort(t *testing.T) {
+	es := []types.HistoryEntry{{UID: "a"}, {UID: "b"}, {UID: "c", Aborted: "a"}}
+
+	got := DropAborted(es)
+	if len(got) != 1 || got[0].UID != "b" {
+		t.Fatalf("got %+v", got)
+	}
+}
