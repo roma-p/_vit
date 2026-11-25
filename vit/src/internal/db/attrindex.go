@@ -174,7 +174,7 @@ func storeAttrShard(repoPath, key string, s *attrShard) {
 func buildAttrIndex(ctx context.Context, repoPath string) (*attrIndexBuild, error) {
 	stop, err := fsutil.AcquireExclusiveLockWithKeepalive(ctx, pathAttrIndexRebuild(repoPath))
 	if err != nil {
-		return nil, err
+		return nil, newErrDBInternal(err, "failed to lock the attribute index rebuild")
 	}
 	defer stop()
 	if build, err := readAttrIndexFile[attrIndexBuild](pathAttrIndexBuild(repoPath)); err != nil || build != nil {

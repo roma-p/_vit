@@ -48,4 +48,6 @@ const (
 	ErrHardlinkNotSupported = "HardlinkNotSupported"
 
 	ErrAttr = "Attr"
+
+	ErrQuery = "Query"
 )
