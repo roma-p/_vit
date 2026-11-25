@@ -1,6 +1,8 @@
 package db
 
 import (
+	"maps"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -33,6 +35,56 @@ func TestQueryFilters(t *testing.T) {
 		if !slices.Equal(got, c.want) {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+func TestQueryFetch(t *testing.T) {
+	req := types.QueryRequest{Eq: map[string]string{"shot": "010"}, Fetch: []string{"seq", "task"}}
+
+	got := evaluateQuery(req, queryShards(), queryTree()).Rows
+	want := []types.QueryRow{
+		{Attrs: map[string]string{"seq": "20", "task": "lgt"}},
+		{Attrs: map[string]string{"seq": "20", "task": "mod"}},
+		{Attrs: map[string]string{"seq": "30", "task": "mod"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v", got)
+	}
+
+	req.Asset = true
+	if got := evaluateQuery(req, queryShards(), queryTree()).Rows; got[2].Asset != "s30/sh010/mod" || got[2].Attrs["task"] != "mod" {
+		t.Fatalf("with asset: %+v", got)
+	}
+}
+
+func TestQueryDistinct(t *testing.T) {
+	req := types.QueryRequest{With: []string{"task"}, Fetch: []string{"task", "seq"}, Distinct: true}
+
+	got := evaluateQuery(req, queryShards(), queryTree()).Rows
+	want := []types.QueryRow{
+		{Attrs: map[string]string{"task": "lgt", "seq": "20"}},
+		{Attrs: map[string]string{"task": "mod", "seq": "20"}},
+		{Attrs: map[string]string{"task": "mod", "seq": "30"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v", got)
+	}
+
+	req.Fetch = []string{"task"}
+	got = evaluateQuery(req, queryShards(), queryTree()).Rows
+	want = []types.QueryRow{{Attrs: map[string]string{"task": "lay"}}, {Attrs: map[string]string{"task": "lgt"}}, {Attrs: map[string]string{"task": "mod"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("one key: got %+v", got)
+	}
+}
+
+func TestQuerySet(t *testing.T) {
+	req := types.QueryRequest{Eq: map[string]string{"seq": "20"}, Fetch: []string{"shot", "task"}, Set: true}
+
+	got := evaluateQuery(req, queryShards(), queryTree())
+	want := map[string][]string{"shot": {"010", "020"}, "task": {"lgt", "mod"}}
+	if got.Rows != nil || !maps.EqualFunc(got.Sets, want, slices.Equal) {
+		t.Fatalf("got %+v", got)
 	}
 }
 
