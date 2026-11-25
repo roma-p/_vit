@@ -31,13 +31,15 @@ func AcquireExclusiveLock(ctx context.Context, lockPath string) (string, error) 
 	backoff := initialBackoff
 	attempts := 0
 	start := time.Now()
-	defer func() { recordLockWait(lockPath, start, attempts) }()
+	acquired := ""
+	defer func() { recordLockWait(lockPath, acquired, start, attempts) }()
 
 	for {
 		attempts++
 
 		err := os.Mkdir(lockDir, 0o755)
 		if err == nil {
+			acquired = lockDir
 			return lockDir, nil
 		}
 
@@ -46,6 +48,7 @@ func AcquireExclusiveLock(ctx context.Context, lockPath string) (string, error) 
 				return "", fmt.Errorf("failed to create parent directory for lock: %w", mkErr)
 			}
 			if err2 := os.Mkdir(lockDir, 0o755); err2 == nil {
+				acquired = lockDir
 				return lockDir, nil
 			}
 		}
@@ -95,6 +98,7 @@ func AcquireExclusiveLockWithKeepalive(ctx context.Context, lockPath string) (st
 
 // ReleaseExclusiveLock releases a lock acquired by AcquireExclusiveLock.
 func ReleaseExclusiveLock(lockDir string) {
+	recordLockRelease(lockDir)
 	_ = os.Remove(lockDir)
 }
 
@@ -122,7 +126,7 @@ func WaitForLockRelease(ctx context.Context, lockPath string) error {
 	backoff := initialBackoff
 	attempts := 0
 	start := time.Now()
-	defer func() { recordLockWait(lockPath, start, attempts) }()
+	defer func() { recordLockWait(lockPath, "", start, attempts) }()
 	for {
 		attempts++
 		_, err := os.Stat(lockDir)

@@ -31,13 +31,30 @@ func TestLockWaitsSumTheTimeSpentWaiting(t *testing.T) {
 	}
 }
 
+func TestLockWaitsSumTheTimeHeld(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), ".tree_rebuild")
+	before := waitOf(".tree_rebuild")
+	lockDir, err := AcquireExclusiveLock(context.Background(), lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	ReleaseExclusiveLock(lockDir)
+	ReleaseExclusiveLock(lockDir)
+
+	w := waitOf(".tree_rebuild")
+	if w.Held-before.Held < 90*time.Millisecond || w.Held-before.Held > time.Second || w.HeldMax < 90*time.Millisecond {
+		t.Fatalf("before %+v, after %+v", before, w)
+	}
+}
+
 func TestLockWaitKinds(t *testing.T) {
 	for path, want := range map[string]string{
 		"/r/.vit/transaction.lock": "transaction.lock", "/r/.vit/history/.lock": ".lock",
 		"/r/.vit/tree/ab/cdef.json": "*.json", "/r/.vit/blob/x/anim-base-2026": "other",
 	} {
 		before := waitOf(want).Count
-		recordLockWait(path, time.Now(), 1)
+		recordLockWait(path, "", time.Now(), 1)
 		if waitOf(want).Count != before+1 {
 			t.Errorf("%s: not counted as %s", path, want)
 		}
