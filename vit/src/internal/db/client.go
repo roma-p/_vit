@@ -14,6 +14,7 @@ type Client struct {
 	TreeCachePool map[string]*TreeCache
 	Logger        *slog.Logger
 	TreeStale     map[string]bool
+	AttrIndexPool map[string]*AttrIndex
 }
 
 func NewClient(
@@ -25,6 +26,7 @@ func NewClient(
 		TreeIndexPool: make(map[string]*TreeIndex),
 		TreeCachePool: make(map[string]*TreeCache),
 		TreeStale:     make(map[string]bool),
+		AttrIndexPool: make(map[string]*AttrIndex),
 		Logger:        logger,
 	}
 
