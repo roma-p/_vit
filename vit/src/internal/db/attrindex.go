@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"vit/internal/fsutil"
 	"vit/internal/history"
@@ -33,9 +34,10 @@ type attrShard struct {
 type attrIndexBuild struct {
 	Cursor history.Cursor `json:"cursor"`
 	Format int            `json:"format"`
+	Keys   []string       `json:"keys"`
 }
 
-const attrIndexFormat = 1
+const attrIndexFormat = 2
 
 type attrShardFile struct {
 	Cursor history.Cursor `json:"cursor"`
@@ -64,9 +66,13 @@ func (i *AttrIndex) get(ctx context.Context, keys []string) (map[string]*attrSha
 	for _, k := range keys {
 		s := i.shards[k]
 		if s == nil {
+			built := slices.Contains(i.build.Keys, k)
 			var err error
-			if s, err = readAttrShard(i.repoPath, k); err != nil {
+			if s, err = readAttrShard(i.repoPath, k, readTries(built)); err != nil {
 				return nil, err
+			}
+			if s == nil && built {
+				return i.rebuild(ctx, keys)
 			}
 			if s == nil {
 				s = &attrShard{Cursor: i.build.Cursor, Values: map[string][]string{}}
@@ -82,6 +88,35 @@ func (i *AttrIndex) get(ctx context.Context, keys []string) (map[string]*attrSha
 }
 
 // -- FILE LOCAL -------------------------------------------------------------
+
+func (i *AttrIndex) rebuild(ctx context.Context, keys []string) (map[string]*attrShard, error) {
+	if err := os.Remove(pathAttrIndexBuild(i.repoPath)); err != nil && !fsutil.IsNotExist(err) {
+		return nil, newErrDBInternal(err, "failed to invalidate the attribute index")
+	}
+	build, err := buildAttrIndex(ctx, i.repoPath)
+	if err != nil {
+		return nil, err
+	}
+	i.build, i.shards = build, map[string]*attrShard{}
+	for _, k := range keys {
+		s, err := readAttrShard(i.repoPath, k, readTries(true))
+		if err != nil {
+			return nil, err
+		}
+		if s == nil && slices.Contains(build.Keys, k) {
+			return nil, newErrDBInternal(nil, "attribute shard "+k+" missing right after a rebuild")
+		}
+		if s == nil {
+			s = &attrShard{Cursor: build.Cursor, Values: map[string][]string{}}
+		}
+		i.shards[k] = s
+	}
+	out := maps.Clone(i.shards)
+	if err := i.refreshShardsFromHistory(out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 func (i *AttrIndex) refreshShardsFromHistory(shards map[string]*attrShard) error {
 	// 1. read the history once from the oldest cursor.
@@ -119,7 +154,7 @@ func (i *AttrIndex) refreshShardsFromHistory(shards map[string]*attrShard) error
 
 	// 4. read each relevant tree node
 	for uid, keys := range touched {
-		node, err := readAttrIndexFile[types.TreeNode](treeNodeJSONPath(i.repoPath, uid))
+		node, err := readAttrIndexFileTries[types.TreeNode](treeNodeJSONPath(i.repoPath, uid), readTries(true))
 		if err != nil {
 			return err
 		}
@@ -254,7 +289,7 @@ func buildAttrIndex(ctx context.Context, repoPath string) (*attrIndexBuild, erro
 	if err := removeStaleAttrShards(repoPath, shards); err != nil {
 		return nil, err
 	}
-	build := &attrIndexBuild{Cursor: cursor, Format: attrIndexFormat}
+	build := &attrIndexBuild{Cursor: cursor, Format: attrIndexFormat, Keys: slices.Sorted(maps.Keys(shards))}
 	if err := fsutil.NewJSONHandlerFromPath(pathAttrIndexBuild(repoPath), build).Write(); err != nil {
 		return nil, newErrDBInternal(err, "failed to write the attribute index build")
 	}
@@ -278,8 +313,13 @@ func removeStaleAttrShards(repoPath string, keep map[string]*attrShard) error {
 	return nil
 }
 
-func readAttrShard(repoPath, key string) (*attrShard, error) {
-	data, err := os.ReadFile(pathAttrShard(repoPath, key))
+func readAttrShard(repoPath, key string, tries int) (*attrShard, error) {
+	var data []byte
+	err := retryRead(tries, func() error {
+		var rerr error
+		data, rerr = os.ReadFile(pathAttrShard(repoPath, key))
+		return rerr
+	})
 	if fsutil.IsNotExist(err) {
 		return nil, nil
 	}
@@ -310,14 +350,45 @@ func writeAttrShard(repoPath, key string, s *attrShard) error {
 }
 
 func readAttrIndexFile[T any](path string) (*T, error) {
-	h, err := fsutil.NewJSONHandlerFromFile[T](path)
+	return readAttrIndexFileTries[T](path, 1)
+}
+
+func readAttrIndexFileTries[T any](path string, tries int) (*T, error) {
+	var data *T
+	err := retryRead(tries, func() error {
+		h, rerr := fsutil.NewJSONHandlerFromFile[T](path)
+		if rerr == nil {
+			data = h.Data
+		}
+		return rerr
+	})
 	if fsutil.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, newErrDBInternal(err, "failed to read "+path)
 	}
-	return h.Data, nil
+	return data, nil
+}
+
+func readTries(confirm bool) int {
+	if confirm {
+		return 3
+	}
+	return 1
+}
+
+func retryRead(tries int, read func() error) error {
+	var err error
+	for attempt := range tries {
+		if attempt > 0 {
+			time.Sleep(time.Duration(20*attempt*attempt) * time.Millisecond)
+		}
+		if err = read(); err == nil || !fsutil.IsNotExist(err) && !fsutil.IsTransient(err) {
+			return err
+		}
+	}
+	return err
 }
 
 func pathAttrIndex(repoPath string) string {

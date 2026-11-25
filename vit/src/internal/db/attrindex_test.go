@@ -136,7 +136,7 @@ func TestAttrIndexRefreshSeesChangesAfterTheBuild(t *testing.T) {
 		t.Fatalf("variant = %v", got["variant"].Values)
 	}
 	head, _ := history.Head(repo)
-	disk, err := readAttrShard(repo, "task")
+	disk, err := readAttrShard(repo, "task", 1)
 	if err != nil || !maps.Equal(disk.Cursor, head) || !maps.EqualFunc(disk.Values, got["task"].Values, slices.Equal) {
 		t.Fatalf("not stored at the head %v: %+v %v", head, disk, err)
 	}
@@ -151,7 +151,7 @@ func TestAttrIndexRefreshOnlyAdvancesTheAskedShards(t *testing.T) {
 
 	mustShards(t, repo, "task")
 
-	disk, err := readAttrShard(repo, "seq")
+	disk, err := readAttrShard(repo, "seq", 1)
 	if err != nil || !maps.Equal(disk.Cursor, built) || disk.Values["20"] == nil {
 		t.Fatalf("seq advanced: %+v %v", disk, err)
 	}
@@ -241,7 +241,7 @@ func TestAttrShardIsStoredAsSortedRows(t *testing.T) {
 	if want := `{"cursor":{"paris":{"segment":"seg-000001.jsonl","line":2}},"values":[["anim","u2"],["cfx","u6"],["lay","u5"],["mod","u1","u3"],["rig","u4"]]}` + "\n"; string(data) != want {
 		t.Fatalf("stored = %s", data)
 	}
-	got, err := readAttrShard(repo, "task")
+	got, err := readAttrShard(repo, "task", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
