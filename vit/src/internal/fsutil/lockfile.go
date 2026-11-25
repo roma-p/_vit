@@ -131,14 +131,14 @@ func WaitForLockRelease(ctx context.Context, lockPath string) error {
 	for {
 		attempts++
 		_, err := os.Stat(lockDir)
-		if os.IsNotExist(err) {
+		if IsNotExist(err) {
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("failed to stat lock: %w", err)
 		}
 		stale, err := IsStaleAt(lockDir, NowAt(DirOS(lockDir)), LockAcquireTimeout)
-		if os.IsNotExist(err) {
+		if IsNotExist(err) {
 			return nil
 		}
 		if err != nil {

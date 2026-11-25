@@ -310,7 +310,7 @@ func resolveJSONAsset(
 	forWrite bool,
 ) (*JSONAsset, bool, error) {
 	jsonPath := pathJSONAsset(repoRef.Path, uid)
-	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
+	if _, err := os.Stat(jsonPath); fsutil.IsNotExist(err) {
 		return nil, false, newErrObjectIndexNotFound(repoRef.Path, assetPath, uid)
 	}
 	ret, err := fsutil.ResolveHandler[types.Asset](ctx, opctx.JSONPool, jsonPath, forWrite, nil)

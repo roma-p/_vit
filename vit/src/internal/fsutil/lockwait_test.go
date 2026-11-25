@@ -2,7 +2,10 @@ package fsutil
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -76,4 +79,22 @@ func waitOf(kind string) LockWait {
 		}
 	}
 	return LockWait{Kind: kind}
+}
+
+func TestIsNotExistCoversNFSStaleHandles(t *testing.T) {
+	stale := &os.PathError{Op: "stat", Path: "/prod/.vit/x.lock", Err: syscall.ESTALE}
+	for name, c := range map[string]struct {
+		err  error
+		want bool
+	}{
+		"missing":       {&os.PathError{Op: "stat", Path: "/x", Err: syscall.ENOENT}, true},
+		"stale":         {stale, true},
+		"wrapped stale": {fmt.Errorf("read the history: %w", stale), true},
+		"permission":    {&os.PathError{Op: "stat", Path: "/x", Err: syscall.EACCES}, false},
+		"no error":      {nil, false},
+	} {
+		if got := IsNotExist(c.err); got != c.want {
+			t.Errorf("%s: got %v", name, got)
+		}
+	}
 }

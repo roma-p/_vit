@@ -152,7 +152,7 @@ func (i *AttrIndex) refreshShardsFromHistory(shards map[string]*attrShard) error
 
 func liveTransactionTokens(repoPath string) (map[string]bool, error) {
 	entries, err := os.ReadDir(fsutil.PathOS(repoPath, ".vit", "transaction"))
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !fsutil.IsNotExist(err) {
 		return nil, newErrDBInternal(err, "failed to list the transactions")
 	}
 	live := map[string]bool{}
@@ -263,7 +263,7 @@ func buildAttrIndex(ctx context.Context, repoPath string) (*attrIndexBuild, erro
 
 func removeStaleAttrShards(repoPath string, keep map[string]*attrShard) error {
 	entries, err := os.ReadDir(pathAttrIndex(repoPath))
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !fsutil.IsNotExist(err) {
 		return newErrDBInternal(err, "failed to list the attribute index")
 	}
 	for _, e := range entries {
@@ -271,7 +271,7 @@ func removeStaleAttrShards(repoPath string, keep map[string]*attrShard) error {
 		if !ok || keep[key] != nil || types.CheckAttrKey(key) != nil {
 			continue
 		}
-		if err := os.Remove(pathAttrShard(repoPath, key)); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(pathAttrShard(repoPath, key)); err != nil && !fsutil.IsNotExist(err) {
 			return newErrDBInternal(err, "failed to remove attribute shard "+key)
 		}
 	}
@@ -280,7 +280,7 @@ func removeStaleAttrShards(repoPath string, keep map[string]*attrShard) error {
 
 func readAttrShard(repoPath, key string) (*attrShard, error) {
 	data, err := os.ReadFile(pathAttrShard(repoPath, key))
-	if os.IsNotExist(err) {
+	if fsutil.IsNotExist(err) {
 		return nil, nil
 	}
 	var f attrShardFile
@@ -311,7 +311,7 @@ func writeAttrShard(repoPath, key string, s *attrShard) error {
 
 func readAttrIndexFile[T any](path string) (*T, error) {
 	h, err := fsutil.NewJSONHandlerFromFile[T](path)
-	if os.IsNotExist(err) {
+	if fsutil.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {

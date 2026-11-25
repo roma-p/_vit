@@ -112,11 +112,11 @@ func sealDirsPostOrder(dir string) error {
 // removed as a link, never followed.
 func (p *HardlinkPresenter) Unpresent(workspacePath string) error {
 	parent := fsutil.DirOS(workspacePath)
-	if err := fsutil.MakeDirectoryWritable(parent); err != nil && !os.IsNotExist(err) {
+	if err := fsutil.MakeDirectoryWritable(parent); err != nil && !fsutil.IsNotExist(err) {
 		return err
 	}
 	fi, err := os.Lstat(workspacePath)
-	if os.IsNotExist(err) {
+	if fsutil.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {

@@ -63,7 +63,7 @@ func RemoveReverseEdge(
 ) error {
 	dir := pathReverseDir(repoPath, targetAssetUID, targetObjectPath)
 	file := fsutil.PathOS(dir, reverseEdgeFileName(t, peer))
-	if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(file); err != nil && !fsutil.IsNotExist(err) {
 		return newErrDBInternal(err, "could not remove reverse-dep entry")
 	}
 	return nil
@@ -238,7 +238,7 @@ func listAllReverseEdges(
 	base := pathReverseBase(repoPath, assetUID)
 	objDirs, err := os.ReadDir(base)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if fsutil.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, newErrDBInternal(err, "could not read reverse-dep base dir")
@@ -454,7 +454,7 @@ func clearMarkerIfUnchanged(path string, seen os.FileInfo) error {
 	if !ok || !os.SameFile(seen, now) || !now.ModTime().Equal(seen.ModTime()) {
 		return nil
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(path); err != nil && !fsutil.IsNotExist(err) {
 		return newErrDBInternal(err, "could not clear reverse-stale marker")
 	}
 	return nil
@@ -496,7 +496,7 @@ func readReverseDir(
 ) error {
 	files, err := os.ReadDir(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if fsutil.IsNotExist(err) {
 			return nil
 		}
 		return newErrDBInternal(err, "could not read reverse-dep dir")

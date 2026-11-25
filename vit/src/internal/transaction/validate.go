@@ -63,7 +63,7 @@ func scanExistingTransactions(repoPath string) ([]TransactionID, error) {
 
 	entries, err := os.ReadDir(transactionDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if fsutil.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, types.NewInternalVitError(

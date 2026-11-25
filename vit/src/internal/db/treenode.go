@@ -101,7 +101,7 @@ func (c *Client) resolveJSONTreeNode(
 
 	path := treeNodeJSONPath(repoPath, entry.Data)
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	if _, err := os.Stat(path); fsutil.IsNotExist(err) {
 		return nil, false, newTreeNodeNotFoundError(repoPath, treeNodePath, path)
 	}
 	ret, err := fsutil.ResolveHandler[types.TreeNode](ctx, opctx.JSONPool, path, forWrite, nil)

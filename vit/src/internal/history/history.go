@@ -77,7 +77,7 @@ func ReadAll(repoPath, siteUID string) ([]types.HistoryEntry, error) {
 func ReadAllSites(repoPath string) ([]types.HistoryEntry, error) {
 	base := fsutil.PathOS(repoPath, ".vit", dirName)
 	sites, err := os.ReadDir(base)
-	if os.IsNotExist(err) {
+	if fsutil.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
@@ -175,7 +175,7 @@ func walkStreams(
 ) (Cursor, error) {
 	base := fsutil.PathOS(repoPath, ".vit", dirName)
 	sites, err := os.ReadDir(base)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !fsutil.IsNotExist(err) {
 		return nil, err
 	}
 	next := Cursor{}
@@ -291,7 +291,7 @@ func findActiveSegment(dir string) (string, int, error) {
 
 func listSegments(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
+	if fsutil.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
@@ -321,7 +321,7 @@ func nextSegmentName(currentPath string) string {
 
 func countLines(path string) (int, error) {
 	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	if fsutil.IsNotExist(err) {
 		return 0, nil
 	}
 	if err != nil {

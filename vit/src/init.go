@@ -20,7 +20,7 @@ func (c *Client) InitRepo(ctx context.Context, path string) (*types.StringResult
 			[]string{"Directory already exists"},
 			[]any{"error", "DirAlreadyExists"},
 		)
-	} else if !os.IsNotExist(err) {
+	} else if !fsutil.IsNotExist(err) {
 		return nil, newRepoInitFailed(
 			path,
 			[]string{"can't access directory"},
@@ -30,7 +30,7 @@ func (c *Client) InitRepo(ctx context.Context, path string) (*types.StringResult
 
 	// Check if parent directory exists
 	parentDir := fsutil.DirOS(path)
-	if _, err := os.Stat(parentDir); os.IsNotExist(err) {
+	if _, err := os.Stat(parentDir); fsutil.IsNotExist(err) {
 		return nil, newRepoInitFailed(
 			path,
 			[]string{"parent directory does not exist"},

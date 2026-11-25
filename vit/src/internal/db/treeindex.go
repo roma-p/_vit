@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -137,7 +136,7 @@ func istreeCacheStale(repoPath string) (bool, error) {
 		return true, nil
 	}
 
-	if os.IsNotExist(indexErr) || os.IsNotExist(assetListErr) {
+	if fsutil.IsNotExist(indexErr) || fsutil.IsNotExist(assetListErr) {
 		return true, nil
 	}
 
@@ -325,14 +324,14 @@ func writeTreeIndex(repoPath string, t *TreeIndex) error {
 func scanAllTreeNodeFiles(repoPath string) ([]string, error) {
 	treeDir := fsutil.PathOS(repoPath, ".vit", "tree")
 
-	if _, err := os.Stat(treeDir); os.IsNotExist(err) {
+	if _, err := os.Stat(treeDir); fsutil.IsNotExist(err) {
 		return nil, nil
 	}
 
 	var paths []string
 
 	err := filepath.WalkDir(treeDir, func(path string, d os.DirEntry, err error) error {
-		if errors.Is(err, fs.ErrNotExist) && path != treeDir {
+		if fsutil.IsNotExist(err) && path != treeDir {
 			return nil
 		}
 		if err != nil {
@@ -373,7 +372,7 @@ func treeStaleMarkers(repoPath string) ([]string, error) {
 		out = append(out, pathLegacyTreeStale(repoPath))
 	}
 	entries, err := os.ReadDir(pathTreeStaleMarkers(repoPath))
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !fsutil.IsNotExist(err) {
 		return nil, newErrDBInternal(err, "failed to list tree stale markers")
 	}
 	for _, e := range entries {

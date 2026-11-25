@@ -67,7 +67,7 @@ func AppendLine(path string, b []byte) error {
 	}
 
 	_, statErr := os.Stat(path)
-	created := os.IsNotExist(statErr)
+	created := IsNotExist(statErr)
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {

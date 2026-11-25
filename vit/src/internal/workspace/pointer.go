@@ -109,7 +109,7 @@ func ResolveWorkspacePathFromRef(repoPath string, ref *types.Ref) (string, bool,
 
 func scanPointersForRef(dir string, ref *types.Ref) (string, bool, error) {
 	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
+	if fsutil.IsNotExist(err) {
 		return "", false, nil
 	}
 	if err != nil {
@@ -142,7 +142,7 @@ func RemovePointer(repoPath, wsPath string) error {
 	if err != nil {
 		return newErrWorkspaceInternal(err, "pointer: workspace path outside repo: "+wsPath)
 	}
-	if err := os.Remove(pointerPath(repoPath, rel)); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(pointerPath(repoPath, rel)); err != nil && !fsutil.IsNotExist(err) {
 		return newErrWorkspaceInternal(err, "pointer: remove failed for "+rel)
 	}
 	return nil

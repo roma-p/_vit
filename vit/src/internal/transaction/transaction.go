@@ -402,7 +402,7 @@ func touchFilesLoop(
 			return
 		case <-ticker.C:
 			for _, f := range files {
-				if err := fsutil.TouchNow(f); os.IsNotExist(err) {
+				if err := fsutil.TouchNow(f); fsutil.IsNotExist(err) {
 					cancel(newErrTransactionLost(err))
 					return
 				}
