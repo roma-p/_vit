@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -230,6 +231,18 @@ func readSiteDir(siteDir string) ([]types.HistoryEntry, error) {
 		all = append(all, es...)
 	}
 	return all, nil
+}
+
+func DropAborted(es []types.HistoryEntry) []types.HistoryEntry {
+	aborted := map[string]bool{}
+	for _, e := range es {
+		if e.Aborted != "" {
+			aborted[e.Aborted] = true
+		}
+	}
+	return slices.DeleteFunc(es, func(e types.HistoryEntry) bool {
+		return e.Aborted != "" || aborted[e.UID]
+	})
 }
 
 func sortDesc(es []types.HistoryEntry) {

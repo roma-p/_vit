@@ -16,6 +16,8 @@ type HistoryEntry struct {
 
 	NodeID string       `json:"node_id,omitempty"`
 	Attrs  []AttrChange `json:"attrs,omitempty"`
+
+	Aborted string `json:"aborted,omitempty"` // uid of an entry whose change failed
 }
 
 type AttrChange struct {

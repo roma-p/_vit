@@ -24,7 +24,7 @@ func (c *Client) Log(ctx context.Context, path string) (*types.HistoryLogResult,
 				[]string{"could not read the activity log"}, nil,
 			)
 		}
-		out = &types.HistoryLogResult{Entries: entries}
+		out = &types.HistoryLogResult{Entries: history.DropAborted(entries)}
 		return nil
 	})
 	if err != nil {

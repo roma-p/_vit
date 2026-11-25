@@ -62,6 +62,7 @@ func run(
 	r Request,
 	tids []TransactionID,
 ) error {
+	var attrEntry *types.HistoryEntry
 	err := withTransaction(ctx, tids, r.Command, r.User, r.Timestamp,
 		func() error {
 			// 0. We now hold the scan-lock(s). Any DB read taken before it
@@ -105,6 +106,9 @@ func run(
 			if err := tx.ensureStillValid(); err != nil {
 				return err
 			}
+			if attrEntry, err = recordAttrEntry(ctx, r, tids); err != nil {
+				return err
+			}
 			flushErr := r.Opctx.JSONPool.FlushForWrite()
 			if errors.Is(flushErr, fsutil.ErrLockLost) {
 				return newErrTransactionLost(flushErr)
@@ -127,12 +131,19 @@ func run(
 		},
 	)
 	concurrent := isVitError(err, types.ErrConcurrentWrite)
+	if attrEntry != nil {
+		if err != nil && !concurrent {
+			recordAborted(ctx, r, attrEntry)
+		}
+		return err
+	}
 	if err != nil && !concurrent {
 		return err
 	}
 
 	// 5. Record the operation in the activity log — after a successful flush,
 	//    outside the repo transaction lock, best-effort
+	//    (attribute changes are recorded before the flush, by recordAttrEntry)
 	recordHistory(ctx, r, tids, concurrent)
 	return err
 }
@@ -152,6 +163,37 @@ type historyAttrs interface {
 }
 
 func recordHistory(ctx context.Context, r Request, tids []TransactionID, concurrent bool) {
+	e := newHistoryEntry(r, tids)
+	if concurrent {
+		e.Details = strings.TrimSpace(e.Details + " (concurrent write detected)")
+	}
+	if err := history.Record(ctx, r.RepoPath, r.Opctx.Site(), e); err != nil {
+		r.Logger.Warn("history: failed to record entry", "command", r.Command, "err", err)
+	}
+}
+
+func recordAttrEntry(ctx context.Context, r Request, tids []TransactionID) (*types.HistoryEntry, error) {
+	a, ok := r.Operation.(historyAttrs)
+	if !ok {
+		return nil, nil
+	}
+	e := newHistoryEntry(r, tids)
+	e.UID = fsutil.GenerateUID(8)
+	e.NodeID, e.Attrs = a.HistoryAttrs()
+	if err := history.Record(ctx, r.RepoPath, r.Opctx.Site(), e); err != nil {
+		return nil, newErrHistoryRecord(err)
+	}
+	return &e, nil
+}
+
+func recordAborted(ctx context.Context, r Request, e *types.HistoryEntry) {
+	abort := types.HistoryEntry{Command: e.Command, User: e.User, Aborted: e.UID}
+	if err := history.Record(context.WithoutCancel(ctx), r.RepoPath, r.Opctx.Site(), abort); err != nil {
+		r.Logger.Warn("history: failed to record an aborted entry", "command", r.Command, "err", err)
+	}
+}
+
+func newHistoryEntry(r Request, tids []TransactionID) types.HistoryEntry {
 	subject := r.Ref
 	if subject == nil && len(tids) > 0 {
 		subject = tids[0].Ref
@@ -169,20 +211,7 @@ func recordHistory(ctx context.Context, r Request, tids []TransactionID, concurr
 	if d, ok := r.Operation.(historyDescriber); ok {
 		e.Details = d.HistorySummary()
 	}
-	if a, ok := r.Operation.(historyAttrs); ok {
-		e.NodeID, e.Attrs = a.HistoryAttrs()
-	}
-	if concurrent {
-		e.Details = strings.TrimSpace(e.Details + " (concurrent write detected)")
-	}
-	if err := history.Record(ctx, r.RepoPath, r.Opctx.Site(), e); err != nil {
-		r.Logger.Warn("history: failed to record entry", "command", r.Command, "err", err)
-		if len(e.Attrs) > 0 {
-			if err := db.InvalidateAttrIndex(r.RepoPath); err != nil {
-				r.Logger.Warn("history: failed to invalidate the attribute index", "err", err)
-			}
-		}
-	}
+	return e
 }
 
 // withTransaction run a vit operation() within a transaction lock.
@@ -403,6 +432,14 @@ func newErrTransactionLost(err error) error {
 			"transaction lost: another process took it over after this one stalled",
 			"nothing was recorded, retry the command",
 		},
+		[]any{"err", err.Error()},
+	)
+}
+
+func newErrHistoryRecord(err error) error {
+	return types.NewVitError(
+		types.ErrHistoryInternal,
+		[]string{"could not record the change in the activity log, nothing was changed"},
 		[]any{"err", err.Error()},
 	)
 }

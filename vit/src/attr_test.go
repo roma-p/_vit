@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"vit/internal/db"
+	"vit/internal/history"
 	"vit/internal/opcontext"
 	"vit/internal/types"
 )
@@ -187,16 +188,19 @@ func TestAttrHistoryCarriesTheChanges(t *testing.T) {
 	}
 }
 
-func TestAttrSetInvalidatesTheAttrIndexWhenTheLogFails(t *testing.T) {
+func TestAttrSetWritesOneLogEntry(t *testing.T) {
 	env := newLocksEnv(t)
 	env.add("seq20/sh010")
-	build := filepath.Join(env.repoPath, ".vit", "cache", "attrindex", "_build.json")
-	if err := os.MkdirAll(filepath.Dir(build), 0o755); err != nil {
-		t.Fatal(err)
+	env.must(env.client.AttrSet(ctx(), env.abs("seq20/sh010"), map[string]string{"task": "mod"}))
+
+	if got := rawAttrEntries(t, env); len(got) != 1 || got[0].Attrs[0].Value != "mod" {
+		t.Fatalf("raw entries = %+v", got)
 	}
-	if err := os.WriteFile(build, []byte(`{"cursor":{}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+}
+
+func TestAttrSetFailsWhenTheLogCannotBeWritten(t *testing.T) {
+	env := newLocksEnv(t)
+	env.add("seq20/sh010")
 	logDir := filepath.Join(env.repoPath, ".vit", "history")
 	if err := os.RemoveAll(logDir); err != nil {
 		t.Fatal(err)
@@ -205,10 +209,11 @@ func TestAttrSetInvalidatesTheAttrIndexWhenTheLogFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env.must(env.client.AttrSet(ctx(), env.abs("seq20/sh010"), map[string]string{"task": "mod"}))
-
-	if _, err := os.Stat(build); !os.IsNotExist(err) {
-		t.Fatalf("attr index still built after a failed log: %v", err)
+	if _, err := env.client.AttrSet(ctx(), env.abs("seq20/sh010"), map[string]string{"task": "mod"}); !types.IsErrCode(err, types.ErrHistoryInternal) {
+		t.Fatalf("want %s, got %v", types.ErrHistoryInternal, err)
+	}
+	if got := attrPairs(t, env, env.abs("seq20/sh010")); len(got) != 0 {
+		t.Fatalf("attrs written without a log entry: %v", got)
 	}
 }
 
@@ -236,6 +241,15 @@ func readTreeNode(t *testing.T, env *locksEnv, treePath string) *types.TreeNode 
 		return err
 	})
 	return node
+}
+
+func rawAttrEntries(t *testing.T, env *locksEnv) []types.HistoryEntry {
+	t.Helper()
+	entries, _, err := history.ReadSince(env.repoPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return slices.DeleteFunc(entries, func(e types.HistoryEntry) bool { return e.Command != types.CommandAttrSet })
 }
 
 func second[T any](_ T, err error) error { return err }
