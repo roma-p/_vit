@@ -252,9 +252,13 @@ func TestAttrEntryIsRecordedBeforeTheWrite(t *testing.T) {
 	writeDoc(t, doc, "before")
 	var atWrite []types.HistoryEntry
 	var tidsAtWrite []string
+	var payloadAtWrite []byte
 	op := &attrDocOperation{&docOperation{path: doc, value: "after", duringWrite: func() {
 		atWrite, _ = history.ReadAll(repo, "")
 		tidsAtWrite = tidFiles(t, repo)
+		if len(tidsAtWrite) > 0 {
+			payloadAtWrite, _ = os.ReadFile(tidsAtWrite[0])
+		}
 	}}}
 
 	if err := runDoc(t, repo, op); err != nil {
@@ -265,6 +269,10 @@ func TestAttrEntryIsRecordedBeforeTheWrite(t *testing.T) {
 	}
 	if !slices.ContainsFunc(tidsAtWrite, func(f string) bool { return types.TransactionFileToken(filepath.Base(f)) == atWrite[0].Tx }) {
 		t.Fatalf("entry token %q matches no live transaction file: %v", atWrite[0].Tx, tidsAtWrite)
+	}
+	var payload transactionPayload
+	if err := json.Unmarshal(payloadAtWrite, &payload); err != nil || payload.AssetPath != "asset" || payload.User != "tester" {
+		t.Fatalf("transaction file = %s (%v)", payloadAtWrite, err)
 	}
 	if entries, _ := history.ReadAll(repo, ""); len(entries) != 1 {
 		t.Fatalf("history after: %+v", entries)

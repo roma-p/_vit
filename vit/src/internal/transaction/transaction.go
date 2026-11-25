@@ -2,6 +2,7 @@ package transaction
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -290,13 +291,13 @@ func withTransaction(
 
 		for _, tid := range tids {
 			f := fsutil.PathOS(tid.Ref.RepoPath, ".vit", "transaction", tid.fileName(token))
-			if werr := fsutil.NewJSONHandlerFromPath(f, &transactionPayload{
+			if werr := writeTransactionFile(f, &transactionPayload{
 				AssetPath: tid.Ref.AssetPath,
 				Operation: tid.Operation,
 				Command:   command,
 				User:      user,
 				Modified:  timestamp,
-			}).Write(); werr != nil {
+			}); werr != nil {
 				return werr
 			}
 			transactionFiles = append(transactionFiles, f)
@@ -363,6 +364,17 @@ func acquireScanLocks(ctx context.Context, repos []string) (func(), error) {
 		stops = append(stops, stop)
 	}
 	return release, nil
+}
+
+func writeTransactionFile(path string, payload *transactionPayload) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(fsutil.DirOS(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 type transactionPayload struct {
