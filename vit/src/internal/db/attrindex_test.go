@@ -136,7 +136,7 @@ func TestAttrIndexRefreshSeesChangesAfterTheBuild(t *testing.T) {
 		t.Fatalf("variant = %v", got["variant"].Values)
 	}
 	head, _ := history.Head(repo)
-	disk, err := readAttrIndexFile[attrShard](pathAttrShard(repo, "task"))
+	disk, err := readAttrShard(repo, "task")
 	if err != nil || !maps.Equal(disk.Cursor, head) || !maps.EqualFunc(disk.Values, got["task"].Values, slices.Equal) {
 		t.Fatalf("not stored at the head %v: %+v %v", head, disk, err)
 	}
@@ -151,7 +151,7 @@ func TestAttrIndexRefreshOnlyAdvancesTheAskedShards(t *testing.T) {
 
 	mustShards(t, repo, "task")
 
-	disk, err := readAttrIndexFile[attrShard](pathAttrShard(repo, "seq"))
+	disk, err := readAttrShard(repo, "seq")
 	if err != nil || !maps.Equal(disk.Cursor, built) || disk.Values["20"] == nil {
 		t.Fatalf("seq advanced: %+v %v", disk, err)
 	}
@@ -225,6 +225,48 @@ func TestOldestCursor(t *testing.T) {
 	want := history.Cursor{"paris": pos("seg-000001.jsonl", 3), "tokyo": {}}
 	if got := oldestCursor(shards); !maps.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestAttrShardIsStoredAsSortedRows(t *testing.T) {
+	repo := t.TempDir()
+	s := &attrShard{Cursor: history.Cursor{"paris": {Segment: "seg-000001.jsonl", Line: 2}}, Values: map[string][]string{"mod": {"u1", "u3"}, "rig": {"u4"}, "anim": {"u2"}, "lay": {"u5"}, "cfx": {"u6"}}}
+	if err := writeAttrShard(repo, "task", s); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(pathAttrShard(repo, "task"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"cursor":{"paris":{"segment":"seg-000001.jsonl","line":2}},"values":[["anim","u2"],["cfx","u6"],["lay","u5"],["mod","u1","u3"],["rig","u4"]]}` + "\n"; string(data) != want {
+		t.Fatalf("stored = %s", data)
+	}
+	got, err := readAttrShard(repo, "task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !maps.Equal(got.Cursor, s.Cursor) || !maps.EqualFunc(got.Values, s.Values, slices.Equal) {
+		t.Fatalf("read back = %+v", got)
+	}
+}
+
+func TestAttrIndexInTheOldFormatIsRebuilt(t *testing.T) {
+	repo := t.TempDir()
+	writeNode(t, repo, "u1abcdef", types.TreeNodeTypeAsset, map[string]string{"task": "mod"})
+	for path, content := range map[string]string{
+		pathAttrIndexBuild(repo):    `{"cursor":{}}`,
+		pathAttrShard(repo, "task"): `{"cursor":{},"values":{"anim":["u1abcdef"]}}`,
+	} {
+		if err := os.MkdirAll(fsutil.DirOS(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got := mustShards(t, repo, "task")["task"].Values; !maps.EqualFunc(got, map[string][]string{"mod": {"u1abcdef"}}, slices.Equal) {
+		t.Fatalf("values = %v", got)
 	}
 }
 

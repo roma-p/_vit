@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"os"
 	"slices"
@@ -31,6 +32,14 @@ type attrShard struct {
 
 type attrIndexBuild struct {
 	Cursor history.Cursor `json:"cursor"`
+	Format int            `json:"format"`
+}
+
+const attrIndexFormat = 1
+
+type attrShardFile struct {
+	Cursor history.Cursor `json:"cursor"`
+	Values [][]string     `json:"values"`
 }
 
 func NewAttrIndex(repoPath string) *AttrIndex {
@@ -44,7 +53,7 @@ func (i *AttrIndex) get(ctx context.Context, keys []string) (map[string]*attrSha
 		if err != nil {
 			return nil, err
 		}
-		if build == nil {
+		if build == nil || build.Format != attrIndexFormat {
 			if build, err = buildAttrIndex(ctx, i.repoPath); err != nil {
 				return nil, err
 			}
@@ -56,7 +65,7 @@ func (i *AttrIndex) get(ctx context.Context, keys []string) (map[string]*attrSha
 		s := i.shards[k]
 		if s == nil {
 			var err error
-			if s, err = readAttrIndexFile[attrShard](pathAttrShard(i.repoPath, k)); err != nil {
+			if s, err = readAttrShard(i.repoPath, k); err != nil {
 				return nil, err
 			}
 			if s == nil {
@@ -168,7 +177,7 @@ func oldestCursor(shards map[string]*attrShard) history.Cursor {
 }
 
 func storeAttrShard(repoPath, key string, s *attrShard) {
-	_ = fsutil.NewJSONHandlerFromPath(pathAttrShard(repoPath, key), s).Write()
+	_ = writeAttrShard(repoPath, key, s)
 }
 
 func buildAttrIndex(ctx context.Context, repoPath string) (*attrIndexBuild, error) {
@@ -177,7 +186,7 @@ func buildAttrIndex(ctx context.Context, repoPath string) (*attrIndexBuild, erro
 		return nil, newErrDBInternal(err, "failed to lock the attribute index rebuild")
 	}
 	defer stop()
-	if build, err := readAttrIndexFile[attrIndexBuild](pathAttrIndexBuild(repoPath)); err != nil || build != nil {
+	if build, err := readAttrIndexFile[attrIndexBuild](pathAttrIndexBuild(repoPath)); err != nil || build != nil && build.Format == attrIndexFormat {
 		return build, err
 	}
 
@@ -210,14 +219,14 @@ func buildAttrIndex(ctx context.Context, repoPath string) (*attrIndexBuild, erro
 		for _, uids := range s.Values {
 			slices.Sort(uids)
 		}
-		if err := fsutil.NewJSONHandlerFromPath(pathAttrShard(repoPath, k), s).Write(); err != nil {
+		if err := writeAttrShard(repoPath, k, s); err != nil {
 			return nil, newErrDBInternal(err, "failed to write attribute shard "+k)
 		}
 	}
 	if err := removeStaleAttrShards(repoPath, shards); err != nil {
 		return nil, err
 	}
-	build := &attrIndexBuild{Cursor: cursor}
+	build := &attrIndexBuild{Cursor: cursor, Format: attrIndexFormat}
 	if err := fsutil.NewJSONHandlerFromPath(pathAttrIndexBuild(repoPath), build).Write(); err != nil {
 		return nil, newErrDBInternal(err, "failed to write the attribute index build")
 	}
@@ -239,6 +248,37 @@ func removeStaleAttrShards(repoPath string, keep map[string]*attrShard) error {
 		}
 	}
 	return nil
+}
+
+func readAttrShard(repoPath, key string) (*attrShard, error) {
+	data, err := os.ReadFile(pathAttrShard(repoPath, key))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	var f attrShardFile
+	if err == nil {
+		err = json.Unmarshal(data, &f)
+	}
+	if err != nil {
+		return nil, newErrDBInternal(err, "failed to read attribute shard "+key)
+	}
+	s := &attrShard{Cursor: f.Cursor, Values: make(map[string][]string, len(f.Values))}
+	for _, row := range f.Values {
+		if len(row) > 1 {
+			s.Values[row[0]] = row[1:]
+		}
+	}
+	return s, nil
+}
+
+func writeAttrShard(repoPath, key string, s *attrShard) error {
+	f := attrShardFile{Cursor: s.Cursor, Values: make([][]string, 0, len(s.Values))}
+	for _, v := range slices.Sorted(maps.Keys(s.Values)) {
+		f.Values = append(f.Values, append([]string{v}, s.Values[v]...))
+	}
+	return fsutil.WriteFileAtomic(pathAttrShard(repoPath, key), 0o644, func(file *os.File) error {
+		return json.NewEncoder(file).Encode(f)
+	})
 }
 
 func readAttrIndexFile[T any](path string) (*T, error) {
