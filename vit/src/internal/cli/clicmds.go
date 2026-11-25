@@ -42,6 +42,13 @@ var cmdDefinition = clicore.CmdTree{
 			ArgParser:   buildLogArgParser(),
 			ResultType:  types.HistoryLogResult{},
 		},
+		"query": {
+			Name:        "Query",
+			Description: "Find assets by their attributes, and fetch attribute values",
+			Run:         runQuery,
+			ArgParser:   buildQueryArgParser(),
+			ResultType:  types.QueryResult{},
+		},
 		"ls": {
 			Name:        "Ls",
 			Description: "List a directory's children, an asset's branches/tags, or an object's details + sources",

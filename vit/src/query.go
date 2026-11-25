@@ -29,7 +29,11 @@ func (c *Client) Query(ctx context.Context, path string, req types.QueryRequest)
 		defer dbClient.Close()
 
 		out, err = dbClient.Query(ctx, opctx, opctx.RepoPath(), fsutil.PathInternal(p), req)
-		return err
+		if err != nil {
+			return err
+		}
+		out.SetFetchOrder(req.Fetch)
+		return nil
 	})
 	if err != nil {
 		return nil, err
