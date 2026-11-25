@@ -108,8 +108,27 @@ type Position struct {
 	Line    int    `json:"line"`
 }
 
+// Located is an entry with its site and position: At is the cursor that would read it next.
+type Located struct {
+	Entry types.HistoryEntry
+	Site  string
+	At    Position
+}
+
 func ReadSince(repoPath string, c Cursor) ([]types.HistoryEntry, Cursor, error) {
-	var out []types.HistoryEntry
+	located, next, err := ReadSinceAt(repoPath, c)
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make([]types.HistoryEntry, 0, len(located))
+	for _, l := range located {
+		out = append(out, l.Entry)
+	}
+	return out, next, nil
+}
+
+func ReadSinceAt(repoPath string, c Cursor) ([]Located, Cursor, error) {
+	var out []Located
 	next, err := walkStreams(repoPath, c, func(site string, segs []string, siteDir string) (Position, error) {
 		pos := c[site]
 		for _, seg := range segs {
@@ -124,7 +143,11 @@ func ReadSince(repoPath string, c Cursor) ([]types.HistoryEntry, Cursor, error) 
 			if seg == pos.Segment {
 				start = min(pos.Line, len(lines))
 			}
-			out = append(out, parseLines(lines[start:])...)
+			for i := start; i < len(lines); i++ {
+				if e, ok := parseLine(lines[i]); ok {
+					out = append(out, Located{Entry: e, Site: site, At: Position{Segment: seg, Line: i}})
+				}
+			}
 			pos = Position{Segment: seg, Line: len(lines)}
 		}
 		return pos, nil
@@ -198,12 +221,16 @@ func completeLines(path string) ([]string, error) {
 func parseLines(lines []string) []types.HistoryEntry {
 	var out []types.HistoryEntry
 	for _, line := range lines {
-		var e types.HistoryEntry
-		if err := json.Unmarshal([]byte(line), &e); err == nil {
+		if e, ok := parseLine(line); ok {
 			out = append(out, e)
 		}
 	}
 	return out
+}
+
+func parseLine(line string) (types.HistoryEntry, bool) {
+	var e types.HistoryEntry
+	return e, json.Unmarshal([]byte(line), &e) == nil
 }
 
 func streamDir(repoPath, siteUID string) string {

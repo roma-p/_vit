@@ -2,6 +2,7 @@ package history
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"os"
 	"slices"
@@ -97,6 +98,31 @@ func TestHeadIsTheEndOfEveryStream(t *testing.T) {
 	_, end := readSince(t, repo, nil)
 	if !maps.Equal(head, end) {
 		t.Fatalf("head %v, end of read %v", head, end)
+	}
+}
+
+func TestReadSinceAtLocatesEachEntry(t *testing.T) {
+	repo := t.TempDir()
+	record(t, repo, "paris", "a")
+	seg := fsutil.PathOS(streamDir(repo, "paris"), fmt.Sprintf(segmentFormat, 1))
+	if err := fsutil.AppendLine(seg, []byte("not json")); err != nil {
+		t.Fatal(err)
+	}
+	record(t, repo, "paris", "b", "c")
+
+	located, _, err := ReadSinceAt(repo, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, l := range located {
+		got = append(got, fmt.Sprintf("%s@%s:%d", l.Entry.UID, l.Site, l.At.Line))
+	}
+	if !slices.Equal(got, []string{"a@paris:0", "b@paris:2", "c@paris:3"}) {
+		t.Fatalf("located = %v", got)
+	}
+	if uids, _ := readSince(t, repo, Cursor{"paris": located[1].At}); !slices.Equal(uids, []string{"b", "c"}) {
+		t.Fatalf("from b = %v", uids)
 	}
 }
 
